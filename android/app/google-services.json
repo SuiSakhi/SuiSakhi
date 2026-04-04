@@ -1,0 +1,46 @@
+{
+  "project_info": {
+    "project_number": "711179561782",
+    "project_id": "stitchsmart-c66bd",
+    "storage_bucket": "stitchsmart-c66bd.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:711179561782:android:1637cd5560e708ca526197",
+        "android_client_info": {
+          "package_name": "com.stitchsmart.stitchsmart"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "711179561782-l39guk41nldhpm6icjbvudeclvatfjtr.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAXyMhojKzFYiOjiJPHMURbiKYKXwgdt6Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "711179561782-l39guk41nldhpm6icjbvudeclvatfjtr.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "711179561782-lburh09oomnddita7ue09sti46lfo76o.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.prachi.stitchsmart"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

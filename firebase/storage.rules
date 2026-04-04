@@ -1,0 +1,16 @@
+rules_version = '2';
+// Deploy: firebase deploy --only storage --project YOUR_PROJECT_ID
+// Or paste into Firebase Console → Storage → Rules → Publish
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Profile photos (app path: users/{uid}/profile_*.jpg|png|heic|…)
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+    // Owner design flats
+    match /design_templates/{allPaths=**} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+  }
+}

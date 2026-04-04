@@ -1,0 +1,62 @@
+rules_version = '2';
+// Deploy: firebase deploy --only firestore:rules --project YOUR_PROJECT_ID
+// Or: Firebase Console → Firestore Database → Rules → Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Profile + phone lookup field (used after first successful save)
+    match /users/{userId} {
+      allow read, write: if signedIn() && request.auth.uid == userId;
+    }
+
+    // One doc per mobile (digits-only id). Anyone can read a single doc to show
+    // "already registered as …" before OTP. Only the signed-in user may write their row.
+    match /phoneRegistry/{digits} {
+      allow get: if true;
+      allow list: if false;
+      // uid/role required; name optional (some clients send it later). All scalar types must match.
+      allow create, update: if signedIn()
+          && request.resource.data.uid is string
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.role is string
+          && (!('name' in request.resource.data)
+              || request.resource.data.name is string);
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Role lists (owner/tailor/delivery). Any signed-in user may read for routing.
+    // Tighten writes in production (e.g. only owner UIDs via custom claims).
+    match /config/{document=**} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    // Rate card — customers need read; owner dashboard writes.
+    match /rates/{docId} {
+      allow read: if signedIn();
+      allow write: if signedIn();
+    }
+
+    match /orders/{orderId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+          && request.resource.data.customerId == request.auth.uid;
+      allow update, delete: if signedIn();
+    }
+
+    match /designTemplates/{docId} {
+      allow read: if signedIn();
+      allow create: if signedIn();
+      allow update, delete: if signedIn()
+          && resource.data.createdBy == request.auth.uid;
+    }
+
+    match /subscriptions/{docId} {
+      allow read, write: if signedIn();
+    }
+  }
+}
