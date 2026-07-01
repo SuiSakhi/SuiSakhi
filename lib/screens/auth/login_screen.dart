@@ -645,13 +645,19 @@ class _LoginScreenState extends State<LoginScreen> {
         if (!navCtx.mounted) return;
         await _completePhoneSignInAndPop(navCtx, credential);
       },
-      verificationFailed: (e) {
-        _cancelPhoneWatchdog();
-        if (kDebugMode) {
-          debugPrint('[PhoneAuth] verificationFailed code=${e.code} message=${e.message}');
-        }
-        _phoneAuthModel.debouncedVerificationFailed(_formatPhoneVerifyError(e));
-      },
+verificationFailed: (e) {
+  print('====================================');
+  print('PHONE AUTH FAILED');
+  print('CODE: ${e.code}');
+  print('MESSAGE: ${e.message}');
+  print('====================================');
+
+  _cancelPhoneWatchdog();
+
+  _phoneAuthModel.debouncedVerificationFailed(
+    _formatPhoneVerifyError(e),
+  );
+},
       // Do NOT gate on LoginScreen mounted — it is often false here with GoRouter + push.
       codeSent: (verificationId, _) {
         _cancelPhoneWatchdog();
@@ -1087,13 +1093,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const SizedBox(height: 28),
                 Text(
-                  'StitchSmart',
+                  'SuiSakhi',
                   style: AppTextStyles.displayLarge.copyWith(
                       color: Colors.white, letterSpacing: 1),
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Tailored Just For You',
+                  'Made for Every Stitch',
                   style: AppTextStyles.bodyLarge
                       .copyWith(color: Colors.white.withValues(alpha: 0.85)),
                 ),

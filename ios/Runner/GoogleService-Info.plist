@@ -2,22 +2,18 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>CLIENT_ID</key>
-	<string>711179561782-lburh09oomnddita7ue09sti46lfo76o.apps.googleusercontent.com</string>
-	<key>REVERSED_CLIENT_ID</key>
-	<string>com.googleusercontent.apps.711179561782-lburh09oomnddita7ue09sti46lfo76o</string>
 	<key>API_KEY</key>
-	<string>AIzaSyBDsbgRN7aCwwYp6PWkOcsduJwht_hQ-v8</string>
+	<string>AIzaSyCrvwEeRO5cL_WstK7TzOxcZ3r5CwwCSGs</string>
 	<key>GCM_SENDER_ID</key>
-	<string>711179561782</string>
+	<string>867714366330</string>
 	<key>PLIST_VERSION</key>
 	<string>1</string>
 	<key>BUNDLE_ID</key>
 	<string>com.prachi.stitchsmart</string>
 	<key>PROJECT_ID</key>
-	<string>stitchsmart-c66bd</string>
+	<string>suisakhitest</string>
 	<key>STORAGE_BUCKET</key>
-	<string>stitchsmart-c66bd.firebasestorage.app</string>
+	<string>suisakhitest.firebasestorage.app</string>
 	<key>IS_ADS_ENABLED</key>
 	<false></false>
 	<key>IS_ANALYTICS_ENABLED</key>
@@ -29,6 +25,6 @@
 	<key>IS_SIGNIN_ENABLED</key>
 	<true></true>
 	<key>GOOGLE_APP_ID</key>
-	<string>1:711179561782:ios:a2fd6443fb258ec2526197</string>
+	<string>1:867714366330:ios:ecc9f0a0a257fdce4ef4c3</string>
 </dict>
 </plist>

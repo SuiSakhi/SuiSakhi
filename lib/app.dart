@@ -33,7 +33,7 @@ class StitchSmartApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp.router(
-      title: 'StitchSmart',
+      title: 'SuiSakhi',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       routerConfig: _router,
