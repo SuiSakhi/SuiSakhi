@@ -81,7 +81,7 @@ UserRole _roleFromRegistryString(String? r) {
 
 String _humanRolePhrase(UserRole r) {
   return switch (r) {
-    UserRole.owner => 'shop owner',
+    UserRole.owner => 'Fashion Partner',
     UserRole.tailor => 'tailor',
     UserRole.delivery => 'delivery partner',
     UserRole.customer => 'customer',
@@ -1099,14 +1099,14 @@ verificationFailed: (e) {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Made for Every Stitch',
+                  'Design • Stitch • Wear',
                   style: AppTextStyles.bodyLarge
                       .copyWith(color: Colors.white.withValues(alpha: 0.85)),
                 ),
                 const SizedBox(height: 32),
 
                 // Role selector
-                Text('I am a…',
+                Text('Choose how you want to continue ...',
                     style: AppTextStyles.titleMedium
                         .copyWith(color: Colors.white.withValues(alpha: 0.8))),
                 const SizedBox(height: 12),
@@ -1120,14 +1120,7 @@ verificationFailed: (e) {
                     ),
                     const SizedBox(width: 10),
                     _RoleCard(
-                      label: 'Tailor',
-                      icon: Icons.content_cut_rounded,
-                      selected: _selectedRole == UserRole.tailor,
-                      onTap: () => setState(() => _selectedRole = UserRole.tailor),
-                    ),
-                    const SizedBox(width: 10),
-                    _RoleCard(
-                      label: 'Owner',
+                      label: 'Fashion Partner',
                       icon: Icons.store_rounded,
                       selected: _selectedRole == UserRole.owner,
                       onTap: () => setState(() => _selectedRole = UserRole.owner),
@@ -1274,7 +1267,7 @@ class _OtpSignInButton extends StatelessWidget {
             const SizedBox(width: 14),
             Flexible(
               child: Text(
-                'Continue with OTP',
+                'Continue',
                 style: AppTextStyles.titleMedium.copyWith(
                   color: const Color(0xFF3C4043),
                   fontSize: 16,
