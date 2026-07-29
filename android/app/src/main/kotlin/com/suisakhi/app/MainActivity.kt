@@ -1,4 +1,4 @@
-package com.stitchsmart.stitchsmart
+package com.suisakhi.app
 
 import io.flutter.embedding.android.FlutterActivity
 

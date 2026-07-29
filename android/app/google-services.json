@@ -7,9 +7,47 @@
   "client": [
     {
       "client_info": {
+        "mobilesdk_app_id": "1:867714366330:android:54c28dd03b3d11354ef4c3",
+        "android_client_info": {
+          "package_name": "com.example.suisakhi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjUXJx47QbY7MjWzK9AhpFibkcHOFno5s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
         "mobilesdk_app_id": "1:867714366330:android:241d322c0d6617b54ef4c3",
         "android_client_info": {
           "package_name": "com.stitchsmart.stitchsmart"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAjUXJx47QbY7MjWzK9AhpFibkcHOFno5s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:867714366330:android:95c9011715a3b2244ef4c3",
+        "android_client_info": {
+          "package_name": "com.suisakhi.app"
         }
       },
       "oauth_client": [],

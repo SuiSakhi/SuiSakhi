@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:pinput/pinput.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -12,6 +13,8 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/router_keys.dart';
 import '../../models/user_profile.dart';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 String _formatPhoneVerifyError(FirebaseAuthException e) {
   switch (e.code) {
@@ -646,12 +649,12 @@ class _LoginScreenState extends State<LoginScreen> {
         await _completePhoneSignInAndPop(navCtx, credential);
       },
 verificationFailed: (e) {
-  print('====================================');
+/*  print('====================================');
   print('PHONE AUTH FAILED');
   print('CODE: ${e.code}');
   print('MESSAGE: ${e.message}');
   print('====================================');
-
+*/
   _cancelPhoneWatchdog();
 
   _phoneAuthModel.debouncedVerificationFailed(
@@ -709,7 +712,7 @@ verificationFailed: (e) {
 
   Widget _buildPhoneOtpPage(BuildContext navCtx) {
     final m = _phoneAuthModel;
-    final nameCtrl = _phoneFlowNameCtrl!;
+    //final nameCtrl = _phoneFlowNameCtrl!;
     final phoneCtrl = _phoneFlowPhoneCtrl!;
     final otpCtrl = _phoneFlowOtpCtrl!;
     const fieldScrollPad = EdgeInsets.only(bottom: 100);
@@ -790,11 +793,12 @@ verificationFailed: (e) {
               Text(
                 m.otpStep
                     ? 'Code sent to ${m.phoneDisplay}'
-                    : 'Mobile for SMS OTP. Name optional if you already use the app.',
+                    : 'Enter your mobile number to continue ...',
                 style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
               ),
               const SizedBox(height: 12),
               if (!m.otpStep) ...[
+                /*
                 TextField(
                   controller: nameCtrl,
                   keyboardType: TextInputType.name,
@@ -806,7 +810,7 @@ verificationFailed: (e) {
                     // Short label — long copy belongs in helper + subtitle (long labels
                     // + prefixIcon + isDense overlap the outline on narrow phones).
                     labelText: 'Your name',
-                    hintText: 'e.g. Priya Sharma',
+                    hintText: 'e.g. Annaya Sharma',
                     helperText: 'Optional for returning users',
                     helperMaxLines: 1,
                     isDense: false,
@@ -824,6 +828,7 @@ verificationFailed: (e) {
                   },
                 ),
                 const SizedBox(height: 10),
+                */
                 TextField(
                   controller: phoneCtrl,
                   keyboardType: TextInputType.phone,
@@ -852,28 +857,91 @@ verificationFailed: (e) {
                   ),
                 ),
               ] else ...[
-                TextField(
+                Pinput(
                   controller: otpCtrl,
+                  length: 6,
+                  autofocus: true,
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
-                  maxLength: 6,
-                  autofocus: true,
-                  scrollPadding: fieldScrollPad,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 10,
-                  ),
-                  decoration: InputDecoration(
-                    isDense: true,
-                    hintText: '• • • • • •',
-                    hintStyle: const TextStyle(letterSpacing: 8, fontSize: 18),
-                    counterText: '',
-                    border: OutlineInputBorder(
+                  closeKeyboardWhenCompleted: true,
+                  defaultPinTheme: PinTheme(
+                    width: 46,
+                    height: 52,
+                    textStyle: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary.withValues(alpha: 0.35),
+                        width: 1.2,
+                      ),
                     ),
                   ),
+                  focusedPinTheme: PinTheme(
+                    width: 48,
+                    height: 54,
+                    textStyle: const TextStyle(
+                      fontSize: 21,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary,
+                        width: 1.8,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                  ),
+                  submittedPinTheme: PinTheme(
+                    width: 46,
+                    height: 52,
+                    textStyle: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: AppColors.primary,
+                        width: 1.3,
+                      ),
+                    ),
+                  ),
+                  errorPinTheme: PinTheme(
+                    width: 46,
+                    height: 52,
+                    textStyle: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.red,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: Colors.red.shade300,
+                        width: 1.3,
+                      ),
+                    ),
+                  ),
+                  onCompleted: (_) {
+                    if (!m.loading) _verifyPhoneFlowOtp(navCtx);
+                  },
                   onSubmitted: (_) {
                     if (!m.loading) _verifyPhoneFlowOtp(navCtx);
                   },
@@ -964,88 +1032,70 @@ verificationFailed: (e) {
   }
 
   // ── Owner bootstrap (OTP-only: collect shop email for config enrollment) ─
-  static bool _looksLikeEmail(String s) {
+  /* static bool _looksLikeEmail(String s) {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s.trim());
-  }
+  } */
 
-  Future<String?> _promptOwnerSetup({String? existingEmail}) async {
-    const bootstrapCode = 'STITCHSMART2024';
-    final codeCtrl = TextEditingController();
-    final emailCtrl = TextEditingController(text: existingEmail?.trim() ?? '');
-    final dialogCtx = (mounted && context.mounted)
-        ? context
-        : stitchSmartRootNavigatorKey.currentContext;
-    if (dialogCtx == null) return null;
-    final result = await showDialog<String?>(
-      context: dialogCtx,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Owner setup'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Owner access code and the email added to Firestore config for this shop.',
-                style: TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: codeCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Access code',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: emailCtrl,
-                keyboardType: TextInputType.emailAddress,
-                autocorrect: false,
-                decoration: const InputDecoration(
-                  labelText: 'Owner email',
-                  hintText: 'you@shop.com',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-            ],
+Future<String?> _promptOwnerSetup({String? existingEmail}) async {
+  try {
+    final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+
+    if (phone == null) {
+      return null;
+    }
+
+    final snapshot = await FirebaseFirestore.instance
+        .collection('partner_users')
+        .where('phone', isEqualTo: phone)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'This mobile number is not registered as a Fashion Partner.',
+            ),
           ),
+        );
+      }
+      return null;
+    }
+
+    final data = snapshot.docs.first.data();
+
+    final email = (data['email'] ?? '').toString().trim();
+
+    if (email.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Partner email is missing. Contact Administrator.',
+            ),
+          ),
+        );
+      }
+      return null;
+    }
+
+    return email;
+  } catch (e) {
+    debugPrint('Partner verification failed: $e');
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Partner verification failed.\n$e'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, null),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (codeCtrl.text.trim() != bootstrapCode) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Invalid access code')),
-                );
-                return;
-              }
-              final em = emailCtrl.text.trim().toLowerCase();
-              if (!_looksLikeEmail(em)) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(content: Text('Enter a valid owner email')),
-                );
-                return;
-              }
-              Navigator.pop(ctx, em);
-            },
-            child: const Text('Verify'),
-          ),
-        ],
-      ),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      codeCtrl.dispose();
-      emailCtrl.dispose();
-    });
-    return result;
+      );
+    }
+
+    return null;
   }
+}
 
   // ── Build ────────────────────────────────────────────────────────────────
   @override
@@ -1088,9 +1138,17 @@ verificationFailed: (e) {
                       ),
                     ],
                   ),
-                  child: const Icon(Icons.content_cut_rounded,
-                      color: AppColors.primary, size: 52),
-                ),
+		  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(18),
+                      child: Image.asset(
+                         'assets/images/suisakhi_logo.png',
+                         fit: BoxFit.contain,
+                         ),
+                      ),
+                   ),
+		),
                 const SizedBox(height: 28),
                 Text(
                   'SuiSakhi',
@@ -1267,7 +1325,7 @@ class _OtpSignInButton extends StatelessWidget {
             const SizedBox(width: 14),
             Flexible(
               child: Text(
-                'Continue',
+                'Continue with OTP',
                 style: AppTextStyles.titleMedium.copyWith(
                   color: const Color(0xFF3C4043),
                   fontSize: 16,
