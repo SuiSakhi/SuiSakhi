@@ -592,7 +592,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             ),
           ),
         DropdownButtonFormField<String>(
-          value: _occasionId ?? OccasionCategory.dailyWear.name,
+          initialValue: _occasionId ?? OccasionCategory.dailyWear.name,
           decoration: const InputDecoration(
             labelText: 'Occasion',
             prefixIcon: Icon(Icons.category_outlined),
@@ -902,7 +902,7 @@ _Sent via StitchSmart App_
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: templates.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                separatorBuilder: (_, _) => const SizedBox(width: 10),
                 itemBuilder: (context, i) {
                   final t = templates[i];
                   final sel = _selectedTemplate?.id == t.id;
@@ -932,7 +932,7 @@ _Sent via StitchSmart App_
                                 : Image.network(
                                     t.imageUrl,
                                     fit: BoxFit.cover,
-                                    errorBuilder: (_, __, ___) => ColoredBox(
+                                    errorBuilder: (_, _, _) => ColoredBox(
                                       color: AppColors.surfaceVariant,
                                       child: Icon(Icons.broken_image_outlined,
                                           color: AppColors.textHint),
@@ -1120,7 +1120,7 @@ _Sent via StitchSmart App_
                                             : Image.network(
                                                 t.imageUrl,
                                                 fit: BoxFit.cover,
-                                                errorBuilder: (_, _, __) =>
+                                                errorBuilder: (_, _, _) =>
                                                     ColoredBox(
                                                   color:
                                                       AppColors.surfaceVariant,
@@ -1204,7 +1204,7 @@ _Sent via StitchSmart App_
                             width: 76,
                             height: 76,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => _previewAvatarFallback(),
+                            errorBuilder: (_, _, _) => _previewAvatarFallback(),
                           )
                         : _previewAvatarFallback(),
                   ),

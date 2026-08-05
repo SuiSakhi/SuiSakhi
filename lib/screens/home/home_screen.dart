@@ -175,11 +175,12 @@ void _showHomeAccountSheet(BuildContext context) {
           ),
           const Divider(height: 1),
           ListTile(
-            leading: const Icon(Icons.person_outline_rounded),
-            title: const Text('Edit profile'),
+            leading: const Icon(Icons.account_circle_outlined),
+            title: const Text('My Account'),
+            subtitle: const Text('Profile, orders, addresses and membership'),
             onTap: () {
               Navigator.pop(sheetCtx);
-              context.push('/profile-setup');
+              context.push('/account');
             },
           ),
           ListTile(
@@ -463,7 +464,7 @@ class _HomeContent extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
-            onTap: () => _showHomeAccountSheet(context),
+            onTap: () => context.push('/account'),
             child: Ink(
               width: 46,
               height: 46,
@@ -482,7 +483,7 @@ class _HomeContent extends StatelessWidget {
                         width: 46,
                         height: 46,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Text(
+                        errorBuilder: (_, _, _) => Text(
                           AppState.instance.initials,
                           style: const TextStyle(
                             color: Colors.white,

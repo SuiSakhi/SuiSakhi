@@ -116,6 +116,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+	      _buildTopBar(context),
+              const SizedBox(height: 20),
               _buildHeader(context),
               const SizedBox(height: 28),
               Text('Admin Dashboard', style: AppTextStyles.headlineLarge),
@@ -139,6 +141,41 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     );
   }
 
+Widget _buildTopBar(BuildContext context) {
+  return Row(
+    children: [
+
+      IconButton(
+        icon: const Icon(Icons.arrow_back_ios_new_rounded),
+        onPressed: () {
+          if (context.canPop()) {
+            context.pop();
+          } else {
+            context.go('/home');
+          }
+        },
+      ),
+
+      const SizedBox(width: 8),
+
+      Expanded(
+        child: Center(
+          child: Text(
+            'SuiSakhi',
+            style: AppTextStyles.headlineMedium.copyWith(
+              color: AppColors.primary,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+
+      const SizedBox(width: 48),
+
+    ],
+  );
+}
+
   Widget _buildHeader(BuildContext context) {
     return Row(
       children: [
@@ -146,7 +183,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Welcome, Owner', style: AppTextStyles.bodyMedium),
+              Text('Welcome, SuiSakhi Admin', style: AppTextStyles.bodyMedium),
               ListenableBuilder(
                 listenable: AppState.instance,
                 builder: (context2, child) => Text(
@@ -175,7 +212,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 const Icon(Icons.store_rounded,
                     color: Color(0xFFF5A623), size: 16),
                 const SizedBox(width: 6),
-                Text('Owner',
+                Text('SuiSakhi Admin',
                     style: AppTextStyles.labelMedium
                         .copyWith(color: const Color(0xFFF5A623))),
               ],
@@ -446,7 +483,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                   shrinkWrap: true,
                   physics: const NeverScrollableScrollPhysics(),
                   itemCount: _tailorCount,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
+                  separatorBuilder: (_, _) => const Divider(height: 1),
                   itemBuilder: (_, i) {
                     final pc = _tailorProfiles.length;
                     final po = _tailorOrphanPhones.length;
@@ -480,18 +517,22 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                               color: Colors.red, size: 22),
                           tooltip: 'Remove tailor',
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+
                             await AppState.instance.removeTailorPhone(mob);
                             await _loadTailors();
+
+                            if (!mounted) return;
+
                             setSheetState(() {});
                             setState(() {});
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Tailor removed'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
+
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Tailor removed'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
                           },
                         ),
                       );
@@ -518,18 +559,22 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                               color: Colors.red, size: 22),
                           tooltip: 'Remove tailor',
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+
                             await AppState.instance.removeTailorPhone(phone);
                             await _loadTailors();
+
+                            if (!mounted) return;
+
                             setSheetState(() {});
                             setState(() {});
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Tailor removed'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
+
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text('Tailor removed'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
                           },
                         ),
                       );
@@ -555,18 +600,22 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                             color: Colors.red, size: 22),
                         tooltip: 'Remove tailor',
                         onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+
                           await AppState.instance.removeTailor(email);
                           await _loadTailors();
+
+                          if (!mounted) return;
+
                           setSheetState(() {});
                           setState(() {});
-                          if (mounted) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Tailor removed'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          }
+
+                          messenger.showSnackBar(
+                            const SnackBar(
+                              content: Text('Tailor removed'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
                         },
                       ),
                     );
@@ -618,7 +667,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         () => context.push('/orders'),
       ),
       (
-        'Enroll Tailor',
+        'Add Fashion Partner',
         Icons.person_add_rounded,
         const Color(0xFF2196F3),
         () => _showEnrollTailorDialog(context),
@@ -906,7 +955,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
 
   void _showDeliveryPartnersSheet(BuildContext context) {
     _loadDeliveryPartners().then((_) {
-      if (!mounted) return;
+      if (!mounted || !context.mounted) return;
+
       showModalBottomSheet(
         context: context,
         isScrollControlled: true,
@@ -955,7 +1005,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
                     itemCount: _deliveryEmails.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    separatorBuilder: (_, _) => const Divider(height: 1),
                     itemBuilder: (_, i) {
                       final email = _deliveryEmails[i];
                       return ListTile(
@@ -971,17 +1021,21 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                           icon: const Icon(Icons.remove_circle_outline_rounded,
                               color: Colors.red, size: 22),
                           onPressed: () async {
+                            final messenger = ScaffoldMessenger.of(context);
+
                             await AppState.instance.removeDeliveryPartner(email);
+
+                            if (!mounted) return;
+
                             setSheetState(() => _deliveryEmails.remove(email));
                             setState(() {});
-                            if (mounted) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('$email removed'),
-                                  backgroundColor: Colors.red,
-                                ),
-                              );
-                            }
+
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text('$email removed'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
                           },
                         ),
                       );
@@ -1045,17 +1099,22 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             onPressed: () async {
               final email = controller.text.trim();
               if (email.isEmpty || !email.contains('@')) return;
+
+              final messenger = ScaffoldMessenger.of(context);
+
               Navigator.pop(ctx);
+
               await AppState.instance.enrollDeliveryPartner(email);
               await _loadDeliveryPartners();
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$email enrolled as Delivery Partner'),
-                    backgroundColor: const Color(0xFF00BCD4),
-                  ),
-                );
-              }
+
+              if (!mounted) return;
+
+              messenger.showSnackBar(
+                SnackBar(
+                  content: Text('$email enrolled as Delivery Partner'),
+                  backgroundColor: const Color(0xFF00BCD4),
+                ),
+              );
             },
             child: const Text('Enroll'),
           ),
@@ -1068,7 +1127,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   // ── Delivery Settings Dialog ─────────────────────────────────────────────
   void _showDeliverySettingsDialog(BuildContext context) async {
     final settings = await AppState.instance.getDeliverySettings();
-    if (!mounted) return;
+    if (!mounted || !context.mounted) return;
     final feeCtrl = TextEditingController(
         text: settings['feePerOrder']!.toStringAsFixed(0));
     final subCtrl = TextEditingController(

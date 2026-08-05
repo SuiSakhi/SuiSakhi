@@ -3,6 +3,8 @@ import 'package:go_router/go_router.dart';
 import 'core/router_keys.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/profile/profile_selection_screen.dart';
+import 'screens/profile/customer_account_center_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/onboarding/profile_setup_screen.dart';
@@ -25,6 +27,7 @@ import 'screens/owner/rates_management_screen.dart';
 import 'screens/owner/owner_payout_settings_screen.dart';
 import 'screens/checkout/order_checkout_screen.dart';
 import 'screens/tailor/tailor_dashboard_screen.dart';
+import 'screens/profile/tailor_account_center_screen.dart' as tailor_account;
 import 'screens/delivery/delivery_dashboard_screen.dart';
 
 class StitchSmartApp extends StatelessWidget {
@@ -66,8 +69,43 @@ final _router = GoRouter(
       builder: (ctx, state) => const LoginScreen(),
     ),
     GoRoute(
+      path: '/profile-selection',
+      builder: (ctx, state) => ProfileSelectionScreen(
+        profiles: const [
+          {
+            'role': 'customer',
+            'displayName': 'Sudhir',
+            'isDefaultProfile': true,
+          },
+          {
+            'role': 'owner',
+            'displayName': 'Sudhir',
+            'shopName': 'Sudhir Boutique',
+          },
+          {
+            'role': 'tailor',
+            'displayName': 'Ramesh',
+            'shopName': 'Perfect Tailors',
+          },
+          {
+            'role': 'delivery_partner',
+            'displayName': 'Sunil',
+          },
+          {
+            'role': 'supplier',
+            'displayName': 'Anand',
+            'shopName': 'Mahalaxmi Fabrics',
+          },
+        ],
+      ),
+    ),
+    GoRoute(
       path: '/onboarding',
       builder: (ctx, state) => const OnboardingScreen(),
+    ),
+    GoRoute(
+      path: '/account',
+      builder: (ctx, state) => const CustomerAccountCenterScreen(),
     ),
     GoRoute(
       path: '/profile-setup',
@@ -104,6 +142,11 @@ final _router = GoRouter(
     GoRoute(
       path: '/tailor',
       builder: (ctx, state) => const TailorDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/tailor-account',
+      builder: (ctx, state) =>
+          const tailor_account.TailorAccountCenterScreen(),
     ),
     // ── Delivery routes ───────────────────────────────────────────────────
     GoRoute(

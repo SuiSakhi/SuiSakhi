@@ -170,7 +170,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 Text('Delivery Portal', style: AppTextStyles.bodyMedium),
                 ListenableBuilder(
                   listenable: AppState.instance,
-                  builder: (_, __) => Text(
+                  builder: (_, _) => Text(
                     AppState.instance.displayName,
                     style: AppTextStyles.displayMedium,
                     maxLines: 1,

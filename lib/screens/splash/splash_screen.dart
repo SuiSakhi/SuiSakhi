@@ -87,7 +87,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        'StitchSmart',
+                        'SuiSakhi',
                         style: AppTextStyles.displayLarge.copyWith(
                           color: Colors.white,
                           letterSpacing: 1,
@@ -95,7 +95,7 @@ class _SplashScreenState extends State<SplashScreen>
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        'Tailored Just For You',
+                        'Silai Bina Jhanjhat',
                         style: AppTextStyles.bodyLarge.copyWith(
                           color: Colors.white.withValues(alpha: 0.85),
                         ),

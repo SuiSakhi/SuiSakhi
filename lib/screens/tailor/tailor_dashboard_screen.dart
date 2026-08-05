@@ -132,8 +132,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
           const SizedBox(width: 10),
           GestureDetector(
             onTap: () {
-              AppState.instance.signOut();
-              context.go('/login');
+              context.push('/tailor-account');
             },
             child: Container(
               padding: const EdgeInsets.all(10),
@@ -141,8 +140,11 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
                 color: AppColors.surfaceVariant,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.logout_rounded,
-                  color: AppColors.textSecondary, size: 20),
+              child: const Icon(
+                Icons.account_circle_outlined,
+                color: AppColors.textSecondary,
+                size: 22,
+              ),
             ),
           ),
         ],

@@ -146,7 +146,7 @@ class _BulkOrdersScreenState extends State<BulkOrdersScreen> {
           Text('Who is this for?', style: AppTextStyles.headlineSmall),
           const SizedBox(height: 8),
           DropdownButtonFormField<String>(
-            value: _category,
+            initialValue: _category,
             items: _categories
                 .map((c) => DropdownMenuItem(value: c, child: Text(c)))
                 .toList(),

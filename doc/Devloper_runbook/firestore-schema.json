@@ -1,0 +1,110 @@
+{
+  "config": {
+    "documentCount": 3,
+    "fields": {
+      "tailorEmails": "Array<unknown>",
+      "tailorPhones": "Array<string>",
+      "tailorProfiles": "Array<Map>",
+      "ownerEmails": "Array<string>",
+      "geminiKey": "string",
+      "feePerOrder": "number",
+      "subscriptionFee": "number"
+    },
+    "subcollections": []
+  },
+  "designTemplates": {
+    "documentCount": 3,
+    "fields": {
+      "createdBy": "string",
+      "imageUrl": "string",
+      "title": "string",
+      "createdAt": "Timestamp"
+    },
+    "subcollections": []
+  },
+  "orders": {
+    "documentCount": 6,
+    "fields": {
+      "accentColorHex": "string",
+      "advanceAmount": "number",
+      "advancePercent": "number",
+      "balanceAmount": "number",
+      "clientName": "string",
+      "customerId": "string",
+      "dressType": "string",
+      "fabricChoice": "string",
+      "fabricDescription": "string",
+      "fit": "string",
+      "kidsFlow": "boolean",
+      "measurements": "Map",
+      "notes": "string",
+      "occasionCategory": "string",
+      "orderModuleType": "string",
+      "paymentStatus": "string",
+      "price": "number",
+      "status": "string",
+      "tailorName": "string",
+      "orderDate": "Timestamp",
+      "payoutLedger": "Array<Map>",
+      "amountPaid": "number",
+      "paymentProvider": "string",
+      "paymentMethod": "string",
+      "paidAt": "Timestamp",
+      "marketplaceCategoryId": "string",
+      "deliveryAddress": "string"
+    },
+    "subcollections": []
+  },
+  "partner_users": {
+    "documentCount": 1,
+    "fields": {
+      "phone": "string",
+      "role": "string",
+      "partnerType": "string",
+      "businessName": "string",
+      "displayName": "string",
+      "active": "boolean",
+      "email": "string"
+    },
+    "subcollections": []
+  },
+  "phoneRegistry": {
+    "documentCount": 3,
+    "fields": {
+      "uid": "string",
+      "role": "string",
+      "name": "string",
+      "updatedAt": "Timestamp"
+    },
+    "subcollections": []
+  },
+  "rates": {
+    "documentCount": 10,
+    "fields": {
+      "basePrice": "number",
+      "dressType": "string",
+      "notes": "null"
+    },
+    "subcollections": []
+  },
+  "users": {
+    "documentCount": 6,
+    "fields": {
+      "photoUrl": "null",
+      "phoneNumber": "string",
+      "role": "string",
+      "name": "string",
+      "notifyWhatsApp": "boolean",
+      "setupComplete": "boolean",
+      "age": "number",
+      "email": "string",
+      "measurementUnit": "string",
+      "dressDesignerMeasurements": "Map",
+      "measurementSubjectMemberId": "string",
+      "mobile": "string",
+      "createdAt": "Timestamp",
+      "deliveryAddress": "string"
+    },
+    "subcollections": []
+  }
+}

@@ -177,7 +177,7 @@ class _OwnerDesignTemplatesScreenState extends State<OwnerDesignTemplatesScreen>
           return ListView.separated(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
             itemCount: list.length,
-            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            separatorBuilder: (_, _) => const SizedBox(height: 12),
             itemBuilder: (context, i) {
               final t = list[i];
               return Material(
@@ -193,7 +193,7 @@ class _OwnerDesignTemplatesScreenState extends State<OwnerDesignTemplatesScreen>
                         child: Image.network(
                           t.imageUrl,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
+                          errorBuilder: (_, _, _) => Container(
                             color: AppColors.surfaceVariant,
                             child: const Icon(Icons.broken_image_outlined),
                           ),

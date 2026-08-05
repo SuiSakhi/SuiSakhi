@@ -13,6 +13,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/router_keys.dart';
 import '../../models/user_profile.dart';
+import '../profile/profile_selection_screen.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -67,28 +68,6 @@ String _formatPhoneVerifyError(FirebaseAuthException e) {
           ? '${e.message}\n(${e.code})'
           : 'Error: ${e.code}';
   }
-}
-
-UserRole _roleFromRegistryString(String? r) {
-  switch ((r ?? 'customer').toLowerCase().trim()) {
-    case 'owner':
-      return UserRole.owner;
-    case 'tailor':
-      return UserRole.tailor;
-    case 'delivery':
-      return UserRole.delivery;
-    default:
-      return UserRole.customer;
-  }
-}
-
-String _humanRolePhrase(UserRole r) {
-  return switch (r) {
-    UserRole.owner => 'Fashion Partner',
-    UserRole.tailor => 'tailor',
-    UserRole.delivery => 'delivery partner',
-    UserRole.customer => 'customer',
-  };
 }
 
 class LoginScreen extends StatefulWidget {
@@ -483,16 +462,113 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       }
     }
+    try {
+      final signedInUser = FirebaseAuth.instance.currentUser;
+      final signedInPhone = signedInUser?.phoneNumber;
 
-    if (mounted) {
-      setState(() => _loading = false);
+      if (signedInUser != null &&
+          signedInPhone != null &&
+          signedInPhone.trim().isNotEmpty) {
+        await AppState.instance.ensureAccountAndDefaultProfileAfterLogin(
+          uid: signedInUser.uid,
+          mobileE164: signedInPhone.trim(),
+          displayName: signedInUser.displayName,
+        );
+      }
+    } on FirebaseException catch (e) {
+      debugPrint(
+        'SuiSakhi account/profile foundation skipped: ${e.code} ${e.message}',
+      );
+    } catch (e) {
+      debugPrint('SuiSakhi account/profile foundation skipped: $e');
     }
-    final navCtx = (mounted && context.mounted)
-        ? context
-        : stitchSmartRootNavigatorKey.currentContext;
-    if (navCtx != null && navCtx.mounted) {
-      GoRouter.of(navCtx).go(_destinationFor(finalRole, returning: returning));
+    
+final navCtx = (mounted && context.mounted)
+    ? context
+    : stitchSmartRootNavigatorKey.currentContext;
+
+if (navCtx != null && navCtx.mounted) {
+  try {
+    final signedInUser = FirebaseAuth.instance.currentUser;
+    final signedInPhone = signedInUser?.phoneNumber;
+
+    if (signedInUser != null &&
+        signedInPhone != null &&
+        signedInPhone.trim().isNotEmpty) {
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        signedInPhone.trim(),
+      );
+
+      if (accountId != null && accountId.isNotEmpty) {
+        final profiles =
+            await AppState.instance.fetchActiveProfilesForAccount(accountId);
+
+        debugPrint(
+          'SuiSakhi profiles found for account $accountId: ${profiles.length}',
+        );
+
+        for (final p in profiles) {
+          debugPrint(
+            'Profile: role=${p['role']} displayName=${p['displayName']} shopName=${p['shopName']} status=${p['status']}',
+          );
+        }
+
+        if (profiles.length > 1 && navCtx.mounted) {
+          final selectedProfile =
+              await Navigator.of(navCtx, rootNavigator: true)
+                  .push<Map<String, dynamic>>(
+            MaterialPageRoute<Map<String, dynamic>>(
+              builder: (_) => ProfileSelectionScreen(
+                profiles: profiles,
+              ),
+            ),
+          );
+
+          if (selectedProfile != null) {
+            final selectedProfileId =
+                selectedProfile['profileId']?.toString() ??
+                    selectedProfile['docId']?.toString();
+
+            if (selectedProfileId != null &&
+                selectedProfileId.trim().isNotEmpty) {
+              await AppState.instance.setActiveProfileForAccount(
+                accountId: accountId,
+                profileId: selectedProfileId,
+              );
+
+              final selectedRole =
+                  AppState.instance.roleFromProfileData(selectedProfile);
+
+              if (mounted) {
+                setState(() => _loading = false);
+              }
+
+              if (navCtx.mounted) {
+                GoRouter.of(navCtx).go(
+                  _destinationFor(selectedRole, returning: true),
+                );
+              }
+
+              return;
+            }
+          }
+        }
+      }
     }
+  } catch (e) {
+    debugPrint('Profile selection skipped: $e');
+  }
+
+  if (mounted) {
+    setState(() => _loading = false);
+  }
+
+  if (navCtx.mounted) {
+    GoRouter.of(navCtx).go(
+      _destinationFor(finalRole, returning: returning),
+    );
+  }
+}
   }
 
   // ── Phone / OTP Sign-In ──────────────────────────────────────────────────
@@ -567,48 +643,11 @@ class _LoginScreenState extends State<LoginScreen> {
     _phoneAuthModel.clearError();
 
     final reg = await AppState.instance.fetchPhoneRegistry(e164);
-    if (reg != null && reg.uid.isNotEmpty && navCtx.mounted) {
-      final regRole = _roleFromRegistryString(reg.roleName);
-      if (regRole != _phoneAuthModel.intentRole) {
-        final ok = await showDialog<bool>(
-              context: navCtx,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Account type'),
-                content: Text(
-                  'This number is registered as ${_humanRolePhrase(regRole)}'
-                  '${reg.displayName != null && reg.displayName!.trim().isNotEmpty ? ' (${reg.displayName})' : ''}. '
-                  'You chose ${_humanRolePhrase(_phoneAuthModel.intentRole)}. Continue?',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, false),
-                    child: const Text('Back'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx, true),
-                    child: const Text('Continue'),
-                  ),
-                ],
-              ),
-            ) ??
-            false;
-        if (!ok) return;
-      } else {
-        final nm = reg.displayName?.trim();
-        if (nm != null && nm.isNotEmpty) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!navCtx.mounted) return;
-            ScaffoldMessenger.of(navCtx).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Registered as ${_humanRolePhrase(regRole)} · $nm',
-                ),
-                duration: const Duration(seconds: 4),
-              ),
-            );
-          });
-        }
-      }
+    if (reg != null && reg.uid.isNotEmpty) {
+      debugPrint(
+        'Legacy phoneRegistry role found: ${reg.roleName}. '
+        'Skipping old account-type popup because SuiSakhi now supports multiple profiles.',
+      );
     }
 
     _phoneAuthModel.setLoading(true);
@@ -713,8 +752,13 @@ verificationFailed: (e) {
   Widget _buildPhoneOtpPage(BuildContext navCtx) {
     final m = _phoneAuthModel;
     //final nameCtrl = _phoneFlowNameCtrl!;
-    final phoneCtrl = _phoneFlowPhoneCtrl!;
-    final otpCtrl = _phoneFlowOtpCtrl!;
+    final phoneCtrl = _phoneFlowPhoneCtrl;
+    final otpCtrl = _phoneFlowOtpCtrl;
+
+    if (phoneCtrl == null || otpCtrl == null) {
+      return const SizedBox.shrink();
+    }
+
     const fieldScrollPad = EdgeInsets.only(bottom: 100);
 
     Widget primaryButton() {

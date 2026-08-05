@@ -282,7 +282,289 @@ class AppState extends ChangeNotifier {
     }, SetOptions(merge: true));
     await syncPhoneRegistryForCurrentUser();
   }
+  /// Firestore-safe mobile lookup id.
+  /// Example: +919876543210 -> m_919876543210
+  static String mobileAccountDocId(String e164) {
+    final digits = e164.replaceAll(RegExp(r'\D'), '');
+    return 'm_$digits';
+  }
 
+  /// Ensures one generated accountId exists for the given mobile number.
+  ///
+  /// Structure:
+  /// mobile_accounts/{safeMobileKey}
+  ///   -> accountId
+  ///
+  /// accounts/{accountId}
+  ///   -> mobileE164 and account-level fields
+  Future<String> ensureAccountForMobile(String mobileE164) async {
+    final safeMobileKey = mobileAccountDocId(mobileE164);
+    final lookupRef = _db.collection('mobile_accounts').doc(safeMobileKey);
+
+    final existingLookup = await lookupRef.get();
+    if (existingLookup.exists) {
+      final data = existingLookup.data();
+      final accountId = data?['accountId']?.toString();
+      if (accountId != null && accountId.trim().isNotEmpty) {
+        await _db.collection('accounts').doc(accountId).set({
+          'mobileE164': mobileE164,
+          'lastLoginAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+        return accountId;
+      }
+    }
+
+    final accountRef = _db.collection('accounts').doc();
+    final accountId = accountRef.id;
+
+    await accountRef.set({
+      'accountId': accountId,
+      'mobileE164': mobileE164,
+      'status': 'active',
+      'totalProfiles': 0,
+      'defaultProfileId': null,
+      'activeProfileId': null,
+      'lastSelectedProfileId': null,
+      'notifyWhatsApp': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+      'lastLoginAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await lookupRef.set({
+      'mobileE164': mobileE164,
+      'accountId': accountId,
+      'status': 'active',
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    return accountId;
+  }
+
+  /// Ensures the default Customer profile exists under:
+  /// accounts/{accountId}/profiles/{profileId}
+  ///
+  /// Customer profile is always the default profile in SuiSakhi.
+  Future<String> ensureDefaultCustomerProfile({
+    required String accountId,
+    required String mobileE164,
+    String? displayName,
+  }) async {
+    final profilesRef =
+        _db.collection('accounts').doc(accountId).collection('profiles');
+
+    final existingCustomer = await profilesRef
+        .where('role', isEqualTo: 'customer')
+        .where('isDefaultProfile', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    if (existingCustomer.docs.isNotEmpty) {
+      final profileId = existingCustomer.docs.first.id;
+
+      await _db.collection('accounts').doc(accountId).set({
+        'defaultProfileId': profileId,
+        'activeProfileId': profileId,
+        'lastSelectedProfileId': profileId,
+        'lastLoginAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      await profilesRef.doc(profileId).set({
+        'lastSelectedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      return profileId;
+    }
+
+    final profileRef = profilesRef.doc();
+    final profileId = profileRef.id;
+
+    final cleanedName = displayName?.trim();
+    final customerName =
+        cleanedName != null && cleanedName.isNotEmpty ? cleanedName : 'Customer';
+
+    await profileRef.set({
+      'profileId': profileId,
+      'accountId': accountId,
+      'mobileE164': mobileE164,
+      'profileType': 'customer',
+      'role': 'customer',
+      'partnerType': null,
+      'displayName': customerName,
+      'profilePhotoUrl': null,
+      'status': 'active',
+      'isDefaultProfile': true,
+      'lastSelectedAt': FieldValue.serverTimestamp(),
+      'relationship': 'self',
+      'gender': 'female',
+      'dateOfBirth': null,
+      'height': null,
+      'weight': null,
+      'favoriteStyles': <String>[],
+      'fabricPreferences': <String>[],
+      'colorPreferences': <String>[],
+      'partnerProfileId': null,
+      'shopName': null,
+      'serviceArea': <String>[],
+      'isAvailable': null,
+      'payoutUpiId': null,
+      'approvalStatus': null,
+      'approvedAt': null,
+      'approvedBy': null,
+      'rejectionReason': null,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _db.collection('accounts').doc(accountId).set({
+      'defaultProfileId': profileId,
+      'activeProfileId': profileId,
+      'lastSelectedProfileId': profileId,
+      'totalProfiles': FieldValue.increment(1),
+      'lastLoginAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    return profileId;
+  }
+
+  /// Ensures generated accountId and default Customer profile exist
+  /// after successful Firebase login.
+  ///
+  /// This is foundation logic only. It does not change navigation yet.
+  Future<void> ensureAccountAndDefaultProfileAfterLogin({
+    required String uid,
+    required String mobileE164,
+    String? displayName,
+  }) async {
+    final accountId = await ensureAccountForMobile(mobileE164);
+
+    final profileId = await ensureDefaultCustomerProfile(
+      accountId: accountId,
+      mobileE164: mobileE164,
+      displayName: displayName,
+    );
+
+    await _db.collection('users').doc(uid).set({
+      'accountId': accountId,
+      'activeProfileId': profileId,
+      'defaultProfileId': profileId,
+      'mobileE164': mobileE164,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+  }
+  /// Looks up generated accountId from mobile_accounts/{safeMobileKey}.
+  Future<String?> fetchAccountIdForMobile(String mobileE164) async {
+    try {
+      final safeMobileKey = mobileAccountDocId(mobileE164);
+      final doc = await _db.collection('mobile_accounts').doc(safeMobileKey).get();
+
+      if (!doc.exists) return null;
+
+      final data = doc.data();
+      final accountId = data?['accountId']?.toString().trim();
+
+      if (accountId == null || accountId.isEmpty) return null;
+      return accountId;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Fetches active profiles for ProfileSelectionScreen.
+  ///
+  /// Customer profile is always sorted first.
+  Future<List<Map<String, dynamic>>> fetchActiveProfilesForAccount(
+    String accountId,
+  ) async {
+    try {
+      final snap = await _db
+          .collection('accounts')
+          .doc(accountId)
+          .collection('profiles')
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final profiles = snap.docs.map((doc) {
+        final data = doc.data();
+        return <String, dynamic>{
+          ...data,
+          'profileId': data['profileId'] ?? doc.id,
+          'docId': doc.id,
+        };
+      }).toList();
+
+      profiles.sort((a, b) {
+        final aRole = (a['role'] ?? '').toString();
+        final bRole = (b['role'] ?? '').toString();
+
+        if (aRole == 'customer' && bRole != 'customer') return -1;
+        if (aRole != 'customer' && bRole == 'customer') return 1;
+
+        final aName = (a['displayName'] ?? a['shopName'] ?? '').toString();
+        final bName = (b['displayName'] ?? b['shopName'] ?? '').toString();
+
+        return aName.toLowerCase().compareTo(bName.toLowerCase());
+      });
+
+      return profiles;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  /// Saves the selected profile as active profile for the account.
+  Future<void> setActiveProfileForAccount({
+    required String accountId,
+    required String profileId,
+  }) async {
+    await _db.collection('accounts').doc(accountId).set({
+      'activeProfileId': profileId,
+      'lastSelectedProfileId': profileId,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    await _db
+        .collection('accounts')
+        .doc(accountId)
+        .collection('profiles')
+        .doc(profileId)
+        .set({
+      'lastSelectedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    final uid = _auth.currentUser?.uid;
+    if (uid != null) {
+      await _db.collection('users').doc(uid).set({
+        'accountId': accountId,
+        'activeProfileId': profileId,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+  }
+
+  /// Converts a profile document role into existing UserRole enum.
+  UserRole roleFromProfileData(Map<String, dynamic> profileData) {
+    final role = (profileData['role'] ?? 'customer').toString();
+
+    switch (role) {
+      case 'owner':
+        return UserRole.owner;
+      case 'tailor':
+        return UserRole.tailor;
+      case 'delivery':
+      case 'delivery_partner':
+        return UserRole.delivery;
+      case 'customer':
+      default:
+        return UserRole.customer;
+    }
+  }
   /// Firestore doc id: E.164 digits only (e.g. 917066187793).
   static String phoneRegistryDocId(String e164) =>
       e164.replaceAll(RegExp(r'\D'), '');
@@ -369,6 +651,31 @@ class AppState extends ChangeNotifier {
     } catch (_) {}
     return null;
   }
+/// Code Change 02-Jul-2026
+
+/// Lookup Fashion Partner by phone number.
+Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
+  try {
+    final phone = normalizePhoneE164(phoneE164);
+    if (phone == null) return null;
+
+    final snap = await _db
+        .collection('partner_users')
+        .where('phone', isEqualTo: phone)
+        .where('active', isEqualTo: true)
+        .limit(1)
+        .get();
+
+    if (snap.docs.isEmpty) {
+      return null;
+    }
+
+    return snap.docs.first.data();
+  } catch (e) {
+    debugPrint('Partner lookup failed: $e');
+    return null;
+  }
+}
 
   /// Bootstrap: register an email as the shop owner (first-time setup).
   Future<void> enrollOwner(String email) async {
