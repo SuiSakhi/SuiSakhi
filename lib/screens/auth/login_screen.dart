@@ -553,6 +553,34 @@ if (navCtx != null && navCtx.mounted) {
             }
           }
         }
+        if (profiles.length == 1 && navCtx.mounted) {
+          final onlyProfile = profiles.first;
+
+          final onlyProfileId =
+              onlyProfile['profileId']?.toString() ??
+                  onlyProfile['docId']?.toString();
+
+          if (onlyProfileId != null && onlyProfileId.trim().isNotEmpty) {
+            await AppState.instance.setActiveProfileForAccount(
+              accountId: accountId,
+              profileId: onlyProfileId,
+            );
+
+            final onlyRole = AppState.instance.roleFromProfileData(onlyProfile);
+
+            if (mounted) {
+              setState(() => _loading = false);
+            }
+
+            if (navCtx.mounted) {
+              GoRouter.of(navCtx).go(
+                _destinationFor(onlyRole, returning: true),
+              );
+            }
+
+            return;
+          }
+        }
       }
     }
   } catch (e) {

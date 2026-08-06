@@ -66,7 +66,7 @@ class CustomerAccountCenterScreen extends StatelessWidget {
             icon: Icons.location_on_outlined,
             title: 'Manage Addresses',
             subtitle: 'Pickup, delivery and default addresses',
-            onTap: () => _comingSoon(context, 'Manage Addresses'),
+            onTap: () => context.push('/customer-addresses'),
           ),
 
           const SizedBox(height: 16),

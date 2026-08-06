@@ -432,6 +432,61 @@ class AppState extends ChangeNotifier {
     return profileId;
   }
 
+  /// Ensures an active Customer profile exists for the account.
+  ///
+  /// This is a self-healing method for older accounts that may have been
+  /// created as partner-only before the Customer-first architecture was finalized.
+  Future<String> ensureCustomerProfileExistsForAccount({
+    required String accountId,
+    required String mobileE164,
+    String? displayName,
+  }) async {
+    final profilesRef = _db
+        .collection('accounts')
+        .doc(accountId)
+        .collection('profiles');
+
+    final existingCustomerSnap = await profilesRef
+        .where('role', isEqualTo: 'customer')
+        .limit(1)
+        .get();
+
+    if (existingCustomerSnap.docs.isNotEmpty) {
+      final doc = existingCustomerSnap.docs.first;
+      final data = doc.data();
+
+      await doc.reference.set({
+        'status': 'active',
+        'isDefaultProfile': true,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      final existingProfileId =
+          (data['profileId'] ?? doc.id).toString().trim();
+
+      return existingProfileId.isNotEmpty ? existingProfileId : doc.id;
+    }
+
+    final customerProfileId = profilesRef.doc().id;
+    final safeDisplayName =
+        displayName?.trim().isNotEmpty == true ? displayName!.trim() : 'Customer';
+
+    await profilesRef.doc(customerProfileId).set({
+      'profileId': customerProfileId,
+      'accountId': accountId,
+      'role': 'customer',
+      'profileType': 'customer',
+      'displayName': safeDisplayName,
+      'name': safeDisplayName,
+      'mobileE164': mobileE164,
+      'status': 'active',
+      'isDefaultProfile': true,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
+    return customerProfileId;
+  }
   /// Ensures generated accountId and default Customer profile exist
   /// after successful Firebase login.
   ///
@@ -443,20 +498,29 @@ class AppState extends ChangeNotifier {
   }) async {
     final accountId = await ensureAccountForMobile(mobileE164);
 
-    final profileId = await ensureDefaultCustomerProfile(
+    final customerProfileId = await ensureCustomerProfileExistsForAccount(
       accountId: accountId,
       mobileE164: mobileE164,
       displayName: displayName,
     );
 
+    final activeProfiles = await fetchActiveProfilesForAccount(accountId);
+
+    await _db.collection('accounts').doc(accountId).set({
+      'defaultProfileId': customerProfileId,
+      'totalProfiles': activeProfiles.length,
+      'lastLoginAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+
     await _db.collection('users').doc(uid).set({
       'accountId': accountId,
-      'activeProfileId': profileId,
-      'defaultProfileId': profileId,
+      'defaultProfileId': customerProfileId,
       'mobileE164': mobileE164,
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
+
   /// Looks up generated accountId from mobile_accounts/{safeMobileKey}.
   Future<String?> fetchAccountIdForMobile(String mobileE164) async {
     try {
