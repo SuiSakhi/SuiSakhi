@@ -112,6 +112,15 @@ class CustomerAccountCenterScreen extends StatelessWidget {
           ),
 
           const SizedBox(height: 16),
+          _SectionTitle(title: 'Partner Opportunities'),
+          _MenuItem(
+            icon: Icons.handshake_outlined,
+            title: 'Become a Partner',
+            subtitle: 'Register as Owner, Tailor, Supplier or Delivery Partner',
+            onTap: () => _comingSoon(context, 'Become a Partner'),
+          ),
+          
+          const SizedBox(height: 16),
           _SectionTitle(title: 'Settings & Support'),
           _MenuItem(
             icon: Icons.notifications_none,
