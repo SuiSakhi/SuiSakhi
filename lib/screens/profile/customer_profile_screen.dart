@@ -1,16 +1,60 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-
+import 'package:go_router/go_router.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
-class CustomerProfileScreen extends StatelessWidget {
-  const CustomerProfileScreen({super.key});
+  class CustomerProfileScreen extends StatefulWidget {
+    const CustomerProfileScreen({super.key});
 
-  @override
-  Widget build(BuildContext context) {
+    @override
+    State<CustomerProfileScreen> createState() => _CustomerProfileScreenState();
+  }
+
+  class _CustomerProfileScreenState extends State<CustomerProfileScreen> {
+    Future<void> _openEditProfile() async {
+      final updated = await context.push<bool>('/customer-edit-profile');
+
+      if (!mounted) return;
+
+      if (updated == true) {
+        setState(() {});
+      }
+    }
+
+    @override
+    Widget build(BuildContext context) {
     final profile = AppState.instance.profile;
+
+    final dateOfBirth = profile?.dateOfBirth?.trim().isNotEmpty == true
+        ? profile!.dateOfBirth!.trim()
+        : 'Optional - Not added';
+
+    final height = profile?.heightCm != null
+        ? '${profile!.heightCm!.toStringAsFixed(0)} cm'
+        : 'Optional - Not added';
+
+    final weight = profile?.weightKg != null
+        ? '${profile!.weightKg!.toStringAsFixed(0)} kg'
+        : 'Optional - Not added';
+
+    final fitPreference = profile?.fitPreference?.trim().isNotEmpty == true
+        ? profile!.fitPreference!.trim()
+        : 'Optional - Not added';
+
+    final preferredLanguage =
+        profile?.preferredLanguage.trim().isNotEmpty == true
+            ? profile!.preferredLanguage
+            : 'English';
+
+    final notifications = [
+      if (profile?.notifySms ?? true) 'SMS',
+      if (profile?.notifyWhatsApp ?? true) 'WhatsApp',
+      if (profile?.notifyApp ?? true) 'App',
+      if (profile?.notifyEmail ?? false) 'Email',
+    ].join(', ');
+
     final user = FirebaseAuth.instance.currentUser;
 
     final displayName = profile?.name.trim().isNotEmpty == true
@@ -34,7 +78,7 @@ class CustomerProfileScreen extends StatelessWidget {
             tooltip: 'Edit Profile',
             icon: const Icon(Icons.edit_outlined),
             onPressed: () {
-              _comingSoon(context, 'Edit Profile');
+              _openEditProfile();
             },
           ),
         ],
@@ -64,10 +108,10 @@ class CustomerProfileScreen extends StatelessWidget {
             title: 'Email Address',
             value: email,
           ),
-          const _InfoTile(
+          _InfoTile(
             icon: Icons.cake_outlined,
             title: 'Date of Birth',
-            value: 'Optional - Not added',
+            value: dateOfBirth,
           ),
           const _InfoTile(
             icon: Icons.badge_outlined,
@@ -77,33 +121,33 @@ class CustomerProfileScreen extends StatelessWidget {
 
           const SizedBox(height: 18),
           const _SectionTitle(title: 'Body & Fit Details'),
-          const _InfoTile(
+          _InfoTile(
             icon: Icons.height_outlined,
             title: 'Height',
-            value: 'Optional - Not added',
+            value: height,
           ),
-          const _InfoTile(
+          _InfoTile(
             icon: Icons.monitor_weight_outlined,
             title: 'Weight',
-            value: 'Optional - Not added',
+            value: weight,
           ),
-          const _InfoTile(
+          _InfoTile(
             icon: Icons.checkroom_outlined,
             title: 'Fit Preference',
-            value: 'Optional - Not added',
+            value: fitPreference,
           ),
 
           const SizedBox(height: 18),
           const _SectionTitle(title: 'Preferences'),
-          const _InfoTile(
+          _InfoTile(
             icon: Icons.language_outlined,
             title: 'Preferred Language',
-            value: 'English',
+            value: preferredLanguage,
           ),
-          const _InfoTile(
+          _InfoTile(
             icon: Icons.notifications_active_outlined,
             title: 'Notifications',
-            value: 'SMS, WhatsApp and App notifications',
+            value: notifications.isEmpty ? 'No notifications selected' : notifications,
           ),
 
           const SizedBox(height: 18),
@@ -131,7 +175,7 @@ class CustomerProfileScreen extends StatelessWidget {
             width: double.infinity,
             child: ElevatedButton.icon(
               onPressed: () {
-                _comingSoon(context, 'Edit Profile');
+                _openEditProfile();
               },
               icon: const Icon(Icons.edit_outlined),
               label: const Text('Edit Profile'),
@@ -147,15 +191,6 @@ class CustomerProfileScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
         ],
-      ),
-    );
-  }
-
-  static void _comingSoon(BuildContext context, String title) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$title coming soon'),
-        duration: const Duration(seconds: 2),
       ),
     );
   }

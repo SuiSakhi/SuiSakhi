@@ -7,6 +7,7 @@ import 'screens/profile/profile_selection_screen.dart';
 import 'screens/profile/customer_account_center_screen.dart';
 import 'screens/profile/customer_addresses_screen.dart';
 import 'screens/profile/customer_profile_screen.dart';
+import 'screens/profile/customer_edit_profile_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/onboarding/profile_setup_screen.dart';
@@ -112,6 +113,10 @@ final _router = GoRouter(
     GoRoute(
       path: '/customer-profile',
       builder: (ctx, state) => const CustomerProfileScreen(),
+    ),
+    GoRoute(
+      path: '/customer-edit-profile',
+      builder: (ctx, state) => const CustomerEditProfileScreen(),
     ),
     GoRoute(
       path: '/customer-addresses',

@@ -406,6 +406,9 @@ class _LoginScreenState extends State<LoginScreen> {
     }
 
     // Step 4: Save final profile
+    // Preserve all existing customer profile fields loaded from Firestore.
+    // Important: Do not lose DOB, height, weight, fit preference, language,
+    // and notification preferences during login role resolution.
     AppState.instance.setProfile(UserProfile(
       name: _resolvedProfileDisplayName(
         user: user,
@@ -413,14 +416,29 @@ class _LoginScreenState extends State<LoginScreen> {
         override: displayNameOverride,
         existing: existing,
       ),
+      gender: existing?.gender ?? Gender.female,
+      age: existing?.age ?? 0,
+      role: finalRole,
+      avatarPath: existing?.avatarPath,
       email: ownerEnrollmentEmail ??
           existing?.email ??
           email ??
           user.email,
       photoUrl: existing?.photoUrl ?? user.photoURL,
-      age: existing?.age ?? 0,
-      role: finalRole,
+
+      // Preserve new customer profile fields.
+      dateOfBirth: existing?.dateOfBirth,
+      heightCm: existing?.heightCm,
+      weightKg: existing?.weightKg,
+      fitPreference: existing?.fitPreference,
+      preferredLanguage: existing?.preferredLanguage ?? 'English',
+
+      // Preserve notification preferences.
+      notifySms: existing?.notifySms ?? true,
       notifyWhatsApp: existing?.notifyWhatsApp ?? true,
+      notifyApp: existing?.notifyApp ?? true,
+      notifyEmail: existing?.notifyEmail ?? false,
+
       payoutUpiId: existing?.payoutUpiId,
       deliveryAddress: existing?.deliveryAddress,
     ));
@@ -503,6 +521,8 @@ if (navCtx != null && navCtx.mounted) {
         final profiles =
             await AppState.instance.fetchActiveProfilesForAccount(accountId);
 
+        debugPrint('SuiSakhi active profile count: ${profiles.length}');    
+/*
         debugPrint(
           'SuiSakhi profiles found for account $accountId: ${profiles.length}',
         );
@@ -512,7 +532,7 @@ if (navCtx != null && navCtx.mounted) {
             'Profile: role=${p['role']} displayName=${p['displayName']} shopName=${p['shopName']} status=${p['status']}',
           );
         }
-
+*/
         if (profiles.length > 1 && navCtx.mounted) {
           final selectedProfile =
               await Navigator.of(navCtx, rootNavigator: true)

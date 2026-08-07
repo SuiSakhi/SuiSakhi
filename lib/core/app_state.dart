@@ -108,6 +108,22 @@ class AppState extends ChangeNotifier {
           name: data['name'] ?? '',
           email: data['email'],
           photoUrl: data['photoUrl'],
+          dateOfBirth: data['dateOfBirth'] as String?,
+          heightCm: data['heightCm'] is num
+              ? (data['heightCm'] as num).toDouble()
+              : null,
+          weightKg: data['weightKg'] is num
+              ? (data['weightKg'] as num).toDouble()
+              : null,
+          fitPreference: data['fitPreference'] as String?,
+          preferredLanguage:
+              (data['preferredLanguage'] as String?)?.trim().isNotEmpty == true
+                  ? data['preferredLanguage'] as String
+                  : 'English',
+          notifySms: data['notifySms'] is bool ? data['notifySms'] as bool : true,
+          notifyApp: data['notifyApp'] is bool ? data['notifyApp'] as bool : true,
+          notifyEmail:
+              data['notifyEmail'] is bool ? data['notifyEmail'] as bool : false,
           age: data['age'],
           role: UserRole.values.firstWhere(
             (r) => r.name == (data['role'] ?? 'customer'),
@@ -272,6 +288,18 @@ class AppState extends ChangeNotifier {
       'role': _profile!.role.name,
       'setupComplete': _hasCompletedSetup,
       'measurementUnit': _measurementUnit.storageName,
+      'dateOfBirth': (_profile!.dateOfBirth?.trim().isNotEmpty == true)
+          ? _profile!.dateOfBirth!.trim()
+          : FieldValue.delete(),
+      'heightCm': _profile!.heightCm ?? FieldValue.delete(),
+      'weightKg': _profile!.weightKg ?? FieldValue.delete(),
+      'fitPreference': (_profile!.fitPreference?.trim().isNotEmpty == true)
+          ? _profile!.fitPreference!.trim()
+          : FieldValue.delete(),
+      'preferredLanguage': _profile!.preferredLanguage,
+      'notifySms': _profile!.notifySms,
+      'notifyApp': _profile!.notifyApp,
+      'notifyEmail': _profile!.notifyEmail,
       'notifyWhatsApp': _profile!.notifyWhatsApp,
       'payoutUpiId': (_profile!.payoutUpiId?.trim().isNotEmpty == true)
           ? _profile!.payoutUpiId!.trim()
@@ -282,6 +310,112 @@ class AppState extends ChangeNotifier {
     }, SetOptions(merge: true));
     await syncPhoneRegistryForCurrentUser();
   }
+  Future<void> updateCustomerBasicProfile({
+    required String name,
+    String? email,
+    String? dateOfBirth,
+    double? heightCm,
+    double? weightKg,
+    String? fitPreference,
+    String? preferredLanguage,
+    bool? notifySms,
+    bool? notifyWhatsApp,
+    bool? notifyApp,
+    bool? notifyEmail,
+  }) async {
+  final uid = _auth.currentUser?.uid;
+  if (uid == null) return;
+
+  final current = _profile;
+
+  final updatedProfile = UserProfile(
+    name: name.trim(),
+    gender: current?.gender ?? Gender.female,
+    age: current?.age ?? 0,
+    role: current?.role ?? UserRole.customer,
+    avatarPath: current?.avatarPath,
+    email: email?.trim().isNotEmpty == true ? email!.trim() : null,
+    photoUrl: current?.photoUrl,
+    dateOfBirth:
+        dateOfBirth?.trim().isNotEmpty == true ? dateOfBirth!.trim() : null,
+    heightCm: heightCm,
+    weightKg: weightKg,
+    fitPreference:
+        fitPreference?.trim().isNotEmpty == true ? fitPreference!.trim() : null,
+    preferredLanguage:
+        preferredLanguage?.trim().isNotEmpty == true
+            ? preferredLanguage!.trim()
+            : current?.preferredLanguage ?? 'English',
+    notifySms: notifySms ?? current?.notifySms ?? true,
+    notifyWhatsApp: notifyWhatsApp ?? current?.notifyWhatsApp ?? true,
+    notifyApp: notifyApp ?? current?.notifyApp ?? true,
+    notifyEmail: notifyEmail ?? current?.notifyEmail ?? false,
+    payoutUpiId: current?.payoutUpiId,
+    deliveryAddress: current?.deliveryAddress,
+  );
+
+  setProfile(updatedProfile);
+
+  await _db.collection('users').doc(uid).set({
+    'name': updatedProfile.name,
+    'email': updatedProfile.email ?? FieldValue.delete(),
+    'dateOfBirth': updatedProfile.dateOfBirth ?? FieldValue.delete(),
+    'heightCm': updatedProfile.heightCm ?? FieldValue.delete(),
+    'weightKg': updatedProfile.weightKg ?? FieldValue.delete(),
+    'fitPreference': updatedProfile.fitPreference ?? FieldValue.delete(),
+    'preferredLanguage': updatedProfile.preferredLanguage,
+    'notifySms': updatedProfile.notifySms,
+    'notifyWhatsApp': updatedProfile.notifyWhatsApp,
+    'notifyApp': updatedProfile.notifyApp,
+    'notifyEmail': updatedProfile.notifyEmail,
+    'updatedAt': FieldValue.serverTimestamp(),
+  }, SetOptions(merge: true));
+
+  final phone = _auth.currentUser?.phoneNumber;
+  if (phone != null && phone.trim().isNotEmpty) {
+    final accountId = await fetchAccountIdForMobile(phone.trim());
+
+    if (accountId != null && accountId.isNotEmpty) {
+      final profiles = await fetchActiveProfilesForAccount(accountId);
+
+      Map<String, dynamic>? customerProfile;
+      for (final profile in profiles) {
+        final role = (profile['role'] ?? '').toString();
+        if (role == 'customer') {
+          customerProfile = profile;
+          break;
+        }
+      }
+
+      final customerProfileId =
+          customerProfile?['profileId']?.toString() ??
+              customerProfile?['docId']?.toString();
+
+      if (customerProfileId != null && customerProfileId.trim().isNotEmpty) {
+        await _db
+            .collection('accounts')
+            .doc(accountId)
+            .collection('profiles')
+            .doc(customerProfileId)
+            .set({
+          'displayName': updatedProfile.name,
+          'name': updatedProfile.name,
+          'email': updatedProfile.email ?? FieldValue.delete(),
+          'dateOfBirth': updatedProfile.dateOfBirth ?? FieldValue.delete(),
+          'heightCm': updatedProfile.heightCm ?? FieldValue.delete(),
+          'weightKg': updatedProfile.weightKg ?? FieldValue.delete(),
+          'fitPreference': updatedProfile.fitPreference ?? FieldValue.delete(),
+          'preferredLanguage': updatedProfile.preferredLanguage,
+          'notifySms': updatedProfile.notifySms,
+          'notifyWhatsApp': updatedProfile.notifyWhatsApp,
+          'notifyApp': updatedProfile.notifyApp,
+          'notifyEmail': updatedProfile.notifyEmail,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
+    }
+  }
+}
   /// Firestore-safe mobile lookup id.
   /// Example: +919876543210 -> m_919876543210
   static String mobileAccountDocId(String e164) {

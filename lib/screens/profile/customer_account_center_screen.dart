@@ -6,7 +6,6 @@ import '../../core/app_state.dart';
 
 class CustomerAccountCenterScreen extends StatelessWidget {
   const CustomerAccountCenterScreen({super.key});
-  static const Color _primaryColor = Color(0xFF7B3FB2);
 
   @override
   Widget build(BuildContext context) {
@@ -45,7 +44,7 @@ class CustomerAccountCenterScreen extends StatelessWidget {
             icon: Icons.edit_outlined,
             title: 'Edit Profile',
             subtitle: 'Update name, photo and preferences',
-            onTap: () => _comingSoon(context, 'Edit Profile'),
+            onTap: () => context.push('/customer-edit-profile'),
           ),
           _MenuItem(
             icon: Icons.family_restroom,
@@ -189,7 +188,7 @@ class _ProfileHeader extends StatelessWidget {
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(22),
         boxShadow: const [
           BoxShadow(
             color: Color(0x12000000),
@@ -201,15 +200,14 @@ class _ProfileHeader extends StatelessWidget {
       child: Row(
         children: [
           CircleAvatar(
-            radius: 34,
-            backgroundColor: 
-              CustomerAccountCenterScreen._primaryColor.withOpacity(0.12),
+            radius: 36,
+            backgroundColor: const Color(0xFFF3EAFB),
             child: Text(
               initial,
-              style: TextStyle(
-                color: CustomerAccountCenterScreen._primaryColor,
-                fontSize: 26,
-                fontWeight: FontWeight.bold,
+              style: const TextStyle(
+                color: Color(0xFF7B3FB2),
+                fontSize: 28,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -221,16 +219,18 @@ class _ProfileHeader extends StatelessWidget {
                 Text(
                   displayName,
                   style: const TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
                   ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  phone.isNotEmpty ? phone : 'Customer Profile',
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontSize: 14,
+                  phone.isEmpty ? 'Mobile not available' : phone,
+                  style: const TextStyle(
+                    color: Colors.black54,
+                    fontSize: 13,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -240,14 +240,14 @@ class _ProfileHeader extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: Colors.green.shade50,
-                    borderRadius: BorderRadius.circular(20),
+                    color: const Color(0xFFF3EAFB),
+                    borderRadius: BorderRadius.circular(18),
                   ),
-                  child: Text(
-                    'Default Customer',
+                  child: const Text(
+                    'Customer Profile',
                     style: TextStyle(
-                      color: Colors.green.shade700,
-                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF7B3FB2),
+                      fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
                   ),
@@ -301,15 +301,17 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = isDestructive
+    final itemColor = isDestructive
         ? Colors.red
-        : CustomerAccountCenterScreen._primaryColor;
-    final titleColor = isDestructive ? Colors.red : Colors.black87;
+        : const Color(0xFF7B3FB2);
+
+    final iconBackgroundColor = isDestructive
+        ? const Color(0xFFFFEBEE)
+        : const Color(0xFFF3EAFB);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: const [
           BoxShadow(
@@ -319,21 +321,34 @@ class _MenuItem extends StatelessWidget {
           ),
         ],
       ),
-      child: ListTile(
-        leading: CircleAvatar(
-          backgroundColor: iconColor.withOpacity(0.10),
-          child: Icon(icon, color: iconColor),
-        ),
-        title: Text(
-          title,
-          style: TextStyle(
-            color: titleColor,
-            fontWeight: FontWeight.w700,
+      child: Material(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        child: ListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
+          leading: CircleAvatar(
+            backgroundColor: iconBackgroundColor,
+            child: Icon(
+              icon,
+              color: itemColor,
+            ),
+          ),
+          title: Text(
+            title,
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+              color: isDestructive ? Colors.red : Colors.black87,
+            ),
+          ),
+          subtitle: Text(subtitle),
+          trailing: Icon(
+            Icons.chevron_right,
+            color: isDestructive ? Colors.red : Colors.black45,
+          ),
+          onTap: onTap,
         ),
-        subtitle: Text(subtitle),
-        trailing: const Icon(Icons.chevron_right),
-        onTap: onTap,
       ),
     );
   }

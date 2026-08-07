@@ -9,6 +9,14 @@ class UserProfile {
   final UserRole role;
   final String? avatarPath;
   final String? email;
+  final String? dateOfBirth; // dd/mm/yyyy
+  final double? heightCm;
+  final double? weightKg;
+  final String? fitPreference;
+  final String preferredLanguage;
+  final bool notifySms;
+  final bool notifyApp;
+  final bool notifyEmail;
   final String? photoUrl;
   /// Order / status pings via WhatsApp Cloud API (requires backend + Meta template).
   final bool notifyWhatsApp;
@@ -25,7 +33,15 @@ class UserProfile {
     this.avatarPath,
     this.email,
     this.photoUrl,
+    this.dateOfBirth,
+    this.heightCm,
+    this.weightKg,
+    this.fitPreference,
+    this.preferredLanguage = 'English',
+    this.notifySms = true,
     this.notifyWhatsApp = true,
+    this.notifyApp = true,
+    this.notifyEmail = false,
     this.payoutUpiId,
     this.deliveryAddress,
   });
