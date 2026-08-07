@@ -39,7 +39,7 @@ class CustomerAccountCenterScreen extends StatelessWidget {
             icon: Icons.person_outline,
             title: 'View Profile',
             subtitle: 'See your customer profile details',
-            onTap: () => _comingSoon(context, 'View Profile'),
+            onTap: () => context.push('/customer-profile'),
           ),
           _MenuItem(
             icon: Icons.edit_outlined,
