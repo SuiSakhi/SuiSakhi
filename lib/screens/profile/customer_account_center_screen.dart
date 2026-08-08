@@ -50,7 +50,7 @@ class CustomerAccountCenterScreen extends StatelessWidget {
             icon: Icons.family_restroom,
             title: 'Family Members',
             subtitle: 'Manage family profiles and measurements',
-            onTap: () => _comingSoon(context, 'Family Members'),
+            onTap: () => context.push('/family-members'),
           ),
 
           const SizedBox(height: 16),
