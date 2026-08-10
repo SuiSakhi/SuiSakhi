@@ -1,4 +1,8 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+
+import '../../core/app_state.dart';
 
 class CustomerAddressesScreen extends StatefulWidget {
   const CustomerAddressesScreen({super.key});
@@ -12,39 +16,99 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
   static const Color _primaryColor = Color(0xFF7B3FB2);
   static const Color _backgroundColor = Color(0xFFF8F5FC);
 
-  final List<_CustomerAddress> _addresses = [
-    const _CustomerAddress(
-      addressId: 'sample-home',
-      addressType: 'Home',
-      name: 'Sample Customer',
-      mobileNumber: '+91 XXXXX XXXXX',
-      addressLine1: 'Flat No. 101, Sample Residency',
-      addressLine2: 'Near Main Gate',
-      landmark: 'Opposite Society Garden',
-      city: 'Pune',
-      state: 'Maharashtra',
-      pincode: '411045',
-      isDefault: true,
-    ),
-    const _CustomerAddress(
-      addressId: 'sample-office',
-      addressType: 'Office',
-      name: 'Sample Customer',
-      mobileNumber: '+91 XXXXX XXXXX',
-      addressLine1: 'Office Address',
-      addressLine2: 'Hinjewadi Phase 1',
-      landmark: 'Near IT Park',
-      city: 'Pune',
-      state: 'Maharashtra',
-      pincode: '411057',
-      isDefault: false,
-    ),
-  ];
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  final List<_CustomerAddress> _addresses = [];
+
+  bool _loading = true;
+  String? _error;
+  String? _accountId;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAddresses();
+  }
+
+  Future<void> _loadAddresses() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+
+      if (phone == null || phone.trim().isEmpty) {
+        setState(() {
+          _error = 'Unable to load account. Please sign in again.';
+          _loading = false;
+        });
+        return;
+      }
+
+      final accountId =
+          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+
+      if (accountId == null || accountId.isEmpty) {
+        setState(() {
+          _error = 'Unable to find account for this mobile number.';
+          _loading = false;
+        });
+        return;
+      }
+
+      final snap = await _db
+          .collection('accounts')
+          .doc(accountId)
+          .collection('addresses')
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final addresses = snap.docs.map((doc) {
+        return _CustomerAddress.fromMap(
+          doc.id,
+          doc.data(),
+        );
+      }).toList();
+
+      addresses.sort((a, b) {
+        if (a.isDefault == b.isDefault) {
+          return a.addressType.compareTo(b.addressType);
+        }
+        return a.isDefault ? -1 : 1;
+      });
+
+      setState(() {
+        _accountId = accountId;
+        _addresses
+          ..clear()
+          ..addAll(addresses);
+        _loading = false;
+      });
+    } catch (_) {
+      setState(() {
+        _error = 'Unable to load addresses. Please try again.';
+        _loading = false;
+      });
+    }
+  }
 
   Future<void> _openAddressForm({
     _CustomerAddress? existingAddress,
     int? editIndex,
   }) async {
+    final accountId = _accountId;
+
+    if (accountId == null || accountId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save address. Account not loaded.'),
+        ),
+      );
+      return;
+    }
+
     final result = await showModalBottomSheet<_CustomerAddress>(
       context: context,
       isScrollControlled: true,
@@ -62,47 +126,143 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
 
     if (!mounted || result == null) return;
 
-    setState(() {
+    try {
+      final addressesRef = _db
+          .collection('accounts')
+          .doc(accountId)
+          .collection('addresses');
+
       final shouldMakeDefault = result.isDefault || _addresses.isEmpty;
 
       if (shouldMakeDefault) {
-        for (var i = 0; i < _addresses.length; i++) {
-          _addresses[i] = _addresses[i].copyWith(isDefault: false);
+        final activeSnap =
+            await addressesRef.where('status', isEqualTo: 'active').get();
+
+        final batch = _db.batch();
+
+        for (final doc in activeSnap.docs) {
+          batch.update(doc.reference, {
+            'isDefault': false,
+            'updatedAt': FieldValue.serverTimestamp(),
+          });
         }
+
+        await batch.commit();
       }
 
-      final addressToSave = result.copyWith(
-        isDefault: shouldMakeDefault,
-      );
+      if (existingAddress != null) {
+        final addressToSave = result.copyWith(
+          addressId: existingAddress.addressId,
+          isDefault: shouldMakeDefault,
+        );
 
-      if (editIndex != null) {
-        _addresses[editIndex] = addressToSave;
+        await addressesRef.doc(existingAddress.addressId).set(
+              addressToSave.toMap(),
+              SetOptions(merge: true),
+            );
       } else {
-        _addresses.add(addressToSave);
+        final ref = addressesRef.doc();
+
+        final addressToSave = result.copyWith(
+          addressId: ref.id,
+          isDefault: shouldMakeDefault,
+        );
+
+        await ref.set(
+          addressToSave.toMap(includeCreatedAt: true),
+        );
       }
 
-      if (!_addresses.any((a) => a.isDefault) && _addresses.isNotEmpty) {
-        _addresses[0] = _addresses[0].copyWith(isDefault: true);
-      }
-    });
+      await _loadAddresses();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            existingAddress == null
+                ? 'Address added successfully'
+                : 'Address updated successfully',
+          ),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save address. Please try again.'),
+        ),
+      );
+    }
   }
 
-  void _setDefaultAddress(int index) {
-    setState(() {
-      for (var i = 0; i < _addresses.length; i++) {
-        _addresses[i] = _addresses[i].copyWith(isDefault: i == index);
-      }
-    });
+  Future<void> _setDefaultAddress(int index) async {
+    final accountId = _accountId;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Default address updated'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+    if (accountId == null || accountId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update default address. Account not loaded.'),
+        ),
+      );
+      return;
+    }
+
+    try {
+      final selected = _addresses[index];
+
+      final addressesRef = _db
+          .collection('accounts')
+          .doc(accountId)
+          .collection('addresses');
+
+      final activeSnap =
+          await addressesRef.where('status', isEqualTo: 'active').get();
+
+      final batch = _db.batch();
+
+      for (final doc in activeSnap.docs) {
+        batch.update(doc.reference, {
+          'isDefault': doc.id == selected.addressId,
+          'updatedAt': FieldValue.serverTimestamp(),
+        });
+      }
+
+      await batch.commit();
+      await _loadAddresses();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Default address updated'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to update default address. Please try again.'),
+        ),
+      );
+    }
   }
 
   Future<void> _deleteAddress(int index) async {
+    final accountId = _accountId;
+
+    if (accountId == null || accountId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to delete address. Account not loaded.'),
+        ),
+      );
+      return;
+    }
+
     final address = _addresses[index];
 
     final shouldDelete = await showDialog<bool>(
@@ -132,21 +292,54 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
 
     if (!mounted || shouldDelete != true) return;
 
-    setState(() {
-      final wasDefault = _addresses[index].isDefault;
-      _addresses.removeAt(index);
+    try {
+      final addressesRef = _db
+          .collection('accounts')
+          .doc(accountId)
+          .collection('addresses');
 
-      if (wasDefault && _addresses.isNotEmpty) {
-        _addresses[0] = _addresses[0].copyWith(isDefault: true);
+      final wasDefault = address.isDefault;
+
+      await addressesRef.doc(address.addressId).set(
+        {
+          'status': 'inactive',
+          'isDefault': false,
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      await _loadAddresses();
+
+      if (wasDefault && _addresses.isNotEmpty && !_addresses.any((a) => a.isDefault)) {
+        await addressesRef.doc(_addresses.first.addressId).set(
+          {
+            'isDefault': true,
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+
+        await _loadAddresses();
       }
-    });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Address deleted'),
-        duration: Duration(seconds: 2),
-      ),
-    );
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Address deleted'),
+          duration: Duration(seconds: 2),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to delete address. Please try again.'),
+        ),
+      );
+    }
   }
 
   @override
@@ -159,51 +352,67 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
         backgroundColor: _backgroundColor,
         elevation: 0,
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          const _InfoCard(),
-          const SizedBox(height: 20),
-          if (_addresses.isEmpty)
-            _EmptyAddressState(
-              onAddAddress: () => _openAddressForm(),
-            )
-          else ...[
-            Row(
-              children: [
-                const Expanded(
-                  child: Text(
-                    'Saved Addresses',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : _error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      _error!,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.black54,
+                      ),
                     ),
                   ),
-                ),
-                TextButton.icon(
-                  onPressed: () => _openAddressForm(),
-                  icon: const Icon(Icons.add_location_alt_outlined),
-                  label: const Text('Add New'),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            for (var i = 0; i < _addresses.length; i++)
-              _AddressCard(
-                address: _addresses[i],
-                onEdit: () {
-                  _openAddressForm(
-                    existingAddress: _addresses[i],
-                    editIndex: i,
-                  );
-                },
-                onSetDefault: () => _setDefaultAddress(i),
-                onDelete: () => _deleteAddress(i),
-              ),
-            const SizedBox(height: 86),
-          ],
-        ],
-      ),
+                )
+                : ListView(
+                    padding: const EdgeInsets.all(16),
+                    children: [
+                      const _InfoCard(),
+                      const SizedBox(height: 20),
+                      if (_addresses.isEmpty)
+                        _EmptyAddressState(
+                          onAddAddress: () => _openAddressForm(),
+                        )
+                      else ...[
+                        Row(
+                          children: [
+                            const Expanded(
+                              child: Text(
+                                'Saved Addresses',
+                                style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            TextButton.icon(
+                              onPressed: () => _openAddressForm(),
+                              icon: const Icon(Icons.add_location_alt_outlined),
+                              label: const Text('Add New'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        for (var i = 0; i < _addresses.length; i++)
+                          _AddressCard(
+                            address: _addresses[i],
+                            onEdit: () {
+                              _openAddressForm(
+                                existingAddress: _addresses[i],
+                                editIndex: i,
+                              );
+                            },
+                            onSetDefault: () => _setDefaultAddress(i),
+                            onDelete: () => _deleteAddress(i),
+                          ),
+                        const SizedBox(height: 86),
+                      ],
+                    ],
+                  ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _primaryColor,
         foregroundColor: Colors.white,
@@ -269,6 +478,44 @@ class _CustomerAddress {
       isDefault: isDefault ?? this.isDefault,
     );
   }
+    Map<String, dynamic> toMap({bool includeCreatedAt = false}) {
+      return {
+        'addressId': addressId,
+        'addressType': addressType,
+        'name': name,
+        'mobileNumber': mobileNumber,
+        'addressLine1': addressLine1,
+        'addressLine2': addressLine2,
+        'landmark': landmark,
+        'city': city,
+        'state': state,
+        'pincode': pincode,
+        'isDefault': isDefault,
+        'status': 'active',
+        if (includeCreatedAt) 'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+    }
+    
+    factory _CustomerAddress.fromMap(
+    String id,
+    Map<String, dynamic> data,
+  ) {
+    return _CustomerAddress(
+      addressId: data['addressId']?.toString() ?? id,
+      addressType: data['addressType']?.toString() ?? 'Home',
+      name: data['name']?.toString() ?? '',
+      mobileNumber: data['mobileNumber']?.toString() ?? '',
+      addressLine1: data['addressLine1']?.toString() ?? '',
+      addressLine2: data['addressLine2']?.toString() ?? '',
+      landmark: data['landmark']?.toString() ?? '',
+      city: data['city']?.toString() ?? '',
+      state: data['state']?.toString() ?? '',
+      pincode: data['pincode']?.toString() ?? '',
+      isDefault: data['isDefault'] == true,
+    );
+  }
+
 }
 
 class _AddressFormSheet extends StatefulWidget {
@@ -302,9 +549,6 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
 
   static const List<String> _addressTypes = [
     'Home',
-    'Office',
-    'Pickup',
-    'Delivery',
     'Other',
   ];
 
@@ -699,7 +943,7 @@ class _InfoCard extends StatelessWidget {
                 ),
                 SizedBox(height: 6),
                 Text(
-                  'Add and manage pickup, delivery, home or office addresses for tailoring services.',
+                  'Add Home or Other addresses for measurement, pickup, delivery, quick fix and partner services.',
                   style: TextStyle(
                     fontSize: 14,
                     color: Colors.black54,
