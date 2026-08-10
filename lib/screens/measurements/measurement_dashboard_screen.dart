@@ -58,9 +58,9 @@ class MeasurementDashboardScreen extends StatelessWidget {
                 _buildGrid(measurements, unit),
                 const SizedBox(height: 28),
                 PrimaryButton(
-                  label: 'Re-take Measurements',
-                  icon: Icons.camera_alt_rounded,
-                  onTap: () => context.push('/camera'),
+                  label: 'Start New Measurement',
+                  icon: Icons.add_circle_outline_rounded,
+                  onTap: () => context.push('/measurement-context'),
                 ),
                 const SizedBox(height: 12),
                 SecondaryButton(

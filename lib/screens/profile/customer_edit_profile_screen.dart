@@ -514,21 +514,27 @@ class _PreferenceSwitch extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: const Color(0xFFE6DDF1),
         ),
       ),
-      child: SwitchListTile(
-        title: Text(
-          title,
-          style: const TextStyle(fontWeight: FontWeight.w700),
+      child: Material(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        child: SwitchListTile(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            title,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Text(subtitle),
+          value: value,
+          activeThumbColor: AppColors.primary,
+          onChanged: onChanged,
         ),
-        subtitle: Text(subtitle),
-        value: value,
-        activeThumbColor: AppColors.primary,
-        onChanged: onChanged,
       ),
     );
   }

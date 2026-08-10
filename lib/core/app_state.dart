@@ -211,11 +211,19 @@ class AppState extends ChangeNotifier {
   String? get currentUserId => _auth.currentUser?.uid;
 
   /// Persists the six designer fields (cm) on `users/{uid}` for next login.
-  Future<void> saveDressDesignerMeasurements(Map<String, String> cmMap) async {
+  Future<void> saveDressDesignerMeasurements(
+    Map<String, String> cmMap, {
+    bool notify = true,
+  }) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
+
     _savedDressMeasurementsCm = Map<String, String>.from(cmMap);
-    notifyListeners();
+
+    if (notify) {
+      notifyListeners();
+    }
+
     try {
       await _db.collection('users').doc(uid).set(
         {'dressDesignerMeasurements': cmMap},

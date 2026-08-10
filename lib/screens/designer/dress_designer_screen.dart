@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -22,11 +21,19 @@ class DressDesignerScreen extends StatefulWidget {
     super.key,
     this.initialOccasionId,
     this.isKidsFlow = false,
+    this.initialClientName,
+    this.initialPersonId,
+    this.initialRelationship,
   });
 
   /// [OccasionCategory.name] from PRD Step 2, e.g. `dailyWear`.
   final String? initialOccasionId;
   final bool isKidsFlow;
+
+  /// Optional context passed from Measurement Context screen.
+  final String? initialClientName;
+  final String? initialPersonId;
+  final String? initialRelationship;
 
   @override
   State<DressDesignerScreen> createState() => _DressDesignerScreenState();
@@ -37,9 +44,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   String _selectedDressType = 'Kurti';
   bool _autoFillFromScan = true;
   late final _clientNameController = TextEditingController(
-    text: AppState.instance.displayName == 'Guest'
-        ? ''
-        : AppState.instance.displayName,
+    text: widget.initialClientName?.trim().isNotEmpty == true
+        ? widget.initialClientName!.trim()
+        : AppState.instance.displayName == 'Guest'
+            ? ''
+            : AppState.instance.displayName,
   );
   final _deliveryAddressController = TextEditingController();
   bool _aiLoading = false;
@@ -273,8 +282,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     AppState.instance.removeListener(_onAppMeasurementUnitChanged);
     AppState.instance.removeListener(_onAppMeasurementsFromAppState);
     if (AppState.instance.currentUserId != null) {
-      unawaited(AppState.instance
-          .saveDressDesignerMeasurements(_allMeasurementsCmForStorage()));
+      unawaited(
+        AppState.instance.saveDressDesignerMeasurements(
+          _allMeasurementsCmForStorage(),
+          notify: false,
+        ),
+      );
     }
     _clientNameController.dispose();
     _deliveryAddressController.dispose();
@@ -543,12 +556,6 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             ),
             const SizedBox(height: 12),
             SecondaryButton(
-              label: 'Send to Tailor',
-              icon: Icons.send_rounded,
-              onTap: () => _showSendDialog(context),
-            ),
-            const SizedBox(height: 12),
-            SecondaryButton(
               label: 'Save as Draft',
               icon: Icons.bookmark_border_rounded,
               onTap: () {},
@@ -659,6 +666,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildClientNameField() {
+    final relationship = widget.initialRelationship?.trim();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -672,53 +681,17 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             prefixIcon: Icon(Icons.person_outline_rounded),
           ),
         ),
+        if (relationship != null && relationship.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Measurement for: $relationship',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+            ),
+          ),
+        ],
       ],
     );
-  }
-
-  Future<void> _shareViaWhatsApp() async {
-    final client = _clientNameController.text.trim().isEmpty
-        ? 'Customer'
-        : _clientNameController.text.trim();
-
-    final u = AppState.instance.measurementUnit;
-    final measurements = _measurementFields.entries
-        .map((e) {
-          final t = e.value.text.trim();
-          if (t.isEmpty) return null;
-          final cm = MeasurementFormat.parseToCm(t, u);
-          final inch = MeasurementUnit.inch.fromCm(cm);
-          return '  • ${e.key}: ${cm.toStringAsFixed(1)} cm '
-              '(${inch.toStringAsFixed(1)} in)';
-        })
-        .whereType<String>()
-        .join('\n');
-
-    final message = '''
-*StitchSmart Measurements* 👗
-*Client:* $client
-*Dress Type:* $_selectedDressType
-*Fit:* $_selectedFit
-
-*Measurements:*
-$measurements
-
-${_composeDetailNotes().trim().isNotEmpty ? '*Notes:* ${_composeDetailNotes().trim()}' : ''}
-_Sent via StitchSmart App_
-''';
-
-    final encoded = Uri.encodeComponent(message);
-    final whatsappUrl = Uri.parse('https://wa.me/?text=$encoded');
-
-    if (await canLaunchUrl(whatsappUrl)) {
-      await launchUrl(whatsappUrl, mode: LaunchMode.externalApplication);
-    } else {
-      // Fallback: try plain sms/share
-      final smsUrl = Uri.parse('sms:?body=$encoded');
-      if (await canLaunchUrl(smsUrl)) {
-        await launchUrl(smsUrl);
-      }
-    }
   }
 
   Widget _buildDressTypeSelector() {
@@ -1639,87 +1612,8 @@ _Sent via StitchSmart App_
       ],
     );
   }
-
-  void _showSendDialog(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final viewInsets = MediaQuery.viewInsetsOf(ctx);
-        return Padding(
-          padding: EdgeInsets.only(bottom: viewInsets.bottom),
-          child: SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: AppColors.divider,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Icon(Icons.check_circle_rounded,
-                        color: AppColors.success, size: 56),
-                    const SizedBox(height: 16),
-                    Text('Ready to Send!', style: AppTextStyles.headlineLarge),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${_clientNameController.text.trim().isEmpty ? '' : '${_clientNameController.text.trim()}\'s '}$_selectedDressType measurements are ready.\nChoose how to send them:',
-                      style: AppTextStyles.bodyMedium,
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 24),
-                    _SendOption(
-                      icon: Icons.share_rounded,
-                      label: 'Share via WhatsApp / SMS',
-                      color: const Color(0xFF25D366),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        _shareViaWhatsApp();
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _SendOption(
-                      icon: Icons.storefront_rounded,
-                      label: 'Find a Tailor Nearby',
-                      color: AppColors.primary,
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        context.push('/orders');
-                      },
-                    ),
-                    const SizedBox(height: 10),
-                    _SendOption(
-                      icon: Icons.download_rounded,
-                      label: 'Download as PDF',
-                      color: AppColors.accent,
-                      onTap: () => Navigator.pop(ctx),
-                    ),
-                    const SizedBox(height: 8),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
 }
-
+//SUD change
 class _SmallIconBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -1738,47 +1632,6 @@ class _SmallIconBtn extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Icon(icon, size: 18, color: AppColors.textSecondary),
-      ),
-    );
-  }
-}
-
-class _SendOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _SendOption({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(width: 14),
-            Text(
-              label,
-              style: AppTextStyles.titleMedium.copyWith(color: color),
-            ),
-            const Spacer(),
-            Icon(Icons.arrow_forward_ios_rounded, color: color, size: 16),
-          ],
-        ),
       ),
     );
   }

@@ -30,6 +30,7 @@ import 'screens/owner/owner_design_templates_screen.dart';
 import 'screens/owner/rates_management_screen.dart';
 import 'screens/owner/owner_payout_settings_screen.dart';
 import 'screens/checkout/order_checkout_screen.dart';
+import 'screens/measurements/measurement_context_screen.dart';
 import 'screens/tailor/tailor_dashboard_screen.dart';
 import 'screens/profile/tailor_account_center_screen.dart' as tailor_account;
 import 'screens/delivery/delivery_dashboard_screen.dart';
@@ -173,10 +174,14 @@ final _router = GoRouter(
       path: '/delivery',
       builder: (ctx, state) => const DeliveryDashboardScreen(),
     ),
-    // ── Customer routes ───────────────────────────────────────────────────
+        // ── Customer routes ───────────────────────────────────────────────────
     GoRoute(
       path: '/measurements',
       builder: (ctx, state) => const MeasurementDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/measurement-context',
+      builder: (ctx, state) => const MeasurementContextScreen(),
     ),
     GoRoute(
       path: '/camera',
@@ -200,9 +205,17 @@ final _router = GoRouter(
       builder: (ctx, state) {
         final occasion = state.uri.queryParameters['occasion'];
         final kids = state.uri.queryParameters['kids'] == '1';
+
+        final clientName = state.uri.queryParameters['clientName'];
+        final personId = state.uri.queryParameters['personId'];
+        final relationship = state.uri.queryParameters['relationship'];
+
         return DressDesignerScreen(
           initialOccasionId: occasion,
           isKidsFlow: kids,
+          initialClientName: clientName,
+          initialPersonId: personId,
+          initialRelationship: relationship,
         );
       },
     ),

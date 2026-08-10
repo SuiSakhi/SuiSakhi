@@ -62,19 +62,74 @@ class PoseMeasurementService {
 
   /// Convert Android YUV420 (3-plane) to NV21 (Y + interleaved VU).
   Uint8List _yuv420toNv21(CameraImage image) {
-    final int yLength = image.planes[0].bytes.length;
-    final int uvLength = image.width * image.height ~/ 2;
-    final result = Uint8List(yLength + uvLength);
+    final width = image.width;
+    final height = image.height;
 
-    result.setAll(0, image.planes[0].bytes); // Y plane
+    final yPlane = image.planes[0];
+    final uPlane = image.planes[1];
+    final vPlane = image.planes[2];
 
-    int offset = yLength;
-    final uBytes = image.planes[1].bytes; // U
-    final vBytes = image.planes[2].bytes; // V
-    for (int i = 0; i < uBytes.length; i++) {
-      result[offset++] = vBytes[i]; // NV21 = VU interleaved
-      result[offset++] = uBytes[i];
+    final ySize = width * height;
+    final uvSize = width * height ~/ 2;
+    final result = Uint8List(ySize + uvSize);
+
+    var outputOffset = 0;
+
+    // Copy Y plane safely, respecting row stride.
+    for (var row = 0; row < height; row++) {
+      final inputOffset = row * yPlane.bytesPerRow;
+      final inputEnd = inputOffset + width;
+
+      if (inputOffset >= yPlane.bytes.length) {
+        break;
+      }
+
+      final safeEnd = inputEnd <= yPlane.bytes.length
+          ? inputEnd
+          : yPlane.bytes.length;
+
+      final rowBytes = safeEnd - inputOffset;
+
+      if (rowBytes > 0 && outputOffset + rowBytes <= result.length) {
+        result.setRange(
+          outputOffset,
+          outputOffset + rowBytes,
+          yPlane.bytes,
+          inputOffset,
+        );
+      }
+
+      outputOffset += width;
     }
+
+    // Convert chroma planes to NV21 safely: VU interleaved.
+    final uvHeight = height ~/ 2;
+    final uvWidth = width ~/ 2;
+
+    final uPixelStride = uPlane.bytesPerPixel ?? 1;
+    final vPixelStride = vPlane.bytesPerPixel ?? 1;
+
+    var uvOutputOffset = ySize;
+
+    for (var row = 0; row < uvHeight; row++) {
+      final uRowOffset = row * uPlane.bytesPerRow;
+      final vRowOffset = row * vPlane.bytesPerRow;
+
+      for (var col = 0; col < uvWidth; col++) {
+        final uIndex = uRowOffset + col * uPixelStride;
+        final vIndex = vRowOffset + col * vPixelStride;
+
+        if (uIndex >= uPlane.bytes.length ||
+            vIndex >= vPlane.bytes.length ||
+            uvOutputOffset + 1 >= result.length) {
+          continue;
+        }
+
+        result[uvOutputOffset++] = vPlane.bytes[vIndex];
+        result[uvOutputOffset++] = uPlane.bytes[uIndex];
+      }
+    }
+
     return result;
   }
 

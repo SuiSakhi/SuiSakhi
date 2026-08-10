@@ -39,8 +39,6 @@ enum OccasionCategory {
   partyWear,
   weddingBridal,
   festiveWear,
-  kidsSpecial,
-  schoolWear,
 }
 
 extension OccasionCategoryApi on OccasionCategory {
@@ -58,10 +56,6 @@ extension OccasionCategoryApi on OccasionCategory {
         return 'Wedding / Bridal';
       case OccasionCategory.festiveWear:
         return 'Festive Wear';
-      case OccasionCategory.kidsSpecial:
-        return 'Kids Special';
-      case OccasionCategory.schoolWear:
-        return 'School Wear';
     }
   }
 }
@@ -73,13 +67,12 @@ const List<OccasionCategory> kLadiesOccasions = [
   OccasionCategory.partyWear,
   OccasionCategory.weddingBridal,
   OccasionCategory.festiveWear,
-  OccasionCategory.kidsSpecial,
 ];
 
 /// PRD Step 2 — Kids row.
 const List<OccasionCategory> kKidsOccasions = [
   OccasionCategory.dailyWear,
-  OccasionCategory.schoolWear,
+  //OccasionCategory.schoolWear,
   OccasionCategory.partyWear,
   OccasionCategory.weddingBridal,
   OccasionCategory.festiveWear,
