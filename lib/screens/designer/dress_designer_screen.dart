@@ -330,19 +330,30 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     for (final key in _measurementFields.keys) {
       final raw = saved[key];
       final savedCm = raw != null ? double.tryParse(raw) : null;
-      final savedNonZero =
-          savedCm != null && savedCm.abs() > 1e-6;
+      final savedNonZero = savedCm != null && savedCm.abs() > 1e-6;
 
-      final double cm;
       if (savedNonZero) {
-        cm = savedCm;
-      } else if (useScan) {
-        final fromBody = _bodyCmForDesignerKey(key, bm);
-        cm = fromBody ?? 0.0;
-      } else {
-        cm = savedCm ?? 0.0;
+        setCm(key, savedCm);
+        continue;
       }
-      setCm(key, cm);
+
+      if (useScan) {
+        final fromBody = _bodyCmForDesignerKey(key, bm);
+
+        if (fromBody != null && fromBody > 0) {
+          setCm(key, fromBody);
+        } else {
+          _measurementFields[key]?.clear();
+        }
+
+        continue;
+      }
+
+      if (savedCm != null && savedCm > 0) {
+        setCm(key, savedCm);
+      } else {
+        _measurementFields[key]?.clear();
+      }
     }
 
     _fieldsUnit = u;

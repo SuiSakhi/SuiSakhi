@@ -45,6 +45,11 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
   // ── step state ──────────────────────────────────────────────────────────
   _ScanStep _step = _ScanStep.frontScanning;
 
+  String? _draftId;
+  String? _clientName;
+  String? _personId;
+  String? _relationship;
+
   // ── multi-angle scan storage ───────────────────────────────────────────
   Pose? _frontPose;
   double? _frontHeightCm;
@@ -95,6 +100,18 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
     } else if (state == AppLifecycleState.resumed && _isScanning) {
       _initCamera();
     }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final params = GoRouterState.of(context).uri.queryParameters;
+
+    _draftId = params['draftId'];
+    _clientName = params['clientName'];
+    _personId = params['personId'];
+    _relationship = params['relationship'];
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -1037,13 +1054,46 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
             SecondaryButton(
               label: 'Design a Dress Now',
               icon: Icons.design_services_rounded,
-              onTap: () => context.push('/designer'),
+              onTap: () {
+                final query = <String, String>{
+                  if (_draftId?.trim().isNotEmpty == true) 'draftId': _draftId!.trim(),
+                  if (_clientName?.trim().isNotEmpty == true)
+                    'clientName': _clientName!.trim(),
+                  if (_personId?.trim().isNotEmpty == true) 'personId': _personId!.trim(),
+                  if (_relationship?.trim().isNotEmpty == true)
+                    'relationship': _relationship!.trim(),
+                };
+
+                final uri = Uri(
+                  path: '/designer',
+                  queryParameters: query.isEmpty ? null : query,
+                );
+
+                context.push(uri.toString());
+              },
             ),
             const SizedBox(height: 12),
             SecondaryButton(
               label: 'View Full Measurements',
               icon: Icons.straighten_rounded,
-              onTap: () => context.push('/measurement-result'),
+              onTap: () {
+                final query = <String, String>{
+                  if (_draftId?.trim().isNotEmpty == true) 'draftId': _draftId!.trim(),
+                  if (_clientName?.trim().isNotEmpty == true)
+                    'clientName': _clientName!.trim(),
+                  if (_personId?.trim().isNotEmpty == true)
+                    'personId': _personId!.trim(),
+                  if (_relationship?.trim().isNotEmpty == true)
+                    'relationship': _relationship!.trim(),
+                };
+
+                final uri = Uri(
+                  path: '/measurement-result',
+                  queryParameters: query.isEmpty ? null : query,
+                );
+
+                context.push(uri.toString());
+              },
             ),
             const SizedBox(height: 12),
             TextButton(

@@ -9,6 +9,7 @@ import '../../services/claude_fit_advice_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_card.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
+import '../../services/measurement_draft_service.dart';
 
 class MeasurementResultScreen extends StatefulWidget {
   const MeasurementResultScreen({super.key});
@@ -21,6 +22,16 @@ class MeasurementResultScreen extends StatefulWidget {
 class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
   bool _aiLoading = false;
   FitAdviceResult? _aiResult;
+
+  String? _draftId;
+  String? _clientName;
+  String? _personId;
+  String? _relationship;
+
+  bool _estimateSaved = false;
+  bool _estimateSaveInProgress = false;
+  List<String> _validationIssues = [];
+  String? _confidenceLevel;
 
   Future<void> _loadAiTips(BodyMeasurements m) async {
     setState(() {
@@ -43,6 +54,12 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
         final m =
             AppState.instance.measurements ?? BodyMeasurements.sampleFemale;
         final unit = AppState.instance.measurementUnit;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            _saveAiEstimateIfNeeded(m);
+          }
+        });
+
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -75,6 +92,8 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                   ),
                 ),
                 const SizedBox(height: 16),
+                _buildAiEstimateWarning(),
+                const SizedBox(height: 16),
                 _buildMeasurementList(m, unit),
                 const SizedBox(height: 24),
                 _buildAiTipsCard(m),
@@ -82,21 +101,117 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                 _buildTips(),
                 const SizedBox(height: 28),
                 PrimaryButton(
-                  label: 'Save & Design a Dress',
+                  label: 'Review & Design a Dress',
                   icon: Icons.design_services_rounded,
-                  onTap: () => context.push('/designer'),
+                  onTap: () {
+                    final query = <String, String>{
+                      if (_draftId?.trim().isNotEmpty == true) 'draftId': _draftId!.trim(),
+                      if (_clientName?.trim().isNotEmpty == true)
+                        'clientName': _clientName!.trim(),
+                      if (_personId?.trim().isNotEmpty == true)
+                        'personId': _personId!.trim(),
+                      if (_relationship?.trim().isNotEmpty == true)
+                        'relationship': _relationship!.trim(),
+                    };
+
+                    final uri = Uri(
+                      path: '/designer',
+                      queryParameters: query.isEmpty ? null : query,
+                    );
+
+                    context.push(uri.toString());
+                  },
                 ),
                 const SizedBox(height: 12),
                 SecondaryButton(
                   label: 'Retake Measurements',
                   icon: Icons.refresh_rounded,
-                  onTap: () => context.push('/camera'),
+                  onTap: () {
+                    final query = <String, String>{
+                      if (_draftId?.trim().isNotEmpty == true) 'draftId': _draftId!.trim(),
+                      if (_clientName?.trim().isNotEmpty == true)
+                        'clientName': _clientName!.trim(),
+                      if (_personId?.trim().isNotEmpty == true)
+                        'personId': _personId!.trim(),
+                      if (_relationship?.trim().isNotEmpty == true)
+                        'relationship': _relationship!.trim(),
+                    };
+
+                    final uri = Uri(
+                      path: '/camera',
+                      queryParameters: query.isEmpty ? null : query,
+                    );
+
+                    context.push(uri.toString());
+                  },
                 ),
               ],
             ),
           ),
         );
       },
+    );
+  }
+    Widget _buildAiEstimateWarning() {
+    final confidence = _confidenceLevel ?? 'checking';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.secondary.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.secondary.withValues(alpha: 0.25),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                color: AppColors.secondary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'AI estimate requires review',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.secondary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'These values are AI estimates only. Please review and confirm before using them for stitching.',
+            style: AppTextStyles.bodySmall.copyWith(height: 1.4),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Confidence: $confidence',
+            style: AppTextStyles.bodySmall.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          if (_validationIssues.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ..._validationIssues.map(
+              (issue) => Padding(
+                padding: const EdgeInsets.only(top: 3),
+                child: Text(
+                  '• $issue',
+                  style: AppTextStyles.bodySmall.copyWith(height: 1.35),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -128,7 +243,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Uses your Claude key (Firestore config/api → claudeKey). General guidance only — confirm with a tape measure.',
+           'SuiSakhi fit guidance is general advice only. Please confirm key measurements before stitching.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
@@ -203,7 +318,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Measurement Accuracy', style: AppTextStyles.titleMedium),
+                Text('Scan Quality', style: AppTextStyles.titleMedium),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -230,7 +345,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Good lighting & clear pose detected',
+                  'Pose quality only. Measurements still require review.',
                   style: AppTextStyles.bodySmall,
                 ),
               ],
@@ -366,4 +481,65 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       ),
     );
   }
+
+  Map<String, double> _measurementValuesMap(BodyMeasurements m) {
+    return {
+      if (m.height != null) 'height': m.height!,
+      if (m.chest != null) 'chest': m.chest!,
+      if (m.waist != null) 'waist': m.waist!,
+      if (m.hips != null) 'hips': m.hips!,
+      if (m.shoulder != null) 'shoulder': m.shoulder!,
+      if (m.armLength != null) 'armLength': m.armLength!,
+      if (m.neck != null) 'neck': m.neck!,
+      if (m.thigh != null) 'thigh': m.thigh!,
+      if (m.inseam != null) 'inseam': m.inseam!,
+    };
+  }
+
+  Future<void> _saveAiEstimateIfNeeded(BodyMeasurements m) async {
+    if (_estimateSaved || _estimateSaveInProgress) return;
+
+    _estimateSaveInProgress = true;
+
+    final draftId = _draftId;
+    if (draftId == null || draftId.trim().isEmpty) return;
+
+    final values = _measurementValuesMap(m);
+
+    final profileHeight = AppState.instance.profile?.heightCm;
+
+    final issues = MeasurementDraftService.validateAiMeasurements(
+      values: values,
+      profileHeightCm: profileHeight,
+    );
+
+    final confidence = MeasurementDraftService.confidenceFromIssues(issues);
+
+    await MeasurementDraftService.saveAiEstimate(
+      draftId: draftId,
+      measurementValues: values,
+      validationIssues: issues,
+      confidenceLevel: confidence,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _estimateSaved = true;
+      _validationIssues = issues;
+      _confidenceLevel = confidence;
+    });
+  }
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final params = GoRouterState.of(context).uri.queryParameters;
+
+    _draftId ??= params['draftId'];
+    _clientName ??= params['clientName'];
+    _personId ??= params['personId'];
+    _relationship ??= params['relationship'];
+  }
+
 }
