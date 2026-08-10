@@ -27,6 +27,7 @@ class DressDesignerScreen extends StatefulWidget {
     this.initialClientName,
     this.initialPersonId,
     this.initialRelationship,
+    this.initialMeasurementDraftId,
   });
 
   /// [OccasionCategory.name] from PRD Step 2, e.g. `dailyWear`.
@@ -37,6 +38,7 @@ class DressDesignerScreen extends StatefulWidget {
   final String? initialClientName;
   final String? initialPersonId;
   final String? initialRelationship;
+  final String? initialMeasurementDraftId;
 
   @override
   State<DressDesignerScreen> createState() => _DressDesignerScreenState();
@@ -623,6 +625,16 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             const SizedBox(height: 24),
             _buildDesignLookSection(),
             const SizedBox(height: 24),
+            //SUD
+            if (widget.initialMeasurementDraftId?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Draft: ${widget.initialMeasurementDraftId}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                ),
+              ),
+            ],
             ListenableBuilder(
               listenable: AppState.instance,
               builder: (context, _) {
