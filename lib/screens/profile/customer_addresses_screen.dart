@@ -527,6 +527,7 @@ class _AddressFormSheet extends StatefulWidget {
 
   @override
   State<_AddressFormSheet> createState() => _AddressFormSheetState();
+
 }
 
 class _AddressFormSheetState extends State<_AddressFormSheet> {
@@ -551,6 +552,31 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
     'Home',
     'Other',
   ];
+  static const List<String> _maharashtraCities = [
+    'Pune',
+    'Mumbai',
+    'Nagpur',
+    'Nashik',
+    'Thane',
+    'Kolhapur',
+    'Aurangabad',
+    'Amravati',
+    'Solapur',
+    'Satara',
+    'Sangli',
+    'Jalgaon',
+    'Nanded',
+    'Akola',
+    'Latur',
+    'Ahmednagar',
+    'Wardha',
+    'Chandrapur',
+    'Yavatmal',
+    'Ratnagiri',
+    'Other',
+  ];
+
+  late String _selectedCity;
 
   bool get _isEditMode => widget.initialAddress != null;
 
@@ -561,13 +587,25 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
     final address = widget.initialAddress;
 
     _nameCtrl = TextEditingController(text: address?.name ?? '');
-    _mobileCtrl = TextEditingController(text: address?.mobileNumber ?? '');
+    _mobileCtrl = TextEditingController(
+        text: (address?.mobileNumber ?? '')
+            .replaceFirst('+91 ', ''),
+      );
     _line1Ctrl = TextEditingController(text: address?.addressLine1 ?? '');
     _line2Ctrl = TextEditingController(text: address?.addressLine2 ?? '');
     _landmarkCtrl = TextEditingController(text: address?.landmark ?? '');
     _cityCtrl = TextEditingController(text: address?.city ?? 'Pune');
     _stateCtrl = TextEditingController(text: address?.state ?? 'Maharashtra');
     _pincodeCtrl = TextEditingController(text: address?.pincode ?? '');
+     
+    final initialCity = address?.city ?? 'Pune';
+
+    _selectedCity = _maharashtraCities.contains(initialCity)
+        ? initialCity
+        : 'Other';
+
+    _cityCtrl.text = initialCity;
+    _stateCtrl.text = 'Maharashtra';
 
     _addressType = address?.addressType ?? 'Home';
     _isDefault = address?.isDefault ?? false;
@@ -724,27 +762,60 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                   validatorMessage: 'Please enter landmark',
                 ),
                 const SizedBox(height: 12),
-                Row(
+                Column(
                   children: [
-                    Expanded(
-                      child: _AddressTextField(
-                        controller: _cityCtrl,
-                        label: 'City',
-                        icon: Icons.location_city_outlined,
-                        validatorMessage: 'Please enter city',
+                    DropdownButtonFormField<String>(
+                      initialValue: _selectedCity,
+                      decoration: const InputDecoration(
+                        labelText: 'City',
+                        prefixIcon: Icon(Icons.location_city_outlined),
+                        border: OutlineInputBorder(),
                       ),
+                      items: _maharashtraCities
+                          .map(
+                            (city) => DropdownMenuItem<String>(
+                              value: city,
+                              child: Text(city),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (value) {
+                        if (value == null) return;
+
+                        setState(() {
+                          _selectedCity = value;
+
+                          if (value != 'Other') {
+                            _cityCtrl.text = value;
+                          } else {
+                            _cityCtrl.clear();
+                          }
+                        });
+                      },
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _AddressTextField(
-                        controller: _stateCtrl,
-                        label: 'State',
-                        icon: Icons.map_outlined,
-                        validatorMessage: 'Please enter state',
+
+                    const SizedBox(height: 12),
+
+                    TextFormField(
+                      controller: _stateCtrl,
+                      readOnly: true,
+                      decoration: const InputDecoration(
+                        labelText: 'State',
+                        prefixIcon: Icon(Icons.map_outlined),
+                        border: OutlineInputBorder(),
                       ),
                     ),
                   ],
                 ),
+                if (_selectedCity == 'Other') ...[
+                  const SizedBox(height: 12),
+                  _AddressTextField(
+                    controller: _cityCtrl,
+                    label: 'Enter City',
+                    icon: Icons.edit_location_alt_outlined,
+                    validatorMessage: 'Please enter city',
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _AddressTextField(
                   controller: _pincodeCtrl,
@@ -752,6 +823,19 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                   icon: Icons.pin_drop_outlined,
                   keyboardType: TextInputType.number,
                   validatorMessage: 'Please enter pincode',
+                  validator: (value) {
+                    final pincode = (value ?? '').trim();
+
+                    if (pincode.isEmpty) {
+                      return 'Please enter pincode';
+                    }
+
+                    if (!RegExp(r'^\d{6}$').hasMatch(pincode)) {
+                      return 'Enter valid 6-digit pincode';
+                    }
+
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 8),
                 SwitchListTile(
@@ -816,6 +900,7 @@ class _AddressTextField extends StatelessWidget {
   final IconData icon;
   final String validatorMessage;
   final TextInputType? keyboardType;
+  final String? Function(String?)? validator;
 
   const _AddressTextField({
     required this.controller,
@@ -823,6 +908,7 @@ class _AddressTextField extends StatelessWidget {
     required this.icon,
     required this.validatorMessage,
     this.keyboardType,
+    this.validator,
   });
 
   @override
@@ -836,12 +922,13 @@ class _AddressTextField extends StatelessWidget {
         prefixIcon: Icon(icon),
         border: const OutlineInputBorder(),
       ),
-      validator: (value) {
-        if (value == null || value.trim().isEmpty) {
-          return validatorMessage;
-        }
-        return null;
-      },
+      validator: validator ??
+          (value) {
+            if (value == null || value.trim().isEmpty) {
+              return validatorMessage;
+            }
+            return null;
+          },
     );
   }
 }
