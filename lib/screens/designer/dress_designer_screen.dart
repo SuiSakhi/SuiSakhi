@@ -2,6 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
@@ -43,6 +46,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   String? _occasionId;
   String _selectedDressType = 'Kurti';
   bool _autoFillFromScan = true;
+  //SUD
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  final List<_OrderPerson> _orderPeople = [];
+  String? _selectedOrderPersonId;
+  bool _loadingOrderPeople = true;
   late final _clientNameController = TextEditingController(
     text: widget.initialClientName?.trim().isNotEmpty == true
         ? widget.initialClientName!.trim()
@@ -130,10 +139,118 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         '${g.toRadixString(16).padLeft(2, '0')}'
         '${b.toRadixString(16).padLeft(2, '0')}';
   }
+  Future<void> _loadOrderPeople() async {
+    try {
+      final profile = AppState.instance.profile;
+      final customerName = profile?.name.trim().isNotEmpty == true
+          ? profile!.name.trim()
+          : AppState.instance.displayName;
 
+      final people = <_OrderPerson>[
+        _OrderPerson(
+          id: 'self',
+          name: customerName,
+          relationship: 'Self',
+          isSelf: true,
+        ),
+      ];
+
+      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+
+      if (phone != null && phone.trim().isNotEmpty) {
+        final accountId =
+            await AppState.instance.fetchAccountIdForMobile(phone.trim());
+
+        if (accountId != null && accountId.isNotEmpty) {
+          final profiles =
+              await AppState.instance.fetchActiveProfilesForAccount(accountId);
+
+          Map<String, dynamic>? customerProfile;
+          for (final p in profiles) {
+            final role = (p['role'] ?? '').toString();
+            if (role == 'customer') {
+              customerProfile = p;
+              break;
+            }
+          }
+
+          final customerProfileId =
+              customerProfile?['profileId']?.toString() ??
+                  customerProfile?['docId']?.toString();
+
+          if (customerProfileId != null &&
+              customerProfileId.trim().isNotEmpty) {
+            final familySnap = await _db
+                .collection('accounts')
+                .doc(accountId)
+                .collection('profiles')
+                .doc(customerProfileId)
+                .collection('family_members')
+                .where('status', isEqualTo: 'active')
+                .get();
+
+            for (final doc in familySnap.docs) {
+              final data = doc.data();
+
+              people.add(
+                _OrderPerson(
+                  id: doc.id,
+                  name: data['name']?.toString() ?? 'Family Member',
+                  relationship: data['relationship']?.toString() ?? 'Other',
+                  isSelf: false,
+                ),
+              );
+            }
+          }
+        }
+      }
+
+      String selectedId = 'self';
+
+      final initialPersonId = widget.initialPersonId?.trim();
+      final initialClientName = widget.initialClientName?.trim();
+
+      if (initialPersonId != null &&
+          initialPersonId.isNotEmpty &&
+          people.any((p) => p.id == initialPersonId)) {
+        selectedId = initialPersonId;
+      } else if (initialClientName != null && initialClientName.isNotEmpty) {
+        for (final p in people) {
+          if (p.name.trim().toLowerCase() ==
+              initialClientName.toLowerCase()) {
+            selectedId = p.id;
+            break;
+          }
+        }
+      }
+
+      final selectedPerson = people.firstWhere(
+        (p) => p.id == selectedId,
+        orElse: () => people.first,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _orderPeople
+          ..clear()
+          ..addAll(people);
+        _selectedOrderPersonId = selectedPerson.id;
+        _clientNameController.text = selectedPerson.name;
+        _loadingOrderPeople = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingOrderPeople = false;
+      });
+    }
+  }
   @override
   void initState() {
     super.initState();
+    _loadOrderPeople();
     _occasionId = widget.initialOccasionId ?? OccasionCategory.dailyWear.name;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -666,30 +783,80 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildClientNameField() {
-    final relationship = widget.initialRelationship?.trim();
+    if (_loadingOrderPeople) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Order For', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 8),
+          const LinearProgressIndicator(),
+        ],
+      );
+    }
+
+    if (_orderPeople.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Order For', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _clientNameController,
+            readOnly: true,
+            decoration: const InputDecoration(
+              hintText: 'Customer',
+              prefixIcon: Icon(Icons.person_outline_rounded),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final selectedId = _selectedOrderPersonId ?? _orderPeople.first.id;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Client Name', style: AppTextStyles.headlineMedium),
+        Text('Order For', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 8),
-        TextFormField(
-          controller: _clientNameController,
-          textCapitalization: TextCapitalization.words,
+        DropdownButtonFormField<String>(
+          initialValue: selectedId,
           decoration: const InputDecoration(
-            hintText: 'Enter client / customer name',
+            labelText: 'Select profile',
             prefixIcon: Icon(Icons.person_outline_rounded),
           ),
+          items: _orderPeople
+              .map(
+                (person) => DropdownMenuItem<String>(
+                  value: person.id,
+                  child: Text(
+                    '${person.name} (${person.relationship})',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value == null) return;
+
+            final selectedPerson = _orderPeople.firstWhere(
+              (person) => person.id == value,
+              orElse: () => _orderPeople.first,
+            );
+
+            setState(() {
+              _selectedOrderPersonId = selectedPerson.id;
+              _clientNameController.text = selectedPerson.name;
+            });
+          },
         ),
-        if (relationship != null && relationship.isNotEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Measurement for: $relationship',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+        const SizedBox(height: 6),
+        Text(
+          'This profile will be used for measurements and order history.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textHint,
           ),
-        ],
+        ),
       ],
     );
   }
@@ -1613,7 +1780,21 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 }
-//SUD change
+
+class _OrderPerson {
+  final String id;
+  final String name;
+  final String relationship;
+  final bool isSelf;
+
+  const _OrderPerson({
+    required this.id,
+    required this.name,
+    required this.relationship,
+    required this.isSelf,
+  });
+}
+
 class _SmallIconBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
