@@ -764,9 +764,26 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
     if (!mounted) return;
     setState(() => _placeOrderLoading = false);
+
     if (id != null) {
+      final measurementDraftId = widget.initialMeasurementDraftId?.trim();
+
+      if (measurementDraftId != null && measurementDraftId.isNotEmpty) {
+        unawaited(
+          _db.collection('measurements').doc(measurementDraftId).set(
+            {
+              'status': 'order_created',
+              'linkedOrderId': id,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          ),
+        );
+      }
+
       unawaited(AppState.instance
           .saveDressDesignerMeasurements(_allMeasurementsCmForStorage()));
+          
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
