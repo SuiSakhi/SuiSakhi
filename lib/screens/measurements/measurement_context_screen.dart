@@ -24,6 +24,9 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
 
   String? _accountId;
   String? _customerProfileId;
+  String? _initialPersonId;
+  String? _initialClientName;
+  String? _initialRelationship;
 
   final List<_MeasurementPerson> _people = [];
   _MeasurementPerson? _selectedPerson;
@@ -85,6 +88,17 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
   void initState() {
     super.initState();
     _loadPeople();
+  }
+  
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+
+    final params = GoRouterState.of(context).uri.queryParameters;
+
+    _initialPersonId ??= params['personId'];
+    _initialClientName ??= params['clientName'];
+    _initialRelationship ??= params['relationship'];
   }
 
   Future<void> _loadPeople() async {
@@ -175,6 +189,24 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         }
       }
 
+      final initialPersonId = _initialPersonId?.trim();
+      final initialClientName = _initialClientName?.trim();
+
+      _MeasurementPerson selectedPerson = people.first;
+
+      if (initialPersonId != null &&
+          initialPersonId.isNotEmpty &&
+          people.any((p) => p.id == initialPersonId)) {
+        selectedPerson = people.firstWhere((p) => p.id == initialPersonId);
+      } else if (initialClientName != null && initialClientName.isNotEmpty) {
+        for (final p in people) {
+          if (p.name.trim().toLowerCase() == initialClientName.toLowerCase()) {
+            selectedPerson = p;
+            break;
+          }
+        }
+      }
+
       setState(() {
         _accountId = accountId;
         _customerProfileId = customerProfileId;
@@ -182,7 +214,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         _people
           ..clear()
           ..addAll(people);
-        _selectedPerson = people.first;
+        _selectedPerson = selectedPerson;
         _loading = false;
       });
     } catch (_) {
@@ -210,25 +242,25 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
     if (accountId == null || customerProfileId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Unable to create measurement draft. Please try again.'),
+          content: Text('Unable to continue. Please try again.'),
         ),
       );
       return;
     }
 
-    final draftId = await MeasurementDraftService.createDraft(
-      accountId: accountId,
-      customerProfileId: customerProfileId,
-      personId: person.id,
-      personName: person.name,
-      relationship: person.relationship,
-      source: _selectedMethod,
-    );
-
-    if (!mounted) return;
-
     switch (_selectedMethod) {
       case 'ai_camera':
+        final draftId = await MeasurementDraftService.createDraft(
+          accountId: accountId,
+          customerProfileId: customerProfileId,
+          personId: person.id,
+          personName: person.name,
+          relationship: person.relationship,
+          source: _selectedMethod,
+        );
+
+        if (!mounted) return;
+
         context.push(
           '/camera'
           '?draftId=${Uri.encodeComponent(draftId)}'
@@ -239,10 +271,11 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         break;
 
       case 'design_existing':
+        if (!mounted) return;
+
         context.push(
           '/designer'
-          '?draftId=${Uri.encodeComponent(draftId)}'
-          '&clientName=${Uri.encodeComponent(person.name)}'
+          '?clientName=${Uri.encodeComponent(person.name)}'
           '&personId=${Uri.encodeComponent(person.id)}'
           '&relationship=${Uri.encodeComponent(person.relationship)}',
         );
@@ -284,7 +317,18 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
                     const _InfoCard(),
                     const SizedBox(height: 20),
 
-                    const _SectionTitle(title: 'Who is this measurement for?'),
+                    const _SectionTitle(title: 'Measurement For'),
+                    const Padding(
+                      padding: EdgeInsets.only(left: 4, bottom: 10),
+                      child: Text(
+                        'Select the person whose measurements you want to capture.',
+                        style: TextStyle(
+                          color: Colors.black54,
+                          fontSize: 13,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
                     for (final person in _people)
                       _PersonCard(
                         person: person,

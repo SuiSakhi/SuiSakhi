@@ -11,9 +11,38 @@ class MeasurementDraftService {
     required String relationship,
     required String source,
   }) async {
+    final activeSnap = await _db
+        .collection('measurements')
+        .where('accountId', isEqualTo: accountId)
+        .where('personId', isEqualTo: personId)
+        .get();
+
+    final batch = _db.batch();
+
+    for (final doc in activeSnap.docs) {
+      final data = doc.data();
+      final status = (data['status'] ?? '').toString();
+
+      final isActive = status == 'draft' ||
+          status == 'ai_estimated' ||
+          status == 'customer_review_required';
+
+      if (isActive) {
+        batch.set(
+          doc.reference,
+          {
+            'status': 'superseded',
+            'supersededAt': FieldValue.serverTimestamp(),
+            'updatedAt': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+    }
+
     final ref = _db.collection('measurements').doc();
 
-    await ref.set({
+    batch.set(ref, {
       'draftId': ref.id,
       'accountId': accountId,
       'customerProfileId': customerProfileId,
@@ -25,7 +54,9 @@ class MeasurementDraftService {
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-  
+
+    await batch.commit();
+
     return ref.id;
   }
     static Future<void> saveAiEstimate({

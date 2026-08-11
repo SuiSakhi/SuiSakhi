@@ -313,11 +313,20 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       String? selectedId;
 
       if (addresses.isNotEmpty) {
-        final defaultAddress = addresses.where((a) => a.isDefault).toList();
+        final existingSelectedId = _selectedDeliveryAddressId;
 
-        selectedId = defaultAddress.isNotEmpty
-            ? defaultAddress.first.addressId
-            : addresses.first.addressId;
+        final existingStillAvailable = existingSelectedId != null &&
+            addresses.any((address) => address.addressId == existingSelectedId);
+
+        if (existingStillAvailable) {
+          selectedId = existingSelectedId;
+        } else {
+          final defaultAddress = addresses.where((a) => a.isDefault).toList();
+
+          selectedId = defaultAddress.isNotEmpty
+              ? defaultAddress.first.addressId
+              : addresses.first.addressId;
+        }
       }
 
       final selectedAddress = selectedId == null
@@ -773,6 +782,20 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           _db.collection('measurements').doc(measurementDraftId).set(
             {
               'status': 'order_created',
+              'linkedOrderId': id,
+              'updatedAt': FieldValue.serverTimestamp(),
+            },
+            SetOptions(merge: true),
+          ),
+        );
+      }
+
+      if (_currentOrderDraftId != null &&
+          _currentOrderDraftId!.trim().isNotEmpty) {
+        unawaited(
+          _db.collection('order_drafts').doc(_currentOrderDraftId!.trim()).set(
+            {
+              'status': 'converted_to_order',
               'linkedOrderId': id,
               'updatedAt': FieldValue.serverTimestamp(),
             },

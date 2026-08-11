@@ -169,23 +169,17 @@ class MeasurementDashboardScreen extends StatefulWidget {
                   ...doc.data(),
                 })
             .where((data) {
-              final status = (data['status'] ?? '').toString();
-              final source = (data['source'] ?? '').toString();
+                final status = (data['status'] ?? '').toString();
+                final source = (data['source'] ?? '').toString();
 
-              final isActiveMeasurementStatus = status == 'draft' ||
-                  status == 'ai_estimated' ||
-                  status == 'customer_review_required';
+                final isActiveMeasurementStatus = status == 'draft' ||
+                    status == 'ai_estimated' ||
+                    status == 'customer_review_required';
 
-              final isRealMeasurementSource = source == 'ai_camera' ||
-                  source == 'manual' ||
-                  source == 'video_call' ||
-                  source == 'home_visit' ||
-                  source == 'nearest_tailor' ||
-                  source == 'old_dress' ||
-                  source == 'history';
+                final isCurrentlyResumableSource = source == 'ai_camera';
 
-              return isActiveMeasurementStatus && isRealMeasurementSource;
-            })
+                return isActiveMeasurementStatus && isCurrentlyResumableSource;
+              })
             .toList();
 
         activeDrafts.sort((a, b) {
@@ -218,8 +212,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
     return ListenableBuilder(
       listenable: AppState.instance,
       builder: (context, _) {
-        final measurements =
-            AppState.instance.measurements ?? BodyMeasurements.sampleFemale;
+        final measurements = AppState.instance.measurements;
         final unit = AppState.instance.measurementUnit;
 
         return Scaffold(
@@ -251,42 +244,63 @@ class MeasurementDashboardScreen extends StatefulWidget {
                 const SizedBox(height: 20),
                 _buildMeasurementDraftCard(context),
                 if (_latestDraft != null) const SizedBox(height: 20),
-                _buildMeasurementSummaryCard(measurements, unit),
-                              const SizedBox(height: 28),
-                Text('Body Measurements', style: AppTextStyles.headlineMedium),
-                const SizedBox(height: 4),
-                Text(
-                  'Last updated: Today · values shown in ${unit.abbrev} (with alternate)',
-                  style: AppTextStyles.bodySmall,
-                ),
-                const SizedBox(height: 16),
-                _buildGrid(measurements, unit),
-                const SizedBox(height: 28),
-                PrimaryButton(
-                  label: 'Start New Measurement',
-                  icon: Icons.add_circle_outline_rounded,
-                  onTap: () => context.push('/measurement-context'),
-                ),
-                const SizedBox(height: 12),
-                SecondaryButton(
-                  label: 'Design a Dress with These',
-                  icon: Icons.design_services_rounded,
-                  onTap: () {
-                    final person = _selectedPerson;
+                  if (measurements == null) ...[
+                    _buildNoMeasurementState(context),
+                    const SizedBox(height: 28),
+                  ] else ...[
+                    _buildMeasurementSummaryCard(measurements, unit),
+                    const SizedBox(height: 28),
+                    Text('Body Measurements', style: AppTextStyles.headlineMedium),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Last updated: Today · values shown in ${unit.abbrev} (with alternate)',
+                      style: AppTextStyles.bodySmall,
+                    ),
+                    const SizedBox(height: 16),
+                    _buildGrid(measurements, unit),
+                    const SizedBox(height: 28),
+                  ],
+                   PrimaryButton(
+                    label: 'Start New Measurement',
+                    icon: Icons.add_circle_outline_rounded,
+                    onTap: () {
+                      final person = _selectedPerson;
 
-                    if (person == null) {
-                      context.push('/designer');
-                      return;
-                    }
+                      if (person == null) {
+                        context.push('/measurement-context');
+                        return;
+                      }
 
-                    context.push(
-                      '/designer'
-                      '?clientName=${Uri.encodeComponent(person.name)}'
-                      '&personId=${Uri.encodeComponent(person.id)}'
-                      '&relationship=${Uri.encodeComponent(person.relationship)}',
-                    );
-                  },
-                ),
+                      context.push(
+                        '/measurement-context'
+                        '?clientName=${Uri.encodeComponent(person.name)}'
+                        '&personId=${Uri.encodeComponent(person.id)}'
+                        '&relationship=${Uri.encodeComponent(person.relationship)}',
+                      );
+                    },
+                  ),
+                  if (measurements != null) ...[
+                    const SizedBox(height: 12),
+                    SecondaryButton(
+                      label: 'Design a Dress with These',
+                      icon: Icons.design_services_rounded,
+                      onTap: () {
+                        final person = _selectedPerson;
+
+                        if (person == null) {
+                          context.push('/designer');
+                          return;
+                        }
+
+                        context.push(
+                          '/designer'
+                          '?clientName=${Uri.encodeComponent(person.name)}'
+                          '&personId=${Uri.encodeComponent(person.id)}'
+                          '&relationship=${Uri.encodeComponent(person.relationship)}',
+                        );
+                      },
+                    ),
+                  ],
               ],
             ),
           ),
@@ -529,6 +543,56 @@ class MeasurementDashboardScreen extends StatefulWidget {
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
         content: Text('Resume for this measurement method will be added next.'),
+      ),
+    );
+  }
+
+  Widget _buildNoMeasurementState(BuildContext context) {
+    final personName = _selectedPerson?.name ?? 'this person';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.straighten_outlined,
+                color: AppColors.primary,
+                size: 24,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'No measurements found',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'No saved measurements are available for $personName yet.',
+            style: AppTextStyles.bodyMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Start a new measurement using AI Camera or another supported measurement method before designing a dress.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+        ],
       ),
     );
   }

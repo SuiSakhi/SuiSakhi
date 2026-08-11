@@ -524,13 +524,6 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
       },
     );
 
-    nameController.dispose();
-    mobileController.dispose();
-    dobController.dispose();
-    heightController.dispose();
-    weightController.dispose();
-    notesController.dispose();
-
     if (result == true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -542,6 +535,17 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
         ),
       );
     }
+
+    // Delay disposal until bottom sheet close animation and final rebuild complete.
+    // This prevents "TextEditingController was used after being disposed".
+    Future<void>.delayed(const Duration(milliseconds: 600), () {
+      nameController.dispose();
+      mobileController.dispose();
+      dobController.dispose();
+      heightController.dispose();
+      weightController.dispose();
+      notesController.dispose();
+    });
   }
 
   Future<void> _deleteFamilyMember(
