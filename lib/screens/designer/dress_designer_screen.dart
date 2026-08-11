@@ -18,6 +18,7 @@ import '../../services/design_template_service.dart';
 import '../../services/order_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
+import '../../services/order_draft_service.dart';
 
 class DressDesignerScreen extends StatefulWidget {
   const DressDesignerScreen({
@@ -54,6 +55,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final List<_OrderPerson> _orderPeople = [];
   String? _selectedOrderPersonId;
   bool _loadingOrderPeople = true;
+  
+  final List<_DesignerAddress> _deliveryAddresses = [];
+  String? _selectedDeliveryAddressId;
+  bool _loadingDeliveryAddresses = true;
+  String? _deliveryAddressError;
+
   late final _clientNameController = TextEditingController(
     text: widget.initialClientName?.trim().isNotEmpty == true
         ? widget.initialClientName!.trim()
@@ -98,6 +105,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final _backDesignController = TextEditingController();
   final _marginController = TextEditingController();
   bool _placeOrderLoading = false;
+  bool _saveDraftLoading = false;
+  String? _currentOrderDraftId;
   /// PRD Step 11 — advance 30–50%.
   int _advancePercent = 40;
 
@@ -249,10 +258,249 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       });
     }
   }
+
+  Future<void> _loadDeliveryAddresses() async {
+    setState(() {
+      _loadingDeliveryAddresses = true;
+      _deliveryAddressError = null;
+    });
+
+    try {
+      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+
+      if (phone == null || phone.trim().isEmpty) {
+        setState(() {
+          _deliveryAddressError = 'Unable to load addresses. Please sign in again.';
+          _loadingDeliveryAddresses = false;
+        });
+        return;
+      }
+
+      final accountId =
+          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+
+      if (accountId == null || accountId.isEmpty) {
+        setState(() {
+          _deliveryAddressError = 'Unable to find account for saved addresses.';
+          _loadingDeliveryAddresses = false;
+        });
+        return;
+      }
+
+      final snap = await _db
+          .collection('accounts')
+          .doc(accountId)
+          .collection('addresses')
+          .where('status', isEqualTo: 'active')
+          .get();
+
+      final addresses = snap.docs
+          .map(
+            (doc) => _DesignerAddress.fromMap(
+              doc.id,
+              doc.data(),
+            ),
+          )
+          .toList();
+
+      addresses.sort((a, b) {
+        if (a.isDefault == b.isDefault) {
+          return a.addressType.compareTo(b.addressType);
+        }
+        return a.isDefault ? -1 : 1;
+      });
+
+      String? selectedId;
+
+      if (addresses.isNotEmpty) {
+        final defaultAddress = addresses.where((a) => a.isDefault).toList();
+
+        selectedId = defaultAddress.isNotEmpty
+            ? defaultAddress.first.addressId
+            : addresses.first.addressId;
+      }
+
+      final selectedAddress = selectedId == null
+          ? null
+          : addresses.firstWhere(
+              (a) => a.addressId == selectedId,
+              orElse: () => addresses.first,
+            );
+
+      setState(() {
+        _deliveryAddresses
+          ..clear()
+          ..addAll(addresses);
+
+        _selectedDeliveryAddressId = selectedId;
+        _deliveryAddressController.text =
+            selectedAddress?.formattedAddress ?? '';
+
+        _loadingDeliveryAddresses = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _deliveryAddressError = 'Unable to load saved addresses.';
+        _loadingDeliveryAddresses = false;
+      });
+    }
+  }
+
+  _OrderPerson? _selectedOrderPerson() {
+    if (_orderPeople.isEmpty) return null;
+
+    final selectedId = _selectedOrderPersonId ?? _orderPeople.first.id;
+
+    return _orderPeople.firstWhere(
+      (person) => person.id == selectedId,
+      orElse: () => _orderPeople.first,
+    );
+  }
+
+  Future<Map<String, String>?> _loadAccountAndCustomerProfileForDraft() async {
+    final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+
+    if (phone == null || phone.trim().isEmpty) {
+      return null;
+    }
+
+    final accountId =
+        await AppState.instance.fetchAccountIdForMobile(phone.trim());
+
+    if (accountId == null || accountId.isEmpty) {
+      return null;
+    }
+
+    final profiles =
+        await AppState.instance.fetchActiveProfilesForAccount(accountId);
+
+    Map<String, dynamic>? customerProfile;
+
+    for (final profile in profiles) {
+      final role = (profile['role'] ?? '').toString();
+      if (role == 'customer') {
+        customerProfile = profile;
+        break;
+      }
+    }
+
+    final customerProfileId =
+        customerProfile?['profileId']?.toString() ??
+            customerProfile?['docId']?.toString();
+
+    if (customerProfileId == null || customerProfileId.trim().isEmpty) {
+      return null;
+    }
+
+    return {
+      'accountId': accountId,
+      'customerProfileId': customerProfileId,
+    };
+  }
+ 
+  Future<void> _saveOrderDraft() async {
+    if (_saveDraftLoading) return;
+
+    final selectedPerson = _selectedOrderPerson();
+
+    if (selectedPerson == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select who this draft is for.'),
+        ),
+      );
+      return;
+    }
+
+    final deliveryAddress = _deliveryAddressController.text.trim();
+
+    if (_selectedDeliveryAddressId == null || deliveryAddress.length < 12) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a saved delivery address before saving draft.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _saveDraftLoading = true);
+
+    try {
+      final accountContext = await _loadAccountAndCustomerProfileForDraft();
+
+      if (accountContext == null) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to save draft. Account details not found.'),
+          ),
+        );
+
+        setState(() => _saveDraftLoading = false);
+        return;
+      }
+
+      final measurements = _measurementsInCmForOrders();
+
+      final designSource = _selectedTemplate != null
+          ? 'design_template'
+          : 'manual_design_details';
+
+      final draftId = await OrderDraftService.saveDraft(
+        draftId: _currentOrderDraftId,
+        accountId: accountContext['accountId']!,
+        customerProfileId: accountContext['customerProfileId']!,
+        personId: selectedPerson.id,
+        personName: selectedPerson.name,
+        relationship: selectedPerson.relationship,
+        measurementDraftId: widget.initialMeasurementDraftId,
+        deliveryAddressId: _selectedDeliveryAddressId,
+        deliveryAddress: deliveryAddress,
+        dressType: _selectedDressType,
+        fitPreference: _selectedFit,
+        measurements: measurements,
+        notes: _composeDetailNotes(),
+        fabricChoice: _fabricChoice,
+        designTemplateId: _selectedTemplate?.id,
+        designTemplateTitle: _selectedTemplate?.title,
+        designImageUrl: _selectedTemplate?.imageUrl,
+        designSource: designSource,
+        advancePercent: _advancePercent,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _currentOrderDraftId = draftId;
+        _saveDraftLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft saved successfully'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() => _saveDraftLoading = false);
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to save draft. Please try again.'),
+        ),
+      );
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     _loadOrderPeople();
+    _loadDeliveryAddresses();
     _occasionId = widget.initialOccasionId ?? OccasionCategory.dailyWear.name;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -262,13 +510,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       AppState.instance.addListener(_onAppMeasurementsFromAppState);
       _hydrateMeasurementFields();
       _measurementHydrationSignature = _measurementDataSignature();
-      final savedAddr =
-          AppState.instance.profile?.deliveryAddress?.trim() ?? '';
-      if (savedAddr.isNotEmpty) {
-        _deliveryAddressController.text = savedAddr;
-      }
     });
   }
+  
 
   String _measurementDataSignature() {
     final saved = AppState.instance.savedDressMeasurementsCm;
@@ -479,12 +723,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   Future<void> _placeOrderInApp() async {
     final addr = _deliveryAddressController.text.trim();
-    if (addr.length < 12) {
+
+    if (_selectedDeliveryAddressId == null || addr.length < 12) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please add your full delivery address (house, street, area, city, PIN) '
-            'so the delivery partner can find you.',
+            'Please select a saved delivery address before placing the order.',
           ),
         ),
       );
@@ -538,31 +782,167 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildDeliveryAddressSection() {
+    if (_loadingDeliveryAddresses) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Delivery address', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 8),
+          const LinearProgressIndicator(),
+        ],
+      );
+    }
+
+    if (_deliveryAddressError != null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Delivery address', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 8),
+          Text(
+            _deliveryAddressError!,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.secondary,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SecondaryButton(
+            label: 'Manage Addresses',
+            icon: Icons.location_on_outlined,
+            onTap: () async {
+              await context.push<void>('/customer-addresses');
+              if (!mounted) return;
+              _loadDeliveryAddresses();
+            },
+          ),
+        ],
+      );
+    }
+
+    if (_deliveryAddresses.isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Delivery address', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 4),
+          Text(
+            'Add a saved Home or Other address before placing an order.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+            ),
+          ),
+          const SizedBox(height: 12),
+          SecondaryButton(
+            label: 'Add Address',
+            icon: Icons.add_location_alt_outlined,
+            onTap: () async {
+              await context.push<void>('/customer-addresses');
+              if (!mounted) return;
+              _loadDeliveryAddresses();
+            },
+          ),
+        ],
+      );
+    }
+
+    final selectedId =
+        _selectedDeliveryAddressId ?? _deliveryAddresses.first.addressId;
+
+    final selectedAddress = _deliveryAddresses.firstWhere(
+      (address) => address.addressId == selectedId,
+      orElse: () => _deliveryAddresses.first,
+    );
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Delivery address', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 4),
         Text(
-          'Required for doorstep delivery. Saved to your profile for next orders.',
-          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+          'Select where the completed order should be delivered.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textHint,
+          ),
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _deliveryAddressController,
-          textCapitalization: TextCapitalization.sentences,
-          keyboardType: TextInputType.multiline,
-          minLines: 2,
-          maxLines: 4,
-          decoration: InputDecoration(
-            hintText:
-                'Flat / house no., street, area, landmark, city, PIN code',
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-            prefixIcon: const Icon(Icons.location_on_outlined),
+        DropdownButtonFormField<String>(
+          initialValue: selectedAddress.addressId,
+          decoration: const InputDecoration(
+            labelText: 'Saved address',
+            prefixIcon: Icon(Icons.location_on_outlined),
+          ),
+          items: _deliveryAddresses
+              .map(
+                (address) => DropdownMenuItem<String>(
+                  value: address.addressId,
+                  child: Text(
+                    address.dropdownLabel,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value == null) return;
+
+            final selected = _deliveryAddresses.firstWhere(
+              (address) => address.addressId == value,
+              orElse: () => _deliveryAddresses.first,
+            );
+
+            setState(() {
+              _selectedDeliveryAddressId = selected.addressId;
+              _deliveryAddressController.text = selected.formattedAddress;
+            });
+          },
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: AppColors.divider),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.home_work_outlined,
+                    color: AppColors.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      selectedAddress.dropdownLabel,
+                      style: AppTextStyles.titleMedium,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                selectedAddress.formattedAddress,
+                style: AppTextStyles.bodySmall.copyWith(height: 1.35),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: () async {
+              await context.push<void>('/customer-addresses');
+              if (!mounted) return;
+              _loadDeliveryAddresses();
+            },
+            icon: const Icon(Icons.edit_location_alt_outlined),
+            label: const Text('Manage Addresses'),
           ),
         ),
       ],
@@ -696,9 +1076,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             ),
             const SizedBox(height: 12),
             SecondaryButton(
-              label: 'Save as Draft',
+              label: _saveDraftLoading ? 'Saving draft…' : 'Save as Draft',
               icon: Icons.bookmark_border_rounded,
-              onTap: () {},
+              onTap: _saveDraftLoading
+                  ? () {}
+                  : () {
+                      unawaited(_saveOrderDraft());
+                    },
             ),
             const SizedBox(height: 24),
           ],
@@ -1816,6 +2200,75 @@ class _OrderPerson {
     required this.relationship,
     required this.isSelf,
   });
+}
+
+class _DesignerAddress {
+  final String addressId;
+  final String addressType;
+  final String name;
+  final String mobileNumber;
+  final String addressLine1;
+  final String addressLine2;
+  final String landmark;
+  final String city;
+  final String state;
+  final String pincode;
+  final bool isDefault;
+
+  const _DesignerAddress({
+    required this.addressId,
+    required this.addressType,
+    required this.name,
+    required this.mobileNumber,
+    required this.addressLine1,
+    required this.addressLine2,
+    required this.landmark,
+    required this.city,
+    required this.state,
+    required this.pincode,
+    required this.isDefault,
+  });
+
+  factory _DesignerAddress.fromMap(
+    String id,
+    Map<String, dynamic> data,
+  ) {
+    return _DesignerAddress(
+      addressId: data['addressId']?.toString() ?? id,
+      addressType: data['addressType']?.toString() ?? 'Home',
+      name: data['name']?.toString() ?? '',
+      mobileNumber: data['mobileNumber']?.toString() ?? '',
+      addressLine1: data['addressLine1']?.toString() ?? '',
+      addressLine2: data['addressLine2']?.toString() ?? '',
+      landmark: data['landmark']?.toString() ?? '',
+      city: data['city']?.toString() ?? '',
+      state: data['state']?.toString() ?? '',
+      pincode: data['pincode']?.toString() ?? '',
+      isDefault: data['isDefault'] == true,
+    );
+  }
+
+  String get dropdownLabel {
+    final suffix = isDefault ? 'Default' : addressType;
+    return '$addressType - $city ($suffix)';
+  }
+
+  String get formattedAddress {
+    final parts = <String>[
+      if (name.trim().isNotEmpty) name.trim(),
+      if (mobileNumber.trim().isNotEmpty) mobileNumber.trim(),
+      if (addressLine1.trim().isNotEmpty) addressLine1.trim(),
+      if (addressLine2.trim().isNotEmpty) addressLine2.trim(),
+      if (landmark.trim().isNotEmpty) 'Landmark: ${landmark.trim()}',
+      [
+        if (city.trim().isNotEmpty) city.trim(),
+        if (state.trim().isNotEmpty) state.trim(),
+        if (pincode.trim().isNotEmpty) pincode.trim(),
+      ].join(', '),
+    ];
+
+    return parts.where((part) => part.trim().isNotEmpty).join('\n');
+  }
 }
 
 class _SmallIconBtn extends StatelessWidget {
