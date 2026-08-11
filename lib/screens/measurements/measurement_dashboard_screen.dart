@@ -29,8 +29,11 @@ class MeasurementDashboardScreen extends StatefulWidget {
 
       bool _loadingPeople = true;
       bool _loadingDraft = false;
+      bool _loadingPersonMeasurements = false;
+      
       Map<String, dynamic>? _latestDraft;
-
+      BodyMeasurements? _selectedPersonMeasurements;
+      
     @override
   void initState() {
     super.initState();
@@ -117,6 +120,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
       });
 
       await _loadLatestMeasurementDraft();
+      await _loadLatestPersonMeasurements();
     } catch (_) {
       if (!mounted) return;
 
@@ -134,6 +138,58 @@ class MeasurementDashboardScreen extends StatefulWidget {
     }
 
     return AppState.instance.fetchAccountIdForMobile(phone.trim());
+  }
+
+  BodyMeasurements? _bodyMeasurementsFromValues(Map<String, dynamic>? values) {
+    if (values == null || values.isEmpty) return null;
+
+    double? read(String key) {
+      final value = values[key];
+      if (value == null) return null;
+
+      if (value is num) {
+        return value.toDouble();
+      }
+
+      return double.tryParse(value.toString());
+    }
+
+    final height = read('height');
+    final chest = read('chest');
+    final waist = read('waist');
+    final hips = read('hips');
+    final shoulder = read('shoulder');
+    final armLength = read('armLength');
+    final neck = read('neck');
+    final thigh = read('thigh');
+    final inseam = read('inseam');
+
+    final hasAnyValue = [
+      height,
+      chest,
+      waist,
+      hips,
+      shoulder,
+      armLength,
+      neck,
+      thigh,
+      inseam,
+    ].any((value) => value != null && value > 0);
+
+    if (!hasAnyValue) return null;
+
+    return BodyMeasurements(
+      height: height,
+      chest: chest,
+      waist: waist,
+      hips: hips,
+      shoulder: shoulder,
+      armLength: armLength,
+      neck: neck,
+      thigh: thigh,
+      inseam: inseam,
+      capturedAt: DateTime.now(),
+    );
   }
 
   Future<void> _loadLatestMeasurementDraft() async {
@@ -207,12 +263,100 @@ class MeasurementDashboardScreen extends StatefulWidget {
         });
       }
     }
+
+    Future<void> _loadLatestPersonMeasurements() async {
+    final person = _selectedPerson;
+
+    if (person == null) return;
+
+    setState(() {
+      _loadingPersonMeasurements = true;
+      _selectedPersonMeasurements = null;
+    });
+
+    try {
+      final accountId = await _currentAccountId();
+
+      if (accountId == null || accountId.isEmpty) {
+        if (!mounted) return;
+
+        setState(() {
+          _loadingPersonMeasurements = false;
+        });
+        return;
+      }
+
+      final snap = await _db
+          .collection('measurements')
+          .where('accountId', isEqualTo: accountId)
+          .where('personId', isEqualTo: person.id)
+          .get();
+
+      final usableDocs = snap.docs
+          .map((doc) => {
+                'id': doc.id,
+                ...doc.data(),
+              })
+          .where((data) {
+            final status = (data['status'] ?? '').toString();
+
+            return status == 'ai_estimated' ||
+                status == 'customer_review_required' ||
+                status == 'partner_review_required' ||
+                status == 'verified' ||
+                status == 'accepted' ||
+                status == 'order_created';
+          })
+          .toList();
+
+      usableDocs.sort((a, b) {
+        final aTime = a['updatedAt'];
+        final bTime = b['updatedAt'];
+
+        if (aTime is Timestamp && bTime is Timestamp) {
+          return bTime.compareTo(aTime);
+        }
+
+        return 0;
+      });
+
+      BodyMeasurements? loadedMeasurements;
+
+      for (final data in usableDocs) {
+        final values = data['measurementValues'];
+
+        if (values is Map<String, dynamic>) {
+          loadedMeasurements = _bodyMeasurementsFromValues(values);
+        } else if (values is Map) {
+          loadedMeasurements =
+              _bodyMeasurementsFromValues(Map<String, dynamic>.from(values));
+        }
+
+        if (loadedMeasurements != null) {
+          break;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _selectedPersonMeasurements = loadedMeasurements;
+        _loadingPersonMeasurements = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingPersonMeasurements = false;
+      });
+    }
+  }
     @override
     Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: AppState.instance,
       builder: (context, _) {
-        final measurements = AppState.instance.measurements;
+        final measurements = _selectedPersonMeasurements;
         final unit = AppState.instance.measurementUnit;
 
         return Scaffold(
@@ -244,6 +388,10 @@ class MeasurementDashboardScreen extends StatefulWidget {
                 const SizedBox(height: 20),
                 _buildMeasurementDraftCard(context),
                 if (_latestDraft != null) const SizedBox(height: 20),
+                if (_loadingPersonMeasurements) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 20),
+                  ],
                   if (measurements == null) ...[
                     _buildNoMeasurementState(context),
                     const SizedBox(height: 28),
@@ -362,6 +510,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
             });
 
             await _loadLatestMeasurementDraft();
+            await _loadLatestPersonMeasurements();
           },
         ),
         const SizedBox(height: 6),
