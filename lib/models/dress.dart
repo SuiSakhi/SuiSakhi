@@ -93,8 +93,21 @@ class DressOrder {
   /// PRD occasion (e.g. dailyWear) when [orderModuleType] is core.
   final String? occasionCategory;
   final bool kidsFlow;
-  /// Core tailoring: customer name, fit, structured measurements, free-form notes (Firestore).
+  /// Core tailoring: selected person/customer name, fit, structured measurements, free-form notes (Firestore).
   final String? clientName;
+
+  /// Multi-profile / family-member order ownership snapshot.
+  /// These fields are stored directly on the order so historical orders remain readable
+  /// even if a family member is archived later.
+  final String? personId;
+  final String? personName;
+  final String? relationship;
+  /// Bulk order / event consultation snapshot fields.
+  final String? requestedByName;
+  final String? eventType;
+  final String? consultationType;
+  final DateTime? eventDate;
+
   final String? fit;
   final Map<String, String>? measurements;
   final String? notes;
@@ -126,6 +139,13 @@ class DressOrder {
     this.occasionCategory,
     this.kidsFlow = false,
     this.clientName,
+    this.personId,
+    this.personName,
+    this.relationship,
+    this.requestedByName,
+    this.eventType,
+    this.consultationType,
+    this.eventDate,
     this.fit,
     this.measurements,
     this.notes,
@@ -135,6 +155,64 @@ class DressOrder {
     this.paymentProvider,
     this.payoutLedger,
   });
+
+  String get orderForText {
+    final name = (personName?.trim().isNotEmpty == true)
+        ? personName!.trim()
+        : (clientName?.trim().isNotEmpty == true)
+            ? clientName!.trim()
+            : '';
+
+    final rel = relationship?.trim() ?? '';
+
+    if (name.isEmpty) {
+      return 'Customer';
+    }
+
+    if (rel.isNotEmpty && rel.toLowerCase() != 'self') {
+      return '$name ($rel)';
+    }
+
+    return name;
+  }
+
+  String get requestedByText {
+    final name = requestedByName?.trim();
+
+    if (name != null && name.isNotEmpty) {
+      return name;
+    }
+
+    final fallbackClient = clientName?.trim();
+
+    if (fallbackClient != null && fallbackClient.isNotEmpty) {
+      return fallbackClient;
+    }
+
+    final fallbackPerson = personName?.trim();
+
+    if (fallbackPerson != null && fallbackPerson.isNotEmpty) {
+      return fallbackPerson;
+    }
+
+    return 'Customer';
+  }
+
+  String? get eventText {
+    final value = eventType?.trim();
+
+    if (value == null || value.isEmpty) return null;
+
+    return value;
+  }
+
+  String? get consultationText {
+    final value = consultationType?.trim();
+
+    if (value == null || value.isEmpty) return null;
+
+    return value;
+  }
 
   static Map<String, String>? _stringMapFromFirestore(dynamic raw) {
     if (raw == null || raw is! Map) return null;
@@ -193,6 +271,25 @@ class DressOrder {
       occasionCategory: data['occasionCategory'] as String?,
       kidsFlow: data['kidsFlow'] as bool? ?? false,
       clientName: data['clientName'] as String?,
+      personId: data['personId'] as String?,
+      personName: data['personName'] as String?,
+      relationship: data['relationship'] as String?,
+
+      requestedByName: (data['requestedByName'] ??
+              data['customerName'] ??
+              data['clientName'])
+          ?.toString(),
+      eventType: (data['eventType'] ??
+              data['bulkEventType'] ??
+              data['packageType'] ??
+              data['occasionCategory'])
+          ?.toString(),
+      consultationType: (data['consultationType'] ??
+              data['consultationMode'] ??
+              data['consultation'])
+          ?.toString(),
+      eventDate: (data['eventDate'] as Timestamp?)?.toDate(),
+
       fit: data['fit'] as String?,
       measurements: _stringMapFromFirestore(data['measurements']),
       notes: data['notes'] as String?,

@@ -18,6 +18,9 @@ class OrderService {
     required Map<String, String> measurements,
     required String notes,
     String? clientName,
+    String? personId,
+    String? personName,
+    String? relationship,
     String? occasionCategory,
     bool kidsFlow = false,
     String? fabricDescription,
@@ -55,6 +58,12 @@ class OrderService {
       'fit': fit,
       'measurements': measurements,
       'notes': notes,
+      if (personId?.trim().isNotEmpty == true)
+        'personId': personId!.trim(),
+      if (personName?.trim().isNotEmpty == true)
+        'personName': personName!.trim(),
+      if (relationship?.trim().isNotEmpty == true)
+        'relationship': relationship!.trim(),
       if (clientName != null && clientName.isNotEmpty) 'clientName': clientName,
       if (fabricDescription != null && fabricDescription.isNotEmpty)
         'fabricDescription': fabricDescription,

@@ -747,6 +747,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     setState(() => _placeOrderLoading = true);
     await AppState.instance.setProfileDeliveryAddress(addr);
     final measurements = _measurementsInCmForOrders();
+    final selectedPerson = _selectedOrderPerson();
     final id = await OrderService.createCoreTailoringOrder(
       dressType: _selectedDressType,
       price: _defaultPriceFromRates(),
@@ -754,6 +755,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       measurements: measurements,
       notes: _composeDetailNotes(),
       clientName: _clientNameController.text.trim(),
+      personId: selectedPerson?.id,
+      personName: selectedPerson?.name,
+      relationship: selectedPerson?.relationship,
       occasionCategory: _occasionId,
       kidsFlow: widget.isKidsFlow,
       advancePercent: _advancePercent,
@@ -1069,7 +1073,6 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             ListenableBuilder(
               listenable: AppState.instance,
               builder: (context, _) {
-                final u = AppState.instance.measurementUnit;
                 return Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -1077,10 +1080,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Measurements', style: AppTextStyles.headlineMedium),
-                          const SizedBox(height: 4),
                           Text(
-                            'Edit in ${u.abbrev}; orders & AI use cm internally.',
+                            'Measurements for This Order',
+                            style: AppTextStyles.headlineMedium,
+                          ),
+
+                          const SizedBox(height: 4),
+
+                          Text(
+                            'Review AI or saved measurements. You can adjust values before placing the order.',
                             style: AppTextStyles.bodyMedium,
                           ),
                         ],

@@ -279,7 +279,7 @@ class _OrderCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+            Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
@@ -287,8 +287,11 @@ class _OrderCard extends StatelessWidget {
                   color: order.status.color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.checkroom_rounded,
-                    color: order.status.color, size: 24),
+                child: Icon(
+                  Icons.checkroom_rounded,
+                  color: order.status.color,
+                  size: 24,
+                ),
               ),
               const SizedBox(width: 14),
               Expanded(
@@ -337,7 +340,10 @@ class _OrderCard extends StatelessWidget {
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 5,
+                  ),
                   decoration: BoxDecoration(
                     color: order.status.color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -356,7 +362,15 @@ class _OrderCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+
+          const SizedBox(height: 10),
+
+          if (order.orderModuleType.label.toLowerCase() == 'bulk')
+            _buildBulkRequestInfo(order)
+          else
+            _buildOrderForInfo(order),
+
+          const SizedBox(height: 12),
           const Divider(height: 1),
           const SizedBox(height: 12),
           Row(
@@ -466,6 +480,91 @@ class _OrderCard extends StatelessWidget {
             const SizedBox(height: 12),
             _buildProgressBar(order),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderForInfo(DressOrder order) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(
+          Icons.person_outline_rounded,
+          size: 17,
+          color: AppColors.textHint,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            'Order For: ${order.orderForText}',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+              height: 1.25,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBulkRequestInfo(DressOrder order) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _orderInfoLine(
+          icon: Icons.person_outline_rounded,
+          text: 'Requested By: ${order.requestedByText}',
+        ),
+        if (order.eventText != null)
+          _orderInfoLine(
+            icon: Icons.event_note_outlined,
+            text: 'Event: ${order.eventText}',
+          ),
+        if (order.consultationText != null)
+          _orderInfoLine(
+            icon: Icons.support_agent_outlined,
+            text: 'Consultation: ${order.consultationText}',
+          ),
+        if (order.eventDate != null)
+          _orderInfoLine(
+            icon: Icons.calendar_today_outlined,
+            text: 'Event Date: ${_formatDate(order.eventDate!)}',
+          ),
+      ],
+    );
+  }
+
+  Widget _orderInfoLine({
+    required IconData icon,
+    required String text,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 16,
+            color: AppColors.textHint,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              text,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+                height: 1.25,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
         ],
       ),
     );

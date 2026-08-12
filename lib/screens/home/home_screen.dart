@@ -513,7 +513,7 @@ class _HomeContent extends StatelessWidget {
 
   Widget _buildMeasurementBanner(BuildContext context) {
     return GestureDetector(
-      onTap: () => context.push('/camera'),
+      onTap: () => context.push('/measurements'),
       child: Container(
         padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
@@ -559,7 +559,7 @@ class _HomeContent extends StatelessWidget {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Text(
-                      'Start Scan',
+                      'Measurements',
                       style: AppTextStyles.labelLarge,
                     ),
                   ),
