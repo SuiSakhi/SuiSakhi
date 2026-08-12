@@ -151,6 +151,11 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
       }
 
       final data = doc.data();
+      final status = (data['status'] ?? 'active').toString();
+
+        if (status == 'archived') {
+          continue;
+        }
 
       final existingName = _normalizeText(data['name']?.toString() ?? '');
       final existingRelationship =
@@ -548,46 +553,59 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
     });
   }
 
-  Future<void> _deleteFamilyMember(
+  Future<void> _archiveFamilyMember(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) async {
     final data = doc.data();
     final name = data?['name']?.toString() ?? 'this member';
 
-    final shouldDelete = await showDialog<bool>(
+    final shouldArchive = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Delete Family Member?'),
-          content: Text('Are you sure you want to delete $name?'),
+          title: const Text('Archive Family Member?'),
+          content: Text(
+            'Archive $name?\n\n'
+            'Orders, measurements, drafts and history will be preserved. '
+            'This family member will not appear for new measurements or new orders.',
+          ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel'),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF7B3FB2),
+              ),
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Delete'),
+              child: const Text('Archive'),
             ),
           ],
         );
       },
     );
 
-    if (shouldDelete != true) return;
+    if (shouldArchive != true) return;
 
-    await doc.reference.delete();
+    await doc.reference.set(
+      {
+        'status': 'archived',
+        'archivedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
 
     if (!mounted) return;
 
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(
-        content: Text('Family member deleted'),
+        content: Text('Family member archived'),
       ),
     );
   }
-
+  //SUD
   @override
   Widget build(BuildContext context) {
     final ref = _familyMembersRef;
@@ -617,9 +635,7 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                       child: Text('Unable to load family members'),
                     )
                   : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: ref
-                          .orderBy('createdAt', descending: false)
-                          .snapshots(),
+                      stream: ref.snapshots(),
                       builder: (context, snapshot) {
                         if (snapshot.hasError) {
                           return const Center(
@@ -636,16 +652,36 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                           );
                         }
 
-                        final docs = snapshot.data?.docs ?? [];
+                        final docs = (snapshot.data?.docs ?? []).where((doc) {
+                        final data = doc.data();
+                        final status = (data['status'] ?? 'active').toString();
+                        return status == 'active';
+                      }).toList();
+
+                      docs.sort((a, b) {
+                        final aTime = a.data()['createdAt'];
+                        final bTime = b.data()['createdAt'];
+
+                        if (aTime is Timestamp && bTime is Timestamp) {
+                          return aTime.compareTo(bTime);
+                        }
+
+                        return a.id.compareTo(b.id);
+                      });
 
                         if (docs.isEmpty) {
                           return const _EmptyFamilyMembersState();
                         }
 
-                        return ListView.builder(
-                          padding: const EdgeInsets.all(16),
-                          itemCount: docs.length,
-                          itemBuilder: (context, index) {
+                          return ListView.builder(
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              16,
+                              16,
+                              110 + MediaQuery.paddingOf(context).bottom,
+                            ),
+                            itemCount: docs.length,
+                            itemBuilder: (context, index) {
                             final doc = docs[index];
                             final data = doc.data();
 
@@ -663,8 +699,8 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                               onEdit: () {
                                 _openFamilyMemberForm(existingDoc: doc);
                               },
-                              onDelete: () {
-                                _deleteFamilyMember(doc);
+                              onArchive: () {
+                                _archiveFamilyMember(doc);
                               },
                             );
                           },
@@ -733,7 +769,7 @@ class _FamilyMemberCard extends StatelessWidget {
   final dynamic weightKg;
   final String notes;
   final VoidCallback onEdit;
-  final VoidCallback onDelete;
+  final VoidCallback onArchive;
 
   const _FamilyMemberCard({
     required this.name,
@@ -744,7 +780,7 @@ class _FamilyMemberCard extends StatelessWidget {
     required this.weightKg,
     required this.notes,
     required this.onEdit,
-    required this.onDelete,
+    required this.onArchive,
   });
 
   String _numberText(dynamic value, String suffix) {
@@ -805,11 +841,11 @@ class _FamilyMemberCard extends StatelessWidget {
                   icon: const Icon(Icons.edit_outlined),
                 ),
                 IconButton(
-                  tooltip: 'Delete',
-                  onPressed: onDelete,
+                  tooltip: 'Archive',
+                  onPressed: onArchive,
                   icon: const Icon(
-                    Icons.delete_outline,
-                    color: Colors.red,
+                    Icons.archive_outlined,
+                    color: Color(0xFF7B3FB2),
                   ),
                 ),
               ],
