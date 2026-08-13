@@ -478,6 +478,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         designImageUrl: _selectedTemplate?.imageUrl,
         designSource: designSource,
         advancePercent: _advancePercent,
+        occasionCategory: _occasionId,
+        kidsFlow: widget.isKidsFlow,
       );
 
       if (!mounted) return;
