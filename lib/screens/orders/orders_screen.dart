@@ -357,10 +357,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
           (draft) => _DraftOrderCard(
             draft: draft,
             onResume: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Resume Draft will be implemented next.'),
-                ),
+              context.push(
+                '/designer?orderDraftId=${Uri.encodeComponent(draft.draftId)}',
               );
             },
             onDiscard: () {

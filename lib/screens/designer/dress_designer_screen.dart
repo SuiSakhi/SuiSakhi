@@ -29,6 +29,7 @@ class DressDesignerScreen extends StatefulWidget {
     this.initialPersonId,
     this.initialRelationship,
     this.initialMeasurementDraftId,
+    this.initialOrderDraftId,
   });
 
   /// [OccasionCategory.name] from PRD Step 2, e.g. `dailyWear`.
@@ -40,6 +41,7 @@ class DressDesignerScreen extends StatefulWidget {
   final String? initialPersonId;
   final String? initialRelationship;
   final String? initialMeasurementDraftId;
+  final String? initialOrderDraftId;
 
   @override
   State<DressDesignerScreen> createState() => _DressDesignerScreenState();
@@ -216,8 +218,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         }
       }
 
-      String selectedId = 'self';
+    String selectedId = _selectedOrderPersonId ?? 'self';
 
+    final existingSelectedId = _selectedOrderPersonId?.trim();
+
+    if (existingSelectedId != null &&
+        existingSelectedId.isNotEmpty &&
+        people.any((p) => p.id == existingSelectedId)) {
+      selectedId = existingSelectedId;
+    } else {
       final initialPersonId = widget.initialPersonId?.trim();
       final initialClientName = widget.initialClientName?.trim();
 
@@ -227,13 +236,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         selectedId = initialPersonId;
       } else if (initialClientName != null && initialClientName.isNotEmpty) {
         for (final p in people) {
-          if (p.name.trim().toLowerCase() ==
-              initialClientName.toLowerCase()) {
+          if (p.name.trim().toLowerCase() == initialClientName.toLowerCase()) {
             selectedId = p.id;
             break;
           }
         }
       }
+    }
 
       final selectedPerson = people.firstWhere(
         (p) => p.id == selectedId,
@@ -409,6 +418,132 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     };
   }
  
+    Future<void> _loadOrderDraft(String draftId) async {
+    try {
+      final doc = await _db.collection('order_drafts').doc(draftId).get();
+
+      if (!doc.exists) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Draft not found.'),
+          ),
+        );
+        return;
+      }
+
+      final data = doc.data();
+      if (data == null) return;
+
+      final status = (data['status'] ?? '').toString();
+      if (status != 'draft') {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('This draft is no longer active.'),
+          ),
+        );
+        return;
+      }
+
+      final personId = data['personId']?.toString();
+      final personName = data['personName']?.toString();
+      final occasionCategory = data['occasionCategory']?.toString();
+      final dressType = data['dressType']?.toString();
+      final fitPreference = data['fitPreference']?.toString();
+      final fabricChoice = data['fabricChoice']?.toString();
+      final deliveryAddressId = data['deliveryAddressId']?.toString();
+      final deliveryAddress = data['deliveryAddress']?.toString();
+      final notes = data['notes']?.toString();
+      final advancePercentRaw = data['advancePercent'];
+
+      final measurementsRaw = data['measurements'];
+
+      if (!mounted) return;
+
+      setState(() {
+        _currentOrderDraftId = draftId;
+
+        if (personId != null && personId.isNotEmpty) {
+          _selectedOrderPersonId = personId;
+        }
+
+        if (personName != null && personName.isNotEmpty) {
+          _clientNameController.text = personName;
+        }
+
+        if (occasionCategory != null && occasionCategory.isNotEmpty) {
+          _occasionId = occasionCategory;
+        }
+
+        if (dressType != null && dressType.isNotEmpty) {
+          _selectedDressType = dressType;
+        }
+
+        if (fitPreference != null && fitPreference.isNotEmpty) {
+          _selectedFit = fitPreference;
+        }
+
+        if (fabricChoice != null && fabricChoice.isNotEmpty) {
+          _fabricChoice = fabricChoice;
+        }
+
+        if (deliveryAddressId != null && deliveryAddressId.isNotEmpty) {
+          _selectedDeliveryAddressId = deliveryAddressId;
+        }
+
+        if (deliveryAddress != null && deliveryAddress.isNotEmpty) {
+          _deliveryAddressController.text = deliveryAddress;
+        }
+
+        if (notes != null) {
+          _notesController.text = notes;
+        }
+
+        if (advancePercentRaw is num) {
+          final value = advancePercentRaw.round();
+          if (value >= 30 && value <= 50) {
+            _advancePercent = value;
+          }
+        }
+
+        if (measurementsRaw is Map) {
+          final unit = AppState.instance.measurementUnit;
+
+          for (final entry in measurementsRaw.entries) {
+            final key = entry.key.toString();
+            final value = entry.value?.toString();
+
+            if (value == null || value.trim().isEmpty) continue;
+
+            final cm = double.tryParse(value);
+            final controller = _measurementFields[key];
+
+            if (cm != null && controller != null) {
+              controller.text = MeasurementFormat.cmToDisplayText(cm, unit);
+            }
+          }
+        }
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft loaded successfully'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to load draft. Please try again.'),
+        ),
+      );
+    }
+  }
+
   Future<void> _saveOrderDraft() async {
     if (_saveDraftLoading) return;
 
@@ -513,6 +648,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     _loadOrderPeople();
     _loadDeliveryAddresses();
     _occasionId = widget.initialOccasionId ?? OccasionCategory.dailyWear.name;
+
+    final orderDraftId = widget.initialOrderDraftId?.trim();
+    if (orderDraftId != null && orderDraftId.isNotEmpty) {
+      unawaited(_loadOrderDraft(orderDraftId));
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _fieldsUnit = AppState.instance.measurementUnit;
@@ -1277,6 +1418,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         Text('Order For', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 8),
         DropdownButtonFormField<String>(
+          key: ValueKey(selectedId),
           initialValue: selectedId,
           decoration: const InputDecoration(
             labelText: 'Select profile',

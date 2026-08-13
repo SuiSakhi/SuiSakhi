@@ -210,6 +210,7 @@ final _router = GoRouter(
         final personId = state.uri.queryParameters['personId'];
         final relationship = state.uri.queryParameters['relationship'];
         final draftId = state.uri.queryParameters['draftId'];
+        final orderDraftId = state.uri.queryParameters['orderDraftId'];
 
         return DressDesignerScreen(
           initialOccasionId: occasion,
@@ -218,6 +219,7 @@ final _router = GoRouter(
           initialPersonId: personId,
           initialRelationship: relationship,
           initialMeasurementDraftId: draftId,
+          initialOrderDraftId: orderDraftId,
         );
       },
     ),
