@@ -6,6 +6,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/prd_catalog.dart';
+import '../../core/app_state.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
@@ -18,12 +19,126 @@ class _OrdersScreenState extends State<OrdersScreen> {
   /// 0 All, 1 Active, 2 Pending, 3 Delivered, 4 On the way
   int _filterIndex = 0;
   List<DressOrder> _orders = [];
+  List<_OrderDraftSummary> _draftOrders = [];
   bool _loading = true;
+  bool _loadingDrafts = true;
 
   @override
   void initState() {
     super.initState();
     _loadOrders();
+    _loadDraftOrders();
+  }
+
+  Future<void> _loadDraftOrders() async {
+    final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+
+    if (phone == null || phone.trim().isEmpty) {
+      if (mounted) {
+        setState(() => _loadingDrafts = false);
+      }
+      return;
+    }
+
+    try {
+      final accountId =
+          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+
+      if (accountId == null || accountId.isEmpty) {
+        if (mounted) {
+          setState(() => _loadingDrafts = false);
+        }
+        return;
+      }
+
+      final snap = await FirebaseFirestore.instance
+          .collection('order_drafts')
+          .where('accountId', isEqualTo: accountId)
+          .get();
+
+      final drafts = snap.docs
+          .map((doc) => _OrderDraftSummary.fromFirestore(doc.id, doc.data()))
+          .where((draft) => draft.status == 'draft')
+          .toList();
+
+      drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+
+      if (!mounted) return;
+
+      setState(() {
+        _draftOrders = drafts;
+        _loadingDrafts = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() => _loadingDrafts = false);
+    }
+  }
+
+  Future<void> _discardDraftOrder(_OrderDraftSummary draft) async {
+    final shouldDiscard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Discard Draft?'),
+          content: Text(
+            'Discard ${draft.dressType} draft?\n\n'
+            'This draft will be removed from Draft Orders. '
+            'It will be archived in the background and can be recovered later when Archived Drafts is available.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Discard'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldDiscard != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('order_drafts')
+          .doc(draft.draftId)
+          .set(
+        {
+          'status': 'archived',
+          'archivedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _draftOrders.removeWhere((item) => item.draftId == draft.draftId);
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft discarded'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to discard draft. Please try again.'),
+        ),
+      );
+    }
   }
 
   Future<void> _loadOrders() async {
@@ -105,14 +220,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   _buildSummaryCards(),
                   _buildFilterChips(),
                   Expanded(
-                    child: _filtered.isEmpty
+                    child: _filtered.isEmpty && _draftOrders.isEmpty
                         ? _buildEmptyState()
-                        : ListView.builder(
-                            padding:
-                                const EdgeInsets.fromLTRB(16, 8, 16, 80),
-                            itemCount: _filtered.length,
-                            itemBuilder: (ctx, i) =>
-                                _OrderCard(order: _filtered[i]),
+                        : ListView(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
+                            children: [
+                              _buildDraftOrdersSection(),
+                              if (_draftOrders.isNotEmpty && _filtered.isNotEmpty)
+                                const SizedBox(height: 14),
+                              if (_filtered.isNotEmpty)
+                                ..._filtered.map((order) => _OrderCard(order: order)),
+                            ],
                           ),
                   ),
                 ],
@@ -187,6 +305,70 @@ class _OrdersScreenState extends State<OrdersScreen> {
           );
         },
       ),
+    );
+  }
+
+  Widget _buildDraftOrdersSection() {
+    if (_loadingDrafts) {
+      return Container(
+        margin: const EdgeInsets.only(bottom: 14),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: const LinearProgressIndicator(),
+      );
+    }
+
+    if (_draftOrders.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Draft Orders',
+              style: AppTextStyles.headlineMedium,
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_draftOrders.length}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ..._draftOrders.map(
+          (draft) => _DraftOrderCard(
+            draft: draft,
+            onResume: () {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Resume Draft will be implemented next.'),
+                ),
+              );
+            },
+            onDiscard: () {
+              _discardDraftOrder(draft);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -624,6 +806,215 @@ class _OrderCard extends StatelessWidget {
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
     ];
+    return '${date.day} ${months[date.month - 1]}';
+  }
+}
+
+class _OrderDraftSummary {
+  final String draftId;
+  final String dressType;
+  final String personName;
+  final String relationship;
+  final String occasionCategory;
+  final String status;
+  final DateTime updatedAt;
+
+  const _OrderDraftSummary({
+    required this.draftId,
+    required this.dressType,
+    required this.personName,
+    required this.relationship,
+    required this.occasionCategory,
+    required this.status,
+    required this.updatedAt,
+  });
+
+  factory _OrderDraftSummary.fromFirestore(
+    String id,
+    Map<String, dynamic> data,
+  ) {
+    final updatedAtRaw = data['updatedAt'];
+
+    DateTime updatedAt = DateTime.now();
+
+    if (updatedAtRaw is Timestamp) {
+      updatedAt = updatedAtRaw.toDate();
+    }
+
+    return _OrderDraftSummary(
+      draftId: data['draftId']?.toString() ?? id,
+      dressType: data['dressType']?.toString() ?? 'Dress Draft',
+      personName: data['personName']?.toString() ?? 'Customer',
+      relationship: data['relationship']?.toString() ?? '',
+      occasionCategory: data['occasionCategory']?.toString() ?? '',
+      status: data['status']?.toString() ?? 'draft',
+      updatedAt: updatedAt,
+    );
+  }
+
+  String get personText {
+    if (relationship.trim().isNotEmpty &&
+        relationship.trim().toLowerCase() != 'self') {
+      return '$personName ($relationship)';
+    }
+
+    return personName;
+  }
+}
+
+  class _DraftOrderCard extends StatelessWidget {
+    final _OrderDraftSummary draft;
+    final VoidCallback onResume;
+    final VoidCallback onDiscard;
+
+    const _DraftOrderCard({
+      required this.draft,
+      required this.onResume,
+      required this.onDiscard,
+    });
+
+  @override
+  Widget build(BuildContext context) {
+    final occasion = draft.occasionCategory.trim().isEmpty
+        ? null
+        : _occasionDisplayName(draft.occasionCategory);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.bookmark_border_rounded,
+                  color: AppColors.primary,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${draft.dressType} Draft',
+                      style: AppTextStyles.headlineSmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (occasion != null)
+                      Text(
+                        occasion,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textHint,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Draft',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _draftLine(
+            icon: Icons.person_outline_rounded,
+            text: 'For: ${draft.personText}',
+          ),
+          const SizedBox(height: 4),
+          _draftLine(
+            icon: Icons.schedule_rounded,
+            text: 'Updated: ${_formatDraftDate(draft.updatedAt)}',
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onResume,
+                  icon: const Icon(Icons.play_arrow_rounded),
+                  label: const Text('Resume Draft'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              IconButton(
+                tooltip: 'Discard Draft',
+                onPressed: onDiscard,
+                icon: const Icon(
+                  Icons.archive_outlined,
+                  color: AppColors.textHint,
+                ),
+              ),
+            ],
+          ),
+
+        ],
+      ),
+    );
+  }
+
+  Widget _draftLine({
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: AppColors.textHint,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatDraftDate(DateTime date) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+
     return '${date.day} ${months[date.month - 1]}';
   }
 }
