@@ -235,8 +235,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   ),
                 ],
               ),
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () => context.push('/designer'),
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () async {
+              await context.push('/designer');
+
+              if (!mounted) return;
+
+              setState(() {
+                _loading = true;
+                _loadingDrafts = true;
+              });
+
+              await _loadOrders();
+              await _loadDraftOrders();
+            },
           backgroundColor: AppColors.primary,
           icon: const Icon(Icons.add, color: Colors.white),
           label: Text(
@@ -256,16 +268,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final ready =
         _orders.where((o) => o.status == OrderStatus.readyForPickup).length;
     final total = _orders.length;
+    final drafts = _draftOrders.length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       child: Row(
         children: [
-          _SummaryChip(label: 'Total', count: total, color: AppColors.primary),
-          const SizedBox(width: 10),
-          _SummaryChip(label: 'Active', count: active, color: const Color(0xFF2196F3)),
-          const SizedBox(width: 10),
-          _SummaryChip(label: 'Ready', count: ready, color: const Color(0xFF9C27B0)),
+          _SummaryChip(
+            label: 'Total',
+            count: total,
+            color: AppColors.primary,
+          ),
+          const SizedBox(width: 8),
+          _SummaryChip(
+            label: 'Active',
+            count: active,
+            color: const Color(0xFF2196F3),
+          ),
+          const SizedBox(width: 8),
+          _SummaryChip(
+            label: 'Ready',
+            count: ready,
+            color: const Color(0xFF9C27B0),
+          ),
+          const SizedBox(width: 8),
+          _SummaryChip(
+            label: 'Drafts',
+            count: drafts,
+            color: const Color(0xFFFF9800),
+          ),
         ],
       ),
     );
@@ -356,10 +387,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ..._draftOrders.map(
           (draft) => _DraftOrderCard(
             draft: draft,
-            onResume: () {
-              context.push(
+            onResume: () async {
+              await context.push(
                 '/designer?orderDraftId=${Uri.encodeComponent(draft.draftId)}',
               );
+
+              if (!mounted) return;
+
+              setState(() {
+                _loading = true;
+                _loadingDrafts = true;
+              });
+
+              await _loadOrders();
+              await _loadDraftOrders();
             },
             onDiscard: () {
               _discardDraftOrder(draft);

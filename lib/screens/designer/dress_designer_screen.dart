@@ -377,6 +377,47 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
+  bool _isIncompleteSelfProfile(_OrderPerson? person) {
+    if (person == null || !person.isSelf) {
+      return false;
+    }
+
+    final name = person.name.trim().toLowerCase();
+
+    return name.isEmpty ||
+        name == 'user' ||
+        name == 'guest' ||
+        name == 'customer';
+  }
+
+  Future<void> _showCompleteProfilePrompt() async {
+    final goToProfile = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Complete Your Profile'),
+          content: const Text(
+            'Please add your name in your profile before placing or saving an order for yourself.\n\n'
+            'You can still place orders for family members if their details are already added.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Update Profile'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (goToProfile == true && mounted) {
+      context.push('/account');
+    }
+  }
   Future<Map<String, String>?> _loadAccountAndCustomerProfileForDraft() async {
     final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
 
@@ -558,6 +599,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return;
     }
 
+    if (_isIncompleteSelfProfile(selectedPerson)) {
+      await _showCompleteProfilePrompt();
+      return;
+    }
     final deliveryAddress = _deliveryAddressController.text.trim();
 
     if (_selectedDeliveryAddressId == null || deliveryAddress.length < 12) {
@@ -891,6 +936,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     await AppState.instance.setProfileDeliveryAddress(addr);
     final measurements = _measurementsInCmForOrders();
     final selectedPerson = _selectedOrderPerson();
+
+    if (_isIncompleteSelfProfile(selectedPerson)) {
+      setState(() => _placeOrderLoading = false);
+      await _showCompleteProfilePrompt();
+      return;
+    }
+
     final id = await OrderService.createCoreTailoringOrder(
       dressType: _selectedDressType,
       price: _defaultPriceFromRates(),

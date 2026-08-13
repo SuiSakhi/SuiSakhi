@@ -4,8 +4,29 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/app_state.dart';
 
-class CustomerAccountCenterScreen extends StatelessWidget {
+class CustomerAccountCenterScreen extends StatefulWidget {
   const CustomerAccountCenterScreen({super.key});
+
+  @override
+  State<CustomerAccountCenterScreen> createState() =>
+      _CustomerAccountCenterScreenState();
+}
+
+class _CustomerAccountCenterScreenState
+    extends State<CustomerAccountCenterScreen> {
+  Future<void> _refreshProfile() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+
+    if (uid == null || uid.trim().isEmpty) {
+      return;
+    }
+
+    await AppState.instance.loadUserProfile(uid);
+
+    if (!mounted) return;
+
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -38,13 +59,19 @@ class CustomerAccountCenterScreen extends StatelessWidget {
             icon: Icons.person_outline,
             title: 'View Profile',
             subtitle: 'See your customer profile details',
-            onTap: () => context.push('/customer-profile'),
+            onTap: () async {
+              await context.push('/customer-profile');
+              await _refreshProfile();
+            },
           ),
           _MenuItem(
             icon: Icons.edit_outlined,
             title: 'Edit Profile',
             subtitle: 'Update name, photo and preferences',
-            onTap: () => context.push('/customer-edit-profile'),
+            onTap: () async {
+              await context.push('/customer-edit-profile');
+              await _refreshProfile();
+            },
           ),
           _MenuItem(
             icon: Icons.family_restroom,
