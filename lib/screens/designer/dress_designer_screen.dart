@@ -65,6 +65,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   String? _selectedDeliveryAddressId;
   bool _loadingDeliveryAddresses = true;
   String? _deliveryAddressError;
+  String? _resumeDraftDeliveryAddressSnapshot;
+  bool _usingResumeDraftDeliveryAddressSnapshot = false;
 
   late final _clientNameController = TextEditingController(
     text: widget.initialClientName?.trim().isNotEmpty == true
@@ -388,8 +390,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           ..addAll(addresses);
 
         _selectedDeliveryAddressId = selectedId;
-        _deliveryAddressController.text =
-            selectedAddress?.formattedAddress ?? '';
+        if (!_usingResumeDraftDeliveryAddressSnapshot) {
+          _deliveryAddressController.text =
+              selectedAddress?.formattedAddress ?? '';
+        }
 
         _loadingDeliveryAddresses = false;
       });
@@ -632,6 +636,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
         if (deliveryAddress != null && deliveryAddress.isNotEmpty) {
           _deliveryAddressController.text = deliveryAddress;
+          _resumeDraftDeliveryAddressSnapshot = deliveryAddress;
+          _usingResumeDraftDeliveryAddressSnapshot = true;
         }
 
         if (notes != null) {
@@ -1195,6 +1201,16 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       orElse: () => _deliveryAddresses.first,
     );
 
+    final displayedAddressText =
+        _usingResumeDraftDeliveryAddressSnapshot &&
+                _resumeDraftDeliveryAddressSnapshot?.trim().isNotEmpty == true
+            ? _resumeDraftDeliveryAddressSnapshot!.trim()
+            : selectedAddress.formattedAddress;
+
+    final displayedAddressLabel = _usingResumeDraftDeliveryAddressSnapshot
+        ? 'Draft saved address'
+        : selectedAddress.dropdownLabel;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1235,6 +1251,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             setState(() {
               _selectedDeliveryAddressId = selected.addressId;
               _deliveryAddressController.text = selected.formattedAddress;
+              _resumeDraftDeliveryAddressSnapshot = null;
+              _usingResumeDraftDeliveryAddressSnapshot = false;
             });
           },
         ),
@@ -1260,7 +1278,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      selectedAddress.dropdownLabel,
+                      displayedAddressLabel,
                       style: AppTextStyles.titleMedium,
                     ),
                   ),
@@ -1268,7 +1286,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               ),
               const SizedBox(height: 8),
               Text(
-                selectedAddress.formattedAddress,
+                displayedAddressText,
                 style: AppTextStyles.bodySmall.copyWith(height: 1.35),
               ),
             ],

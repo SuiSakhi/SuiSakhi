@@ -131,9 +131,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
       if (!mounted) return;
 
-      setState(() {
-        _draftOrders.removeWhere((item) => item.draftId == draft.draftId);
-      });
+      await _refreshOrdersAndDrafts();
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -192,11 +192,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
       if (!mounted) return;
 
-      setState(() {
-        _loadingDrafts = true;
-      });
-
-      await _loadDraftOrders();
+      await _refreshOrdersAndDrafts();
 
       if (!mounted) return;
 
@@ -321,19 +317,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 ],
               ),
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () async {
-              await context.push('/designer');
+          onPressed: () async {
+            await context.push('/designer');
 
-              if (!mounted) return;
-
-              setState(() {
-                _loading = true;
-                _loadingDrafts = true;
-              });
-
-              await _loadOrders();
-              await _loadDraftOrders();
-            },
+            await _refreshOrdersAndDrafts();
+          },
           backgroundColor: AppColors.primary,
           icon: const Icon(Icons.add, color: Colors.white),
           label: Text(
@@ -343,6 +331,18 @@ class _OrdersScreenState extends State<OrdersScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _refreshOrdersAndDrafts() async {
+    if (!mounted) return;
+
+    setState(() {
+      _loading = true;
+      _loadingDrafts = true;
+    });
+
+    await _loadOrders();
+    await _loadDraftOrders();
   }
 
   Widget _buildSummaryCards() {
@@ -477,15 +477,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 '/designer?orderDraftId=${Uri.encodeComponent(draft.draftId)}',
               );
 
-              if (!mounted) return;
-
-              setState(() {
-                _loading = true;
-                _loadingDrafts = true;
-              });
-
-              await _loadOrders();
-              await _loadDraftOrders();
+              await _refreshOrdersAndDrafts();
             },
             onDiscard: () {
               _discardDraftOrder(draft);
@@ -1270,8 +1262,8 @@ class _OrderDraftSummary {
           ),
           const SizedBox(height: 4),
           _archivedLine(
-            icon: Icons.schedule_rounded,
-            text: 'Archived / Updated: ${_formatArchivedDraftDate(draft.updatedAt)}',
+            icon: Icons.archive_outlined,
+            text: 'Archived: ${_formatArchivedDraftDate(draft.updatedAt)}',
           ),
           const SizedBox(height: 8),
           SizedBox(
