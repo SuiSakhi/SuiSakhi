@@ -20,6 +20,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   int _filterIndex = 0;
   List<DressOrder> _orders = [];
   List<_OrderDraftSummary> _draftOrders = [];
+  List<_OrderDraftSummary> _archivedDraftOrders = [];
   bool _loading = true;
   bool _loadingDrafts = true;
 
@@ -56,17 +57,26 @@ class _OrdersScreenState extends State<OrdersScreen> {
           .where('accountId', isEqualTo: accountId)
           .get();
 
-      final drafts = snap.docs
+      final allDrafts = snap.docs
           .map((doc) => _OrderDraftSummary.fromFirestore(doc.id, doc.data()))
+          .toList();
+
+      final activeDrafts = allDrafts
           .where((draft) => draft.status == 'draft')
           .toList();
 
-      drafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      final archivedDrafts = allDrafts
+          .where((draft) => draft.status == 'archived')
+          .toList();
+
+      activeDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+      archivedDrafts.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
 
       if (!mounted) return;
 
       setState(() {
-        _draftOrders = drafts;
+        _draftOrders = activeDrafts;
+        _archivedDraftOrders = archivedDrafts;
         _loadingDrafts = false;
       });
     } catch (_) {
@@ -136,6 +146,71 @@ class _OrdersScreenState extends State<OrdersScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Unable to discard draft. Please try again.'),
+        ),
+      );
+    }
+  }
+  //SUD
+    Future<void> _recoverDraftOrder(_OrderDraftSummary draft) async {
+    final shouldRecover = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Recover Draft?'),
+          content: Text(
+            'Recover ${draft.dressType} draft?\n\n'
+            'This draft will move back to Draft Orders.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Recover'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldRecover != true) return;
+
+    try {
+      await FirebaseFirestore.instance
+          .collection('order_drafts')
+          .doc(draft.draftId)
+          .set(
+        {
+          'status': 'draft',
+          'recoveredAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _loadingDrafts = true;
+      });
+
+      await _loadDraftOrders();
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Draft recovered'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unable to recover draft. Please try again.'),
         ),
       );
     }
@@ -220,14 +295,24 @@ class _OrdersScreenState extends State<OrdersScreen> {
                   _buildSummaryCards(),
                   _buildFilterChips(),
                   Expanded(
-                    child: _filtered.isEmpty && _draftOrders.isEmpty
-                        ? _buildEmptyState()
-                        : ListView(
+                        child: _filtered.isEmpty &&
+                                _draftOrders.isEmpty &&
+                                _archivedDraftOrders.isEmpty
+                            ? _buildEmptyState()
+                            : ListView(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                             children: [
                               _buildDraftOrdersSection(),
-                              if (_draftOrders.isNotEmpty && _filtered.isNotEmpty)
+
+                              if (_draftOrders.isNotEmpty && _archivedDraftOrders.isNotEmpty)
+                                const SizedBox(height: 18),
+
+                              _buildArchivedDraftOrdersSection(),
+
+                              if ((_draftOrders.isNotEmpty || _archivedDraftOrders.isNotEmpty) &&
+                                  _filtered.isNotEmpty)
                                 const SizedBox(height: 14),
+
                               if (_filtered.isNotEmpty)
                                 ..._filtered.map((order) => _OrderCard(order: order)),
                             ],
@@ -404,6 +489,50 @@ class _OrdersScreenState extends State<OrdersScreen> {
             },
             onDiscard: () {
               _discardDraftOrder(draft);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildArchivedDraftOrdersSection() {
+    if (_loadingDrafts || _archivedDraftOrders.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Archived Drafts',
+              style: AppTextStyles.headlineMedium,
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.textHint.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                '${_archivedDraftOrders.length}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ..._archivedDraftOrders.map(
+          (draft) => _ArchivedDraftOrderCard(
+            draft: draft,
+            onRecover: () {
+              _recoverDraftOrder(draft);
             },
           ),
         ),
@@ -1006,17 +1135,13 @@ class _OrderDraftSummary {
                 ),
               ),
               const SizedBox(width: 10),
-              IconButton(
-                tooltip: 'Discard Draft',
+              OutlinedButton.icon(
                 onPressed: onDiscard,
-                icon: const Icon(
-                  Icons.archive_outlined,
-                  color: AppColors.textHint,
-                ),
+                icon: const Icon(Icons.archive_outlined),
+                label: const Text('Discard'),
               ),
             ],
           ),
-
         ],
       ),
     );
@@ -1049,6 +1174,146 @@ class _OrderDraftSummary {
   }
 
   String _formatDraftDate(DateTime date) {
+    final months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ];
+
+    return '${date.day} ${months[date.month - 1]}';
+  }
+}
+
+  class _ArchivedDraftOrderCard extends StatelessWidget {
+    final _OrderDraftSummary draft;
+    final VoidCallback onRecover;
+
+    const _ArchivedDraftOrderCard({
+      required this.draft,
+      required this.onRecover,
+    });
+
+  @override
+  Widget build(BuildContext context) {
+    final occasion = draft.occasionCategory.trim().isEmpty
+        ? null
+        : _occasionDisplayName(draft.occasionCategory);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.textHint.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.archive_outlined,
+                  color: AppColors.textHint,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${draft.dressType} Draft',
+                      style: AppTextStyles.headlineSmall,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    if (occasion != null)
+                      Text(
+                        occasion,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textHint,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 4,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.textHint.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  'Archived',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _archivedLine(
+            icon: Icons.person_outline_rounded,
+            text: 'For: ${draft.personText}',
+          ),
+          const SizedBox(height: 4),
+          _archivedLine(
+            icon: Icons.schedule_rounded,
+            text: 'Archived / Updated: ${_formatArchivedDraftDate(draft.updatedAt)}',
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: onRecover,
+              icon: const Icon(Icons.restore_rounded),
+              label: const Text('Recover Draft'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _archivedLine({
+    required IconData icon,
+    required String text,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(
+          icon,
+          size: 16,
+          color: AppColors.textHint,
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(
+            text,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _formatArchivedDraftDate(DateTime date) {
     final months = [
       'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
       'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',

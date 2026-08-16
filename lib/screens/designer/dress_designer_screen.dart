@@ -56,7 +56,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   final List<_OrderPerson> _orderPeople = [];
   String? _selectedOrderPersonId;
+  String? _resumeDraftPersonName;
+  String? _resumeDraftRelationship;
   bool _loadingOrderPeople = true;
+  
   
   final List<_DesignerAddress> _deliveryAddresses = [];
   String? _selectedDeliveryAddressId;
@@ -218,31 +221,65 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         }
       }
 
-    String selectedId = _selectedOrderPersonId ?? 'self';
+      String selectedId = 'self';
 
-    final existingSelectedId = _selectedOrderPersonId?.trim();
+      final existingSelectedId = _selectedOrderPersonId?.trim();
+      final draftPersonName = _resumeDraftPersonName?.trim();
+      final draftRelationship = _resumeDraftRelationship?.trim();
+      final existingClientName = _clientNameController.text.trim();
 
-    if (existingSelectedId != null &&
-        existingSelectedId.isNotEmpty &&
-        people.any((p) => p.id == existingSelectedId)) {
-      selectedId = existingSelectedId;
-    } else {
-      final initialPersonId = widget.initialPersonId?.trim();
-      final initialClientName = widget.initialClientName?.trim();
-
-      if (initialPersonId != null &&
-          initialPersonId.isNotEmpty &&
-          people.any((p) => p.id == initialPersonId)) {
-        selectedId = initialPersonId;
-      } else if (initialClientName != null && initialClientName.isNotEmpty) {
+      if (existingSelectedId != null &&
+          existingSelectedId.isNotEmpty &&
+          people.any((p) => p.id == existingSelectedId)) {
+        selectedId = existingSelectedId;
+      } else if (draftPersonName != null && draftPersonName.isNotEmpty) {
         for (final p in people) {
-          if (p.name.trim().toLowerCase() == initialClientName.toLowerCase()) {
+          final sameName =
+              p.name.trim().toLowerCase() == draftPersonName.toLowerCase();
+
+          final sameRelationship = draftRelationship == null ||
+              draftRelationship.isEmpty ||
+              p.relationship.trim().toLowerCase() ==
+                  draftRelationship.toLowerCase();
+
+          if (sameName && sameRelationship) {
             selectedId = p.id;
             break;
           }
         }
+
+        if (selectedId == 'self') {
+          for (final p in people) {
+            if (p.name.trim().toLowerCase() == draftPersonName.toLowerCase()) {
+              selectedId = p.id;
+              break;
+            }
+          }
+        }
+      } else if (existingClientName.isNotEmpty) {
+        for (final p in people) {
+          if (p.name.trim().toLowerCase() == existingClientName.toLowerCase()) {
+            selectedId = p.id;
+            break;
+          }
+        }
+      } else {
+        final initialPersonId = widget.initialPersonId?.trim();
+        final initialClientName = widget.initialClientName?.trim();
+
+        if (initialPersonId != null &&
+            initialPersonId.isNotEmpty &&
+            people.any((p) => p.id == initialPersonId)) {
+          selectedId = initialPersonId;
+        } else if (initialClientName != null && initialClientName.isNotEmpty) {
+          for (final p in people) {
+            if (p.name.trim().toLowerCase() == initialClientName.toLowerCase()) {
+              selectedId = p.id;
+              break;
+            }
+          }
+        }
       }
-    }
 
       final selectedPerson = people.firstWhere(
         (p) => p.id == selectedId,
@@ -491,6 +528,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
       final personId = data['personId']?.toString();
       final personName = data['personName']?.toString();
+      final relationship = data['relationship']?.toString();
       final occasionCategory = data['occasionCategory']?.toString();
       final dressType = data['dressType']?.toString();
       final fitPreference = data['fitPreference']?.toString();
@@ -506,15 +544,72 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
       setState(() {
         _currentOrderDraftId = draftId;
+        _resumeDraftPersonName = personName;
+        _resumeDraftRelationship = relationship;
 
-        if (personId != null && personId.isNotEmpty) {
-          _selectedOrderPersonId = personId;
+        String? resolvedPersonId;
+
+        if (personId != null &&
+            personId.isNotEmpty &&
+            _orderPeople.any((p) => p.id == personId)) {
+          resolvedPersonId = personId;
+        } else if (personName != null && personName.isNotEmpty) {
+          for (final p in _orderPeople) {
+            final sameName =
+                p.name.trim().toLowerCase() == personName.toLowerCase();
+
+            final sameRelationship = relationship == null ||
+                relationship.isEmpty ||
+                p.relationship.trim().toLowerCase() == relationship.toLowerCase();
+
+            if (sameName && sameRelationship) {
+              resolvedPersonId = p.id;
+              break;
+            }
+          }
+
+          if (resolvedPersonId == null) {
+            for (final p in _orderPeople) {
+              if (p.name.trim().toLowerCase() == personName.toLowerCase()) {
+                resolvedPersonId = p.id;
+                break;
+              }
+            }
+          }
+        }
+
+        // Important fallback for old/recovered drafts.
+        // If draft person cannot be found in active family members,
+        // create a snapshot person so the dropdown still shows the saved draft owner.
+        if ((resolvedPersonId == null || resolvedPersonId.isEmpty) &&
+            personName != null &&
+            personName.isNotEmpty) {
+          final snapshotPersonId =
+              personId != null && personId.isNotEmpty ? personId : 'draft_person_$draftId';
+
+          if (!_orderPeople.any((p) => p.id == snapshotPersonId)) {
+            _orderPeople.add(
+              _OrderPerson(
+                id: snapshotPersonId,
+                name: personName,
+                relationship: relationship?.isNotEmpty == true
+                    ? relationship!
+                    : 'Other',
+                isSelf: false,
+              ),
+            );
+          }
+
+          resolvedPersonId = snapshotPersonId;
+        }
+
+        if (resolvedPersonId != null && resolvedPersonId.isNotEmpty) {
+          _selectedOrderPersonId = resolvedPersonId;
         }
 
         if (personName != null && personName.isNotEmpty) {
           _clientNameController.text = personName;
         }
-
         if (occasionCategory != null && occasionCategory.isNotEmpty) {
           _occasionId = occasionCategory;
         }
@@ -568,6 +663,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           }
         }
       });
+
+      if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -690,14 +787,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   @override
   void initState() {
     super.initState();
-    _loadOrderPeople();
-    _loadDeliveryAddresses();
+
     _occasionId = widget.initialOccasionId ?? OccasionCategory.dailyWear.name;
 
-    final orderDraftId = widget.initialOrderDraftId?.trim();
-    if (orderDraftId != null && orderDraftId.isNotEmpty) {
-      unawaited(_loadOrderDraft(orderDraftId));
-    }
+    unawaited(_initializeDesignerScreen());
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -710,6 +803,16 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     });
   }
   
+  Future<void> _initializeDesignerScreen() async {
+    await _loadOrderPeople();
+    await _loadDeliveryAddresses();
+
+    final orderDraftId = widget.initialOrderDraftId?.trim();
+
+    if (orderDraftId != null && orderDraftId.isNotEmpty) {
+      await _loadOrderDraft(orderDraftId);
+    }
+  }
 
   String _measurementDataSignature() {
     final saved = AppState.instance.savedDressMeasurementsCm;
