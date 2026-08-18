@@ -1713,9 +1713,9 @@ static const List<String> _fabricOptions = [
       tilePadding: EdgeInsets.zero,
       collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      title: Text('Measurement customization', style: AppTextStyles.headlineMedium),
+      title: Text('Dress Customization', style: AppTextStyles.headlineMedium),
       subtitle: Text(
-        'Neck, sleeves, back, margin (PRD Step 4)',
+        'Neck, sleeve, back design, lining and stitching preferences.',
         style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
       ),
       children: [
