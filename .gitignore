@@ -46,3 +46,9 @@ app.*.map.json
 
 # Firebase Admin SDK
 secrets/
+
+# SuiSakhi legacy product document exports
+doc/product_Docs/*.pdf
+doc/product_Docs/*.docx
+doc/product_Docs/*.html
+doc/product_Docs/TECHNICAL_GUIDE.md
