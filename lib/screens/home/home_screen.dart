@@ -623,7 +623,7 @@ class _HomeContent extends StatelessWidget {
       ('Daily', Icons.wb_sunny_outlined, OccasionCategory.dailyWear),
       ('Office', Icons.work_outline_rounded, OccasionCategory.officeWear),
       ('Party', Icons.celebration_outlined, OccasionCategory.partyWear),
-      ('Wedding', Icons.favorite_border_rounded, OccasionCategory.weddingBridal),
+      ('Wedding', Icons.favorite_border_rounded, OccasionCategory.bridalHeavyOccasion),
       ('Festive', Icons.auto_awesome_outlined, OccasionCategory.festiveWear),
       ('Kids', Icons.child_care_outlined, OccasionCategory.dailyWear),
     ];

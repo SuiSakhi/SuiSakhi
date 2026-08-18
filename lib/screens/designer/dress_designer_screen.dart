@@ -1213,9 +1213,16 @@ static const List<String> _fabricOptions = [
   String? _occasionLabel() {
     final id = _occasionId;
     if (id == null) return null;
+
     for (final o in OccasionCategory.values) {
       if (o.name == id) return o.displayName;
     }
+
+    // Backward compatibility for older saved drafts/orders.
+    if (id == 'weddingBridal') {
+      return 'Bridal / Heavy Occasion';
+    }
+
     return null;
   }
 

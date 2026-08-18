@@ -32,13 +32,18 @@ extension OrderModuleTypeLabel on OrderModuleType {
   }
 }
 
-/// Ladies & Kids occasion rows from PRD Section 1 (core flow).
+/// Phase-1 occasion categories for Design Your Dress.
 enum OccasionCategory {
   dailyWear,
   officeWear,
-  partyWear,
-  weddingBridal,
+  casualOuting,
   festiveWear,
+  partyWear,
+  weddingGuest,
+  bridalHeavyOccasion,
+  traditionalReligious,
+  maternityComfortWear,
+  other,
 }
 
 extension OccasionCategoryApi on OccasionCategory {
@@ -50,32 +55,50 @@ extension OccasionCategoryApi on OccasionCategory {
         return 'Daily Wear';
       case OccasionCategory.officeWear:
         return 'Office Wear';
-      case OccasionCategory.partyWear:
-        return 'Party Wear';
-      case OccasionCategory.weddingBridal:
-        return 'Wedding / Bridal';
+      case OccasionCategory.casualOuting:
+        return 'Casual Outing';
       case OccasionCategory.festiveWear:
         return 'Festive Wear';
+      case OccasionCategory.partyWear:
+        return 'Party Wear';
+      case OccasionCategory.weddingGuest:
+        return 'Wedding Guest';
+      case OccasionCategory.bridalHeavyOccasion:
+        return 'Bridal / Heavy Occasion';
+      case OccasionCategory.traditionalReligious:
+        return 'Traditional / Religious';
+      case OccasionCategory.maternityComfortWear:
+        return 'Maternity / Comfort Wear';
+      case OccasionCategory.other:
+        return 'Other';
     }
   }
 }
+
 
 /// PRD Step 2 — Ladies row.
 const List<OccasionCategory> kLadiesOccasions = [
   OccasionCategory.dailyWear,
   OccasionCategory.officeWear,
-  OccasionCategory.partyWear,
-  OccasionCategory.weddingBridal,
+  OccasionCategory.casualOuting,
   OccasionCategory.festiveWear,
+  OccasionCategory.partyWear,
+  OccasionCategory.weddingGuest,
+  OccasionCategory.bridalHeavyOccasion,
+  OccasionCategory.traditionalReligious,
+  OccasionCategory.maternityComfortWear,
+  OccasionCategory.other,
 ];
 
 /// PRD Step 2 — Kids row.
 const List<OccasionCategory> kKidsOccasions = [
   OccasionCategory.dailyWear,
-  //OccasionCategory.schoolWear,
-  OccasionCategory.partyWear,
-  OccasionCategory.weddingBridal,
+  OccasionCategory.casualOuting,
   OccasionCategory.festiveWear,
+  OccasionCategory.partyWear,
+  OccasionCategory.weddingGuest,
+  OccasionCategory.traditionalReligious,
+  OccasionCategory.other,
 ];
 
 /// PRD Quick Fix & Essentials — price ranges in INR (estimate band).
