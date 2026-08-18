@@ -817,6 +817,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
     if (orderDraftId != null && orderDraftId.isNotEmpty) {
       await _loadOrderDraft(orderDraftId);
+      return;
+    }
+
+    if (!_hasMeasurementDraftContext) {
+      await _loadLatestMeasurementsForSelectedPerson();
     }
   }
 
@@ -857,6 +862,195 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         return null;
       default:
         return null;
+    }
+  }
+
+  bool get _hasOrderDraftContext {
+    return widget.initialOrderDraftId?.trim().isNotEmpty == true ||
+        _currentOrderDraftId?.trim().isNotEmpty == true;
+  }
+
+  bool get _hasMeasurementDraftContext {
+    return widget.initialMeasurementDraftId?.trim().isNotEmpty == true;
+  }
+
+  BodyMeasurements? _bodyMeasurementsFromFirestoreValues(
+    Map<String, dynamic>? values,
+  ) {
+    if (values == null || values.isEmpty) return null;
+
+    double? read(String key) {
+      final value = values[key];
+      if (value == null) return null;
+      if (value is num) return value.toDouble();
+      return double.tryParse(value.toString());
+    }
+
+    final height = read('height');
+    final chest = read('chest');
+    final waist = read('waist');
+    final hips = read('hips');
+    final shoulder = read('shoulder');
+    final armLength = read('armLength');
+    final neck = read('neck');
+    final thigh = read('thigh');
+    final inseam = read('inseam');
+
+    final hasAnyValue = [
+      height,
+      chest,
+      waist,
+      hips,
+      shoulder,
+      armLength,
+      neck,
+      thigh,
+      inseam,
+    ].any((value) => value != null && value > 0);
+
+    if (!hasAnyValue) return null;
+
+    return BodyMeasurements(
+      height: height,
+      chest: chest,
+      waist: waist,
+      hips: hips,
+      shoulder: shoulder,
+      armLength: armLength,
+      neck: neck,
+      thigh: thigh,
+      inseam: inseam,
+      capturedAt: DateTime.now(),
+    );
+  }
+
+  void _clearDesignerMeasurementFields() {
+    for (final controller in _measurementFields.values) {
+      controller.clear();
+    }
+  }
+
+  void _applyBodyMeasurementsToDesignerFields(BodyMeasurements measurements) {
+    final unit = AppState.instance.measurementUnit;
+
+    void setCm(String key, double? cm) {
+      final controller = _measurementFields[key];
+      if (controller == null) return;
+
+      if (cm != null && cm > 0) {
+        controller.text = MeasurementFormat.cmToDisplayText(cm, unit);
+      } else {
+        controller.clear();
+      }
+    }
+
+    setCm('Chest', measurements.chest);
+    setCm('Waist', measurements.waist);
+    setCm('Hip', measurements.hips);
+    setCm('Shoulder', measurements.shoulder);
+    setCm('Sleeve Length', measurements.armLength);
+
+    // Garment length is dress-specific. Do not guess it from body height.
+    _measurementFields['Length']?.clear();
+
+    _fieldsUnit = unit;
+  }
+
+  Future<void> _loadLatestMeasurementsForSelectedPerson() async {
+    if (_hasOrderDraftContext || _hasMeasurementDraftContext) {
+      return;
+    }
+
+    final selectedPerson = _selectedOrderPerson();
+    if (selectedPerson == null) {
+      _clearDesignerMeasurementFields();
+      if (mounted) setState(() {});
+      return;
+    }
+
+    try {
+      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+      if (phone == null || phone.trim().isEmpty) {
+        _clearDesignerMeasurementFields();
+        if (mounted) setState(() {});
+        return;
+      }
+
+      final accountId =
+          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+
+      if (accountId == null || accountId.isEmpty) {
+        _clearDesignerMeasurementFields();
+        if (mounted) setState(() {});
+        return;
+      }
+
+      final snap = await _db
+          .collection('measurements')
+          .where('accountId', isEqualTo: accountId)
+          .where('personId', isEqualTo: selectedPerson.id)
+          .get();
+
+      final usableDocs = snap.docs
+          .map((doc) => {
+                'id': doc.id,
+                ...doc.data(),
+              })
+          .where((data) {
+        final status = (data['status'] ?? '').toString();
+
+        return status == 'ai_estimated' ||
+            status == 'customer_review_required' ||
+            status == 'partner_review_required' ||
+            status == 'verified' ||
+            status == 'accepted' ||
+            status == 'order_created';
+      }).toList();
+
+      usableDocs.sort((a, b) {
+        final aTime = a['updatedAt'];
+        final bTime = b['updatedAt'];
+
+        if (aTime is Timestamp && bTime is Timestamp) {
+          return bTime.compareTo(aTime);
+        }
+
+        return 0;
+      });
+
+      BodyMeasurements? loadedMeasurements;
+
+      for (final data in usableDocs) {
+        final values = data['measurementValues'];
+
+        if (values is Map<String, dynamic>) {
+          loadedMeasurements = _bodyMeasurementsFromFirestoreValues(values);
+        } else if (values is Map) {
+          loadedMeasurements = _bodyMeasurementsFromFirestoreValues(
+            Map<String, dynamic>.from(values),
+          );
+        }
+
+        if (loadedMeasurements != null) {
+          break;
+        }
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        if (loadedMeasurements == null) {
+          _clearDesignerMeasurementFields();
+        } else {
+          _applyBodyMeasurementsToDesignerFields(loadedMeasurements);
+        }
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _clearDesignerMeasurementFields();
+      });
     }
   }
 
@@ -1620,6 +1814,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               _selectedOrderPersonId = selectedPerson.id;
               _clientNameController.text = selectedPerson.name;
             });
+            unawaited(_loadLatestMeasurementsForSelectedPerson());
           },
         ),
         const SizedBox(height: 6),
