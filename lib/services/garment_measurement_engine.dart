@@ -25,6 +25,8 @@ class GarmentMeasurementEngine {
     required BodyMeasurements body,
     required String dressType,
     required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
   }) {
     final normalizedDressType = dressType.trim().toLowerCase();
 
@@ -33,6 +35,8 @@ class GarmentMeasurementEngine {
         body: body,
         dressType: dressType,
         fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
       );
     }
 
@@ -42,6 +46,8 @@ class GarmentMeasurementEngine {
         body: body,
         dressType: dressType,
         fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
       );
     }
 
@@ -50,6 +56,8 @@ class GarmentMeasurementEngine {
         body: body,
         dressType: dressType,
         fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
       );
     }
 
@@ -57,6 +65,8 @@ class GarmentMeasurementEngine {
       body: body,
       dressType: dressType,
       fitPreference: fitPreference,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
     );
   }
 
@@ -64,6 +74,8 @@ class GarmentMeasurementEngine {
     required BodyMeasurements body,
     required String dressType,
     required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
   }) {
     final ease = _easeCm(fitPreference);
     final values = <String, double>{};
@@ -72,16 +84,31 @@ class GarmentMeasurementEngine {
     _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
     _putIfPositive(values, 'Shoulder', body.shoulder);
     _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.95));
-    _putIfPositive(values, 'Length', _ratioValue(body.height, 0.42));
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(
+      values,
+      'Length',
+      _ratioValue(body.height, 0.42 * lengthMultiplier),
+    );
 
     return GarmentMeasurementEstimate(
       dressType: dressType,
       fitPreference: fitPreference,
       formulaVersion: formulaVersion,
       valuesCm: values,
-      notes: const [
+      notes: [
         'Shirt length is estimated from body height using formula v1.',
         'Final garment length should be customer or tailor confirmed.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
       ],
     );
   }
@@ -90,6 +117,8 @@ class GarmentMeasurementEngine {
     required BodyMeasurements body,
     required String dressType,
     required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
   }) {
     final ease = _easeCm(fitPreference);
     final values = <String, double>{};
@@ -99,16 +128,30 @@ class GarmentMeasurementEngine {
     _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
     _putIfPositive(values, 'Shoulder', body.shoulder);
     _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.95));
-    _putIfPositive(values, 'Length', _ratioValue(body.height, 0.52));
+       final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(
+      values,
+      'Length',
+      _ratioValue(body.height, 0.52 * lengthMultiplier),
+    );
 
     return GarmentMeasurementEstimate(
       dressType: dressType,
       fitPreference: fitPreference,
       formulaVersion: formulaVersion,
       valuesCm: values,
-      notes: const [
+      notes: [
         'Kurti length is estimated from body height using formula v1.',
         'Kurti length varies by customer preference and should be confirmed.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
       ],
     );
   }
@@ -117,6 +160,8 @@ class GarmentMeasurementEngine {
     required BodyMeasurements body,
     required String dressType,
     required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
   }) {
     final ease = _easeCm(fitPreference);
     final values = <String, double>{};
@@ -126,16 +171,30 @@ class GarmentMeasurementEngine {
     _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
     _putIfPositive(values, 'Shoulder', body.shoulder);
     _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.95));
-    _putIfPositive(values, 'Length', _ratioValue(body.height, 0.90));
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(
+      values,
+      'Length',
+      _ratioValue(body.height, 0.90 * lengthMultiplier),
+    );
 
     return GarmentMeasurementEstimate(
       dressType: dressType,
       fitPreference: fitPreference,
       formulaVersion: formulaVersion,
       valuesCm: values,
-      notes: const [
+      notes: [
         'Gown length is estimated from body height using formula v1.',
         'Gown flare, lining and design complexity must be handled by fabric estimation.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
       ],
     );
   }
@@ -144,6 +203,8 @@ class GarmentMeasurementEngine {
     required BodyMeasurements body,
     required String dressType,
     required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
   }) {
     final ease = _easeCm(fitPreference);
     final values = <String, double>{};
@@ -159,11 +220,68 @@ class GarmentMeasurementEngine {
       fitPreference: fitPreference,
       formulaVersion: formulaVersion,
       valuesCm: values,
-      notes: const [
+      notes: [
         'Generic estimate does not derive garment length.',
         'Dress-specific formula should be added for accurate length and fabric estimation.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
       ],
     );
+  }
+
+  static double _lengthMultiplierForContext({
+    required String dressType,
+    String? occasionCategory,
+    String? designTitle,
+  }) {
+    final dress = dressType.trim().toLowerCase();
+    final occasion = (occasionCategory ?? '').trim().toLowerCase();
+    final design = (designTitle ?? '').trim().toLowerCase();
+
+    double multiplier = 1.0;
+
+    if (occasion.contains('party') ||
+        occasion.contains('wedding') ||
+        occasion.contains('festive')) {
+      multiplier += 0.04;
+    }
+
+    if (design.contains('long') ||
+        design.contains('anarkali') ||
+        design.contains('gown') ||
+        design.contains('floor')) {
+      multiplier += 0.08;
+    }
+
+    if (design.contains('short') ||
+        design.contains('crop')) {
+      multiplier -= 0.08;
+    }
+
+    if (dress.contains('gown')) {
+      multiplier += 0.04;
+    }
+
+    return multiplier.clamp(0.85, 1.15);
+  }
+
+  static List<String> _contextNotes({
+    String? occasionCategory,
+    String? designTitle,
+  }) {
+    final notes = <String>[];
+
+    if (occasionCategory != null && occasionCategory.trim().isNotEmpty) {
+      notes.add('Occasion/category considered: ${occasionCategory.trim()}.');
+    }
+
+    if (designTitle != null && designTitle.trim().isNotEmpty) {
+      notes.add('Selected design considered: ${designTitle.trim()}.');
+    }
+
+    return notes;
   }
 
   static double _easeCm(String fitPreference) {

@@ -19,6 +19,7 @@ import '../../services/order_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
 import '../../services/order_draft_service.dart';
+import '../../services/garment_measurement_engine.dart';
 
 class DressDesignerScreen extends StatefulWidget {
   const DressDesignerScreen({
@@ -78,6 +79,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final _deliveryAddressController = TextEditingController();
   bool _aiLoading = false;
   PriceEstimate? _priceEstimate;
+  GarmentMeasurementEstimate? _garmentMeasurementEstimate;
 
   /// null | 'fabric' | 'polish'
   String? _smartAssistBusy;
@@ -1694,7 +1696,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() => _occasionId = v),
+                    onChanged: (v) => setState(() {
+            _occasionId = v;
+            _garmentMeasurementEstimate = null;
+          }),
         ),
       ],
     );
@@ -2014,7 +2019,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                   final t = templates[i];
                   final sel = _selectedTemplate?.id == t.id;
                   return GestureDetector(
-                    onTap: () => setState(() => _selectedTemplate = t),
+                    onTap: () => setState(() {
+                      _selectedTemplate = t;
+                      _garmentMeasurementEstimate = null;
+                    }),
                     child: Container(
                       width: 88,
                       decoration: BoxDecoration(
@@ -2204,7 +2212,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                             child: InkWell(
                               borderRadius: BorderRadius.circular(14),
                               onTap: () {
-                                setState(() => _selectedTemplate = t);
+                                setState(() {
+                                  _selectedTemplate = t;
+                                  _garmentMeasurementEstimate = null;
+                                });
                                 Navigator.pop(sheetCtx);
                               },
                               child: Padding(
@@ -2413,7 +2424,144 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       ),
     );
   }
+    BodyMeasurements? _bodyMeasurementsFromDesignerFields() {
+    final unit = AppState.instance.measurementUnit;
 
+    double? readCm(String key) {
+      final text = _measurementFields[key]?.text.trim();
+      if (text == null || text.isEmpty) return null;
+
+      final value = double.tryParse(text);
+      if (value == null || value <= 0) return null;
+
+      return unit.toCm(value);
+    }
+
+    final chest = readCm('Chest');
+    final waist = readCm('Waist');
+    final hips = readCm('Hip');
+    final shoulder = readCm('Shoulder');
+    final armLength = readCm('Sleeve Length');
+
+    final hasAnyValue = [
+      chest,
+      waist,
+      hips,
+      shoulder,
+      armLength,
+    ].any((value) => value != null && value > 0);
+
+    if (!hasAnyValue) return null;
+
+    return BodyMeasurements(
+      chest: chest,
+      waist: waist,
+      hips: hips,
+      shoulder: shoulder,
+      armLength: armLength,
+      capturedAt: DateTime.now(),
+    );
+  }
+
+  void _suggestGarmentMeasurements() {
+    final body = _bodyMeasurementsFromDesignerFields();
+
+    if (body == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please take or select body measurements before generating dress suggestions.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
+        body: body,
+        dressType: _selectedDressType,
+        fitPreference: _selectedFit,
+        occasionCategory: _occasionLabel(),
+        designTitle: _selectedTemplate?.title,
+      );
+    });
+  }
+
+  Widget _buildGarmentSuggestionCard() {
+    final estimate = _garmentMeasurementEstimate;
+    if (estimate == null) return const SizedBox.shrink();
+
+    final unit = AppState.instance.measurementUnit;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: AppColors.primary.withValues(alpha: 0.22),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Suggested for ${estimate.dressType} · ${estimate.formulaVersion}',
+            style: AppTextStyles.titleMedium.copyWith(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...estimate.valuesCm.entries.map((entry) {
+            final displayValue = MeasurementFormat.formatWithUnit(
+              entry.value,
+              unit,
+            );
+
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      entry.key,
+                      style: AppTextStyles.bodyMedium,
+                    ),
+                  ),
+                  Text(
+                    displayValue,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+          if (estimate.notes.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...estimate.notes.map(
+              (note) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• $note',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+  
    Widget _buildMeasurementInputs() {
     final u = AppState.instance.measurementUnit;
     final suffix = u.abbrev;
@@ -2481,10 +2629,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           );
         }),
         const SizedBox(height: 8),
-        Wrap(
+          Wrap(
           spacing: 10,
           runSpacing: 10,
           children: [
+            OutlinedButton.icon(
+              onPressed: _suggestGarmentMeasurements,
+              icon: const Icon(Icons.auto_awesome_rounded),
+              label: const Text('Suggest for this Dress'),
+            ),
             OutlinedButton.icon(
               onPressed: () {
                 ScaffoldMessenger.of(context).showSnackBar(
@@ -2519,6 +2672,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             ),
           ],
         ),
+        _buildGarmentSuggestionCard(),
       ],
     );
   }
