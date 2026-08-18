@@ -1596,14 +1596,14 @@ static const List<String> _fabricOptions = [
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Measurement Reference for This Order',
+                            'Measurements',
                             style: AppTextStyles.headlineMedium,
                           ),
 
                           const SizedBox(height: 4),
 
                           Text(
-                            'These are saved body measurements for the selected profile. Use "Suggest for this Dress" to calculate garment measurements based on the selected design and fit. Use "Adjust for this Dress" for order-specific measurement changes.',
+                            'Saved body measurements for this profile. Use Suggest for dress-specific measurements.',
                             style: AppTextStyles.bodyMedium,
                           ),
                         ],
@@ -2611,7 +2611,7 @@ static const List<String> _fabricOptions = [
       ],
     );
   }
-  
+
     Widget _buildMeasurementSummaryRow(
     String leftKey,
     String rightKey,
