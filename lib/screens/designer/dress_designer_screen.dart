@@ -51,7 +51,7 @@ class DressDesignerScreen extends StatefulWidget {
 class _DressDesignerScreenState extends State<DressDesignerScreen> {
   String? _occasionId;
   String _selectedDressType = 'Kurti';
-  bool _autoFillFromScan = true;
+  final bool _autoFillFromScan = true;
   //SUD
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -94,15 +94,20 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     'Sleeve Length': TextEditingController(text: '0'),
   };
 
-  final _dressTypes = [
+  static const List<String> _dressTypes = [
     'Kurti',
-    'Blouse',
+    'Kurta Set',
     'Salwar Suit',
-    'Lehenga',
+    'Anarkali Suit',
+    'Lehenga Choli',
     'Gown',
-    'Kurta',
+    'Blouse',
+    'Saree Blouse',
+    'Top / Tunic',
     'Shirt',
-    'Sherwani',
+    'Palazzo / Pant',
+    'Skirt',
+    'Other',
   ];
 
   String _selectedFit = 'Regular';
@@ -1566,7 +1571,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             const SizedBox(height: 24),
             _buildDressTypeSelector(),
             const SizedBox(height: 24),
-            _buildAutoFillToggle(),
+
             const SizedBox(height: 24),
             _buildFitSelector(),
             const SizedBox(height: 24),
@@ -1833,98 +1838,50 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
-  Widget _buildDressTypeSelector() {
+    Widget _buildDressTypeSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Dress Type', style: AppTextStyles.headlineMedium),
+        Text(
+          'Dress Type',
+          style: AppTextStyles.headlineMedium,
+        ),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 44,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _dressTypes.length,
-            separatorBuilder: (context, index) => const SizedBox(width: 10),
-            itemBuilder: (ctx, i) {
-              final selected = _selectedDressType == _dressTypes[i];
-              return GestureDetector(
-                onTap: () => setState(() => _selectedDressType = _dressTypes[i]),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.primary : AppColors.surface,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: selected ? AppColors.primary : AppColors.divider,
-                    ),
-                    boxShadow: selected
-                        ? [
-                            BoxShadow(
-                              color: AppColors.primary.withValues(alpha: 0.25),
-                              blurRadius: 8,
-                              offset: const Offset(0, 3),
-                            )
-                          ]
-                        : [],
-                  ),
-                  child: Text(
-                    _dressTypes[i],
-                    style: AppTextStyles.labelMedium.copyWith(
-                      color: selected ? Colors.white : AppColors.textSecondary,
-                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildAutoFillToggle() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _autoFillFromScan
-            ? AppColors.primary.withValues(alpha: 0.06)
-            : AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _autoFillFromScan ? AppColors.primary.withValues(alpha: 0.3) : AppColors.divider,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
+        DropdownButtonFormField<String>(
+          initialValue: _dressTypes.contains(_selectedDressType)
+              ? _selectedDressType
+              : _dressTypes.first,
+          decoration: InputDecoration(
+            filled: true,
+            fillColor: AppColors.surface,
+            border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.auto_fix_high_rounded,
-                color: AppColors.primary, size: 22),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Auto-fill from Body Scan', style: AppTextStyles.titleMedium),
-                Text('Use your camera measurements',
-                    style: AppTextStyles.bodySmall),
-              ],
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: AppColors.divider,
+              ),
             ),
           ),
-          Switch(
-            value: _autoFillFromScan,
-            onChanged: (v) => setState(() => _autoFillFromScan = v),
-            activeThumbColor: AppColors.primary,
-          ),
-        ],
-      ),
+          items: _dressTypes
+              .map(
+                (dressType) => DropdownMenuItem<String>(
+                  value: dressType,
+                  child: Text(dressType),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            if (value == null) return;
+
+            setState(() {
+              _selectedDressType = value;
+              _garmentMeasurementEstimate = null;
+            });
+          },
+        ),
+      ],
     );
   }
 
