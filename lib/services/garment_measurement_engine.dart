@@ -77,7 +77,11 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
   }) {
-    final ease = _easeCm(fitPreference);
+        final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -120,7 +124,11 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
   }) {
-    final ease = _easeCm(fitPreference);
+        final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -163,7 +171,11 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
   }) {
-    final ease = _easeCm(fitPreference);
+        final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -206,7 +218,11 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
   }) {
-    final ease = _easeCm(fitPreference);
+        final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -231,6 +247,49 @@ class GarmentMeasurementEngine {
     );
   }
 
+  static double _easeMultiplierForContext({
+    String? occasionCategory,
+    String? designTitle,
+  }) {
+    final occasion = (occasionCategory ?? '').trim().toLowerCase();
+    final design = (designTitle ?? '').trim().toLowerCase();
+
+    double multiplier = 1.0;
+
+    if (occasion.contains('daily')) {
+      multiplier += 0.00;
+    } else if (occasion.contains('office')) {
+      multiplier += 0.02;
+    } else if (occasion.contains('party')) {
+      multiplier += 0.04;
+    } else if (occasion.contains('festive')) {
+      multiplier += 0.05;
+    } else if (occasion.contains('wedding') || occasion.contains('bridal')) {
+      multiplier += 0.07;
+    }
+
+    if (design.isNotEmpty) {
+      multiplier += 0.02;
+    }
+
+    if (design.contains('anarkali') ||
+        design.contains('flare') ||
+        design.contains('gown') ||
+        design.contains('heavy') ||
+        design.contains('bridal')) {
+      multiplier += 0.04;
+    }
+
+    if (design.contains('slim') ||
+        design.contains('straight') ||
+        design.contains('short') ||
+        design.contains('crop')) {
+      multiplier -= 0.02;
+    }
+
+    return multiplier.clamp(0.90, 1.15);
+  }
+
   static double _lengthMultiplierForContext({
     required String dressType,
     String? occasionCategory,
@@ -242,21 +301,32 @@ class GarmentMeasurementEngine {
 
     double multiplier = 1.0;
 
-    if (occasion.contains('party') ||
-        occasion.contains('wedding') ||
-        occasion.contains('festive')) {
-      multiplier += 0.04;
+    if (occasion.contains('daily')) {
+      multiplier += 0.00;
+    } else if (occasion.contains('office')) {
+      multiplier += 0.02;
+    } else if (occasion.contains('party')) {
+      multiplier += 0.05;
+    } else if (occasion.contains('festive')) {
+      multiplier += 0.06;
+    } else if (occasion.contains('wedding') || occasion.contains('bridal')) {
+      multiplier += 0.10;
+    }
+
+    if (design.isNotEmpty) {
+      multiplier += 0.03;
     }
 
     if (design.contains('long') ||
         design.contains('anarkali') ||
         design.contains('gown') ||
-        design.contains('floor')) {
+        design.contains('floor') ||
+        design.contains('flare') ||
+        design.contains('bridal')) {
       multiplier += 0.08;
     }
 
-    if (design.contains('short') ||
-        design.contains('crop')) {
+    if (design.contains('short') || design.contains('crop')) {
       multiplier -= 0.08;
     }
 
@@ -264,7 +334,7 @@ class GarmentMeasurementEngine {
       multiplier += 0.04;
     }
 
-    return multiplier.clamp(0.85, 1.15);
+    return multiplier.clamp(0.85, 1.20);
   }
 
   static List<String> _contextNotes({
@@ -274,11 +344,15 @@ class GarmentMeasurementEngine {
     final notes = <String>[];
 
     if (occasionCategory != null && occasionCategory.trim().isNotEmpty) {
-      notes.add('Occasion/category considered: ${occasionCategory.trim()}.');
+      notes.add(
+        'Occasion/category considered in ease and length formula: ${occasionCategory.trim()}.',
+      );
     }
 
     if (designTitle != null && designTitle.trim().isNotEmpty) {
-      notes.add('Selected design considered: ${designTitle.trim()}.');
+      notes.add(
+        'Selected design considered in ease and length formula: ${designTitle.trim()}.',
+      );
     }
 
     return notes;
