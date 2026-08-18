@@ -2533,43 +2533,36 @@ static const List<String> _fabricOptions = [
           ),
           const SizedBox(height: 12),
         ],
-        ..._measurementFields.entries.map((entry) {
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Row(
+        if (hasAnyMeasurement)
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: Column(
               children: [
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    entry.key,
-                    style: AppTextStyles.titleMedium,
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                _buildMeasurementSummaryRow(
+                  'Chest',
+                  'Waist',
+                  suffix,
                 ),
-                Expanded(
-                  flex: 3,
-                  child: TextFormField(
-                    controller: entry.value,
-                    readOnly: true,
-                    keyboardType:
-                        const TextInputType.numberWithOptions(decimal: true),
-                    textAlign: TextAlign.center,
-                    decoration: InputDecoration(
-                      suffixText:
-                          entry.value.text.trim().isEmpty ? null : suffix,
-                      suffixStyle: AppTextStyles.bodySmall,
-                      contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                    ),
-                  ),
+                const SizedBox(height: 8),
+                _buildMeasurementSummaryRow(
+                  'Hip',
+                  'Shoulder',
+                  suffix,
+                ),
+                const SizedBox(height: 8),
+                _buildMeasurementSummaryRow(
+                  'Length',
+                  'Sleeve Length',
+                  suffix,
                 ),
               ],
             ),
-          );
-        }),
+          ),
         const SizedBox(height: 8),
           Wrap(
           spacing: 10,
@@ -2615,6 +2608,40 @@ static const List<String> _fabricOptions = [
           ],
         ),
         _buildGarmentSuggestionCard(),
+      ],
+    );
+  }
+  
+    Widget _buildMeasurementSummaryRow(
+    String leftKey,
+    String rightKey,
+    String suffix,
+  ) {
+    String formatValue(String key) {
+      final value = _measurementFields[key]?.text.trim() ?? '';
+
+      if (value.isEmpty || value == '0') {
+        return '--';
+      }
+
+      return '$value $suffix';
+    }
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            '$leftKey: ${formatValue(leftKey)}',
+            style: AppTextStyles.bodyMedium,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            '$rightKey: ${formatValue(rightKey)}',
+            style: AppTextStyles.bodyMedium,
+          ),
+        ),
       ],
     );
   }
