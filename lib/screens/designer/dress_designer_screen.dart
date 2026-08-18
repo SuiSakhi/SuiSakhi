@@ -2414,71 +2414,112 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
-  Widget _buildMeasurementInputs() {
+   Widget _buildMeasurementInputs() {
     final u = AppState.instance.measurementUnit;
-    final step = MeasurementFormat.stepDisplay(u);
     final suffix = u.abbrev;
-    String fmtNum(double v) =>
-        u == MeasurementUnit.cm ? v.toStringAsFixed(1) : v.toStringAsFixed(2);
+    final hasAnyMeasurement = _measurementFields.values.any(
+      (controller) => controller.text.trim().isNotEmpty,
+    );
+
     return Column(
-      children: _measurementFields.entries.map((entry) {
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: Text(
-                  entry.key,
-                  style: AppTextStyles.titleMedium,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                ),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (!hasAnyMeasurement) ...[
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: Text(
+              'No saved measurements found for this profile. Take a new measurement or enter order-specific measurements later.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+                height: 1.35,
               ),
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: entry.value,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  textAlign: TextAlign.center,
-                  decoration: InputDecoration(
-                    suffixText: suffix,
-                    suffixStyle: AppTextStyles.bodySmall,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 16,
-                      vertical: 12,
+            ),
+          ),
+          const SizedBox(height: 12),
+        ],
+        ..._measurementFields.entries.map((entry) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 2,
+                  child: Text(
+                    entry.key,
+                    style: AppTextStyles.titleMedium,
+                    maxLines: 3,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Expanded(
+                  flex: 3,
+                  child: TextFormField(
+                    controller: entry.value,
+                    readOnly: true,
+                    keyboardType:
+                        const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      suffixText:
+                          entry.value.text.trim().isEmpty ? null : suffix,
+                      suffixStyle: AppTextStyles.bodySmall,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 12,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Row(
-                children: [
-                  _SmallIconBtn(
-                    icon: Icons.remove,
-                    onTap: () {
-                      final val = double.tryParse(entry.value.text) ?? 0;
-                      if (val > step) {
-                        entry.value.text = fmtNum(val - step);
-                      } else if (val > 0) {
-                        entry.value.text = fmtNum(0);
-                      }
-                    },
+              ],
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: [
+            OutlinedButton.icon(
+              onPressed: () {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'Dress-specific adjustment screen will be added next.',
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  _SmallIconBtn(
-                    icon: Icons.add,
-                    onTap: () {
-                      final val = double.tryParse(entry.value.text) ?? 0;
-                      entry.value.text = fmtNum(val + step);
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      }).toList(),
+                );
+              },
+              icon: const Icon(Icons.tune_rounded),
+              label: const Text('Adjust for this Dress'),
+            ),
+            OutlinedButton.icon(
+              onPressed: () {
+                final person = _selectedOrderPerson();
+
+                if (person == null) {
+                  context.push('/measurement-context');
+                  return;
+                }
+
+                context.push(
+                  '/measurement-context'
+                  '?clientName=${Uri.encodeComponent(person.name)}'
+                  '&personId=${Uri.encodeComponent(person.id)}'
+                  '&relationship=${Uri.encodeComponent(person.relationship)}',
+                );
+              },
+              icon: const Icon(Icons.add_circle_outline_rounded),
+              label: const Text('Take New Measurement'),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -2828,28 +2869,5 @@ class _DesignerAddress {
     ];
 
     return parts.where((part) => part.trim().isNotEmpty).join('\n');
-  }
-}
-
-class _SmallIconBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-
-  const _SmallIconBtn({required this.icon, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppColors.surfaceVariant,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Icon(icon, size: 18, color: AppColors.textSecondary),
-      ),
-    );
   }
 }
