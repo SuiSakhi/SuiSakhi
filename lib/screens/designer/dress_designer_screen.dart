@@ -126,7 +126,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   DesignTemplate? _selectedTemplate;
   String? _fabricChoice;
-  Color _accentColor = AppColors.primary;
+  final Color _accentColor = AppColors.primary;
 
   /// Unit the numeric text fields are currently expressed in.
   MeasurementUnit _fieldsUnit = MeasurementUnit.cm;
@@ -152,17 +152,6 @@ static const List<String> _fabricOptions = [
   'Wool Blend',
   'Other',
 ];
-
-  static const _colorSwatches = <Color>[
-    Color(0xFF5C35E5),
-    Color(0xFF1A237E),
-    Color(0xFF880E4F),
-    Color(0xFF1B5E20),
-    Color(0xFFB71C1C),
-    Color(0xFF000000),
-    Color(0xFFFFF8E1),
-    Color(0xFF6A1B9A),
-  ];
 
   String _colorHexRgb(Color c) {
     int ch(double x) => (x * 255.0).round().clamp(0, 255);
@@ -2074,40 +2063,6 @@ static const List<String> _fabricOptions = [
               _garmentMeasurementEstimate = null;
             });
           },
-        ),
-        const SizedBox(height: 16),
-        Text('Accent colour', style: AppTextStyles.titleMedium),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: _colorSwatches.map((sw) {
-            final on = _accentColor == sw;
-            return GestureDetector(
-              onTap: () => setState(() => _accentColor = sw),
-              child: Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: sw,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: on ? AppColors.primary : AppColors.divider,
-                    width: on ? 3 : 1,
-                  ),
-                  boxShadow: on
-                      ? [
-                          BoxShadow(
-                            color: AppColors.primary.withValues(alpha: 0.35),
-                            blurRadius: 6,
-                            offset: const Offset(0, 2),
-                          ),
-                        ]
-                      : null,
-                ),
-              ),
-            );
-          }).toList(),
         ),
         const SizedBox(height: 20),
         _buildLookPreviewCard(),
