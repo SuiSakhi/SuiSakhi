@@ -2690,7 +2690,14 @@ static const List<String> _fabricOptions = [
     if (r.success) {
       setState(() => _fabricStyleAiText = r.text);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(r.text)));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Smart Assist is currently unavailable. Please try again later.',
+          ),
+        ),
+      );
+
     }
   }
 
@@ -2704,7 +2711,14 @@ static const List<String> _fabricOptions = [
     if (!mounted) return;
     setState(() => _smartAssistBusy = null);
     if (!r.success) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(r.text)));
+     ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Smart Assist is currently unavailable. Please try again later.',
+          ),
+        ),
+      );
+
       return;
     }
     final apply = await showDialog<bool>(

@@ -72,7 +72,7 @@ Under 130 words. No prices. No medical claims. Friendly and specific.''';
   }) async {
     final trimmed = draft.trim();
     if (trimmed.isEmpty) {
-      return SmartAssistantResult.error('Write a few words in Special instructions first.');
+      return SmartAssistantResult.error('Please add your stitching requirements in Special Instructions first.',);
     }
 
     final prompt = '''Rewrite the customer's tailoring notes to be clear for a tailor. Keep ALL requests; do not add new design features they did not ask for.

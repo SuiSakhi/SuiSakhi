@@ -15,7 +15,7 @@ class ClaudeHaikuClient {
     final apiKey = await ClaudePricingService.loadConfiguredApiKey();
     if (apiKey == null || apiKey.isEmpty) {
       return ClaudeHaikuReply.error(
-        'Anthropic API key missing. Firestore → config/api → claudeKey.',
+        'Smart Assist is currently unavailable. Please continue with your design selection manually.',
       );
     }
 
