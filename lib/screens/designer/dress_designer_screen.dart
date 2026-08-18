@@ -2753,7 +2753,7 @@ static const List<String> _fabricOptions = [
           ),
           const SizedBox(height: 4),
           Text(
-            'Fabric & styling ideas and clearer notes for your tailor.',
+            'Get fabric suggestions and improve stitching instructions before placing the order',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
@@ -2773,7 +2773,7 @@ static const List<String> _fabricOptions = [
                 label: Text(
                   _smartAssistBusy == 'fabric'
                       ? 'Getting tips…'
-                      : 'Fabric & style tips',
+                      : 'Suggest Fabric & Styling',
                 ),
               ),
               OutlinedButton.icon(
@@ -2788,7 +2788,7 @@ static const List<String> _fabricOptions = [
                 label: Text(
                   _smartAssistBusy == 'polish'
                       ? 'Updating notes…'
-                      : 'Polish notes for tailor',
+                      : 'Improve Tailor Instructions',
                 ),
               ),
             ],
