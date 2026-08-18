@@ -1943,10 +1943,10 @@ static const List<String> _fabricOptions = [
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Design, fabric & look preview', style: AppTextStyles.headlineMedium),
+        Text('Design Catalog', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 4),
         Text(
-          'Pick an owner-uploaded flat, then fabric and colour. Preview tints the sketch — not photo-real try-on.',
+          'Browse free designs, premium designs, or upload your own design. Selected designs help generate measurement suggestions, fabric recommendations and future price estimates.',
           style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
         ),
         const SizedBox(height: 14),
