@@ -134,15 +134,24 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   /// Avoid re-hydrating on unrelated [AppState] notifications.
   String? _measurementHydrationSignature;
 
-  static const _fabricOptions = [
-    'Cotton',
-    'Silk',
-    'Georgette',
-    'Chiffon',
-    'Linen',
-    'Velvet',
-    'Organza',
-  ];
+static const List<String> _fabricOptions = [
+  'Cotton',
+  'Silk',
+  'Georgette',
+  'Chiffon',
+  'Linen',
+  'Velvet',
+  'Organza',
+  'Rayon / Viscose',
+  'Crepe',
+  'Satin',
+  'Net / Tulle',
+  'Brocade',
+  'Denim',
+  'Polyester Blend',
+  'Wool Blend',
+  'Other',
+];
 
   static const _colorSwatches = <Color>[
     Color(0xFF5C35E5),
@@ -2031,19 +2040,40 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           },
         ),
         const SizedBox(height: 16),
-        Text('Fabric', style: AppTextStyles.titleMedium),
+        Text('Fabric Type', style: AppTextStyles.titleMedium),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _fabricOptions.map((f) {
-            final on = _fabricChoice == f;
-            return FilterChip(
-              label: Text(f),
-              selected: on,
-              onSelected: (_) => setState(() => _fabricChoice = on ? null : f),
-            );
-          }).toList(),
+        DropdownButtonFormField<String>(
+          initialValue: _fabricOptions.contains(_fabricChoice)
+              ? _fabricChoice
+              : null,
+          decoration: InputDecoration(
+            hintText: 'Select fabric type',
+            filled: true,
+            fillColor: AppColors.surface,
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: BorderSide(
+                color: AppColors.divider,
+              ),
+            ),
+          ),
+          items: _fabricOptions
+              .map(
+                (fabric) => DropdownMenuItem<String>(
+                  value: fabric,
+                  child: Text(fabric),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _fabricChoice = value;
+              _garmentMeasurementEstimate = null;
+            });
+          },
         ),
         const SizedBox(height: 16),
         Text('Accent colour', style: AppTextStyles.titleMedium),
