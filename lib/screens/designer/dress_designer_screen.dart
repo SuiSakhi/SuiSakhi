@@ -1596,14 +1596,14 @@ static const List<String> _fabricOptions = [
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            'Measurements for This Order',
+                            'Measurement Reference for This Order',
                             style: AppTextStyles.headlineMedium,
                           ),
 
                           const SizedBox(height: 4),
 
                           Text(
-                            'Review AI or saved measurements. You can adjust values before placing the order.',
+                            'These are saved body measurements for the selected profile. Use "Suggest for this Dress" to calculate garment measurements based on the selected design and fit. Use "Adjust for this Dress" for order-specific measurement changes.',
                             style: AppTextStyles.bodyMedium,
                           ),
                         ],
