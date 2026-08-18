@@ -1123,7 +1123,7 @@ class _OrderDraftSummary {
                 child: OutlinedButton.icon(
                   onPressed: onResume,
                   icon: const Icon(Icons.play_arrow_rounded),
-                  label: const Text('Resume Draft'),
+                  label: const Text('Resume'),
                 ),
               ),
               const SizedBox(width: 10),
