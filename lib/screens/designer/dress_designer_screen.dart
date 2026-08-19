@@ -2575,16 +2575,43 @@ static const List<String> _fabricOptions = [
           }),
           if (estimate.notes.isNotEmpty) ...[
             const SizedBox(height: 8),
-            ...estimate.notes.map(
-              (note) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '• $note',
+            Theme(
+              data: Theme.of(context).copyWith(
+                dividerColor: Colors.transparent,
+              ),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Text(
+                  'Guidance notes',
                   style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textHint,
-                    height: 1.35,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
+                subtitle: Text(
+                  '${estimate.notes.length} tailoring notes available',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                  ),
+                ),
+                children: estimate.notes
+                    .map(
+                      (note) => Padding(
+                        padding: const EdgeInsets.only(bottom: 6),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '• $note',
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textHint,
+                              height: 1.35,
+                            ),
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
               ),
             ),
           ],
