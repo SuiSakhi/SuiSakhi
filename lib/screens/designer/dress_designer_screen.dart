@@ -124,6 +124,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final _sleeveStyleController = TextEditingController();
   final _backDesignController = TextEditingController();
   final _marginController = TextEditingController();
+  final _customFabricController = TextEditingController();
+
   bool _placeOrderLoading = false;
   bool _saveDraftLoading = false;
   String? _currentOrderDraftId;
@@ -766,7 +768,10 @@ static const List<String> _fabricOptions = [
         fitPreference: _selectedFit,
         measurements: measurements,
         notes: _composeDetailNotes(),
-        fabricChoice: _fabricChoice,
+        fabricChoice: _fabricChoice == 'Other' &&
+          _customFabricController.text.trim().isNotEmpty
+          ? _customFabricController.text.trim()
+          : _fabricChoice,
         designTemplateId: _selectedTemplate?.id,
         designTemplateTitle: _selectedTemplate?.title,
         designImageUrl: _selectedTemplate?.imageUrl,
@@ -1191,6 +1196,7 @@ static const List<String> _fabricOptions = [
     _sleeveStyleController.dispose();
     _backDesignController.dispose();
     _marginController.dispose();
+    _customFabricController.dispose();
     super.dispose();
   }
 
@@ -1287,7 +1293,10 @@ static const List<String> _fabricOptions = [
       designTemplateId: _selectedTemplate?.id,
       designTemplateTitle: _selectedTemplate?.title,
       designImageUrl: _selectedTemplate?.imageUrl,
-      fabricChoice: _fabricChoice,
+      fabricChoice: _fabricChoice == 'Other' &&
+          _customFabricController.text.trim().isNotEmpty
+          ? _customFabricController.text.trim()
+          : _fabricChoice,
       accentColorHex: _colorHexRgb(_accentColor),
       deliveryAddress: addr,
       fabricDescription: (_fabricChoice != null || _selectedTemplate != null)
@@ -2000,7 +2009,12 @@ static const List<String> _fabricOptions = [
       return const SizedBox.shrink();
     }
 
-    final metadata = FabricMetadataService.forFabric(fabric);
+    final fabricForMetadata = fabric == 'Other' &&
+        _customFabricController.text.trim().isNotEmpty
+    ? _customFabricController.text.trim()
+    : fabric;
+
+    final metadata = FabricMetadataService.forFabric(fabricForMetadata);
 
     final liningText = metadata.liningRecommended
         ? 'Lining / astar recommended'
@@ -2191,6 +2205,17 @@ static const List<String> _fabricOptions = [
         _buildRecommendedFabricHint(),
         _buildFabricMetadataHint(),
         const SizedBox(height: 20),
+                if (_fabricChoice == 'Other') ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _customFabricController,
+            decoration: const InputDecoration(
+              labelText: 'Fabric details',
+              hintText: 'e.g. Khadi cotton, Banarasi silk, stretch lycra',
+            ),
+            onChanged: (_) => setState(() {}),
+          ),
+        ],
         _buildLookPreviewCard(),
       ],
     );
@@ -2841,7 +2866,10 @@ static const List<String> _fabricOptions = [
       dressType: _selectedDressType,
       occasionLabel: (occ == null || occ.isEmpty) ? 'General' : occ,
       fit: _selectedFit,
-      fabricChoice: _fabricChoice,
+      fabricChoice: _fabricChoice == 'Other' &&
+          _customFabricController.text.trim().isNotEmpty
+          ? _customFabricController.text.trim()
+          : _fabricChoice,
       designTemplateTitle: _selectedTemplate?.title,
       accentColorHex: _colorHexRgb(_accentColor),
     );
