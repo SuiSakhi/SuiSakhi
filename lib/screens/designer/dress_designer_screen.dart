@@ -4,19 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/design_template.dart';
+//Design MetadataService is used to fetch the design metadata for the selected template, which includes information like the design title and occasion category. This metadata is then used to calculate the garment measurements and ease based on the selected fit preference and context.
+import '../../services/design_metadata_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/claude_pricing_service.dart';
 import '../../services/claude_smart_assistant_service.dart';
 import '../../services/design_template_service.dart';
-//Design MetadataService is used to fetch the design metadata for the selected template, which includes information like the design title and occasion category. This metadata is then used to calculate the garment measurements and ease based on the selected fit preference and context.
-import '../../services/design_metadata_service.dart';
+import '../../models/design_metadata.dart';
 import '../../services/order_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
@@ -1937,24 +1937,72 @@ static const List<String> _fabricOptions = [
     );
   }
   // Metadata-based hints for recommended fabrics based on the selected dress type.
-  Widget _buildRecommendedFabricHint() {
-    final fabrics =
-        DesignMetadataService.recommendedFabricsForDressType(_selectedDressType);
+    Widget _buildRecommendedFabricHint() {
+    final metadata =
+        DesignMetadataService.defaultForDressType(_selectedDressType);
+    final fabrics = metadata.recommendedFabrics;
 
     if (fabrics.isEmpty) {
       return const SizedBox.shrink();
     }
 
+    final liningText =
+        metadata.liningRequired ? 'Lining recommended' : 'Lining usually not required';
+
+    final complexityText = switch (metadata.complexity) {
+      DesignComplexity.low => 'Low complexity',
+      DesignComplexity.medium => 'Medium complexity',
+      DesignComplexity.high => 'High complexity',
+    };
+
+    final silhouetteText = _designSilhouetteLabel(metadata.silhouette);
+
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        'Recommended for $_selectedDressType: ${fabrics.join(', ')}',
-        style: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.textHint,
-          height: 1.35,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Recommended for $_selectedDressType: ${fabrics.join(', ')}',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Design details: $silhouetteText · $complexityText · $liningText',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+        ],
       ),
     );
+  }
+
+  String _designSilhouetteLabel(DesignSilhouette silhouette) {
+    switch (silhouette) {
+      case DesignSilhouette.straight:
+        return 'Straight silhouette';
+      case DesignSilhouette.aLine:
+        return 'A-line silhouette';
+      case DesignSilhouette.anarkali:
+        return 'Anarkali silhouette';
+      case DesignSilhouette.fitAndFlare:
+        return 'Fit & flare silhouette';
+      case DesignSilhouette.gathered:
+        return 'Gathered silhouette';
+      case DesignSilhouette.layered:
+        return 'Layered silhouette';
+      case DesignSilhouette.umbrella:
+        return 'Umbrella silhouette';
+      case DesignSilhouette.princessCut:
+        return 'Princess cut';
+      case DesignSilhouette.other:
+        return 'Custom silhouette';
+    }
   }
 
   Widget _buildDesignLookSection() {
