@@ -1,5 +1,6 @@
 import '../models/design_metadata.dart';
 import '../models/measurement.dart';
+import '../models/occasion_metadata.dart';
 
 class GarmentMeasurementEstimate {
   final String dressType;
@@ -29,6 +30,7 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
     DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
   }) {
     final normalizedDressType = dressType.trim().toLowerCase();
 
@@ -40,6 +42,7 @@ class GarmentMeasurementEngine {
         occasionCategory: occasionCategory,
         designTitle: designTitle,
         designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
       );
     }
 
@@ -52,6 +55,7 @@ class GarmentMeasurementEngine {
         occasionCategory: occasionCategory,
         designTitle: designTitle,
         designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
       );
     }
 
@@ -63,6 +67,7 @@ class GarmentMeasurementEngine {
       occasionCategory: occasionCategory,
       designTitle: designTitle,
       designMetadata: designMetadata,
+      occasionMetadata: occasionMetadata,
     );
     }
 
@@ -74,6 +79,7 @@ class GarmentMeasurementEngine {
         occasionCategory: occasionCategory,
         designTitle: designTitle,
         designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
       );
     }
 
@@ -84,6 +90,7 @@ class GarmentMeasurementEngine {
       occasionCategory: occasionCategory,
       designTitle: designTitle,
       designMetadata: designMetadata,
+      occasionMetadata: occasionMetadata,
     );
   }
 
@@ -94,12 +101,18 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
     DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
   }) {
-        final contextEaseMultiplier = _easeMultiplierForContext(
+    final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
       designTitle: designTitle,
     );
-    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
+
+    final occasionEaseMultiplier = occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+    contextEaseMultiplier *
+    occasionEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -132,6 +145,7 @@ class GarmentMeasurementEngine {
           designTitle: designTitle,
         ),
         ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
       ],
     );
   }
@@ -143,6 +157,7 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
     DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -181,6 +196,7 @@ class GarmentMeasurementEngine {
           designTitle: designTitle,
         ),
         ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
       ],
     );
   }
@@ -192,6 +208,7 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
     DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
   }) {
     final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -231,6 +248,7 @@ class GarmentMeasurementEngine {
           designTitle: designTitle,
         ),
         ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
       ],
     );
   }
@@ -242,6 +260,7 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
     DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -280,6 +299,7 @@ class GarmentMeasurementEngine {
           designTitle: designTitle,
         ),
         ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
       ],
     );
   }
@@ -291,6 +311,7 @@ class GarmentMeasurementEngine {
     String? occasionCategory,
     String? designTitle,
     DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -318,6 +339,7 @@ class GarmentMeasurementEngine {
           designTitle: designTitle,
         ),
         ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
       ],
     );
   }
@@ -433,7 +455,30 @@ class GarmentMeasurementEngine {
       'Design details considered: $silhouetteText, $complexityText, $liningText.',
     ];
   }
-    static String _silhouetteLabel(DesignSilhouette silhouette) {
+
+    static List<String> _occasionMetadataNotes(OccasionMetadata? metadata) {
+    if (metadata == null) {
+      return const [];
+    }
+
+    final notes = <String>[];
+
+    if (metadata.liningRecommended) {
+      notes.add('Occasion guidance: lining / astar may be recommended.');
+    }
+
+    if (metadata.tailorReviewRecommended) {
+      notes.add(
+        'Occasion guidance: tailor review is recommended before stitching.',
+      );
+    }
+
+    notes.addAll(metadata.notes);
+
+    return notes;
+  }
+  
+  static String _silhouetteLabel(DesignSilhouette silhouette) {
     switch (silhouette) {
       case DesignSilhouette.straight:
         return 'Straight silhouette';

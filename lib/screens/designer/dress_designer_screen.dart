@@ -11,6 +11,7 @@ import '../../core/measurement_unit.dart';
 import '../../models/design_template.dart';
 //Design MetadataService is used to fetch the design metadata for the selected template, which includes information like the design title and occasion category. This metadata is then used to calculate the garment measurements and ease based on the selected fit preference and context.
 import '../../services/design_metadata_service.dart';
+import '../../services/occasion_metadata_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/claude_pricing_service.dart';
@@ -2501,6 +2502,11 @@ static const List<String> _fabricOptions = [
       final metadata =
           DesignMetadataService.defaultForDressType(_selectedDressType);
 
+      final occasionMetadata = OccasionMetadataService.forOccasion(
+        occasionId: _occasionId,
+        occasionLabel: _occasionLabel() ?? 'General',
+      );
+
       _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
         body: body,
         dressType: _selectedDressType,
@@ -2508,6 +2514,7 @@ static const List<String> _fabricOptions = [
         occasionCategory: _occasionLabel(),
         designTitle: _selectedTemplate?.title,
         designMetadata: metadata,
+        occasionMetadata: occasionMetadata,
       );
     });
   }
