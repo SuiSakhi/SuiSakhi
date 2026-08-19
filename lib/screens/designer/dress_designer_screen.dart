@@ -2033,12 +2033,29 @@ static const List<String> _fabricOptions = [
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Text(
-        'Fabric guidance: $shrinkageText · $liningText · $preWashText',
-        style: AppTextStyles.bodySmall.copyWith(
-          color: AppColors.textHint,
-          height: 1.35,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Fabric guidance: $shrinkageText · $liningText · $preWashText',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+
+          if (_fabricChoice == 'Other') ...[
+            const SizedBox(height: 4),
+            Text(
+              'Custom fabric entered. Tailor review is recommended before cutting.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+                fontStyle: FontStyle.italic,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
