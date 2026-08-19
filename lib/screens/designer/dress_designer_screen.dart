@@ -2498,12 +2498,16 @@ static const List<String> _fabricOptions = [
     }
 
     setState(() {
+      final metadata =
+          DesignMetadataService.defaultForDressType(_selectedDressType);
+
       _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
         body: body,
         dressType: _selectedDressType,
         fitPreference: _selectedFit,
         occasionCategory: _occasionLabel(),
         designTitle: _selectedTemplate?.title,
+        designMetadata: metadata,
       );
     });
   }

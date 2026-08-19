@@ -1,3 +1,4 @@
+import '../models/design_metadata.dart';
 import '../models/measurement.dart';
 
 class GarmentMeasurementEstimate {
@@ -27,6 +28,7 @@ class GarmentMeasurementEngine {
     required String fitPreference,
     String? occasionCategory,
     String? designTitle,
+    DesignMetadata? designMetadata,
   }) {
     final normalizedDressType = dressType.trim().toLowerCase();
 
@@ -37,6 +39,7 @@ class GarmentMeasurementEngine {
         fitPreference: fitPreference,
         occasionCategory: occasionCategory,
         designTitle: designTitle,
+        designMetadata: designMetadata,
       );
     }
 
@@ -48,6 +51,7 @@ class GarmentMeasurementEngine {
         fitPreference: fitPreference,
         occasionCategory: occasionCategory,
         designTitle: designTitle,
+        designMetadata: designMetadata,
       );
     }
 
@@ -58,6 +62,7 @@ class GarmentMeasurementEngine {
         fitPreference: fitPreference,
         occasionCategory: occasionCategory,
         designTitle: designTitle,
+        designMetadata: designMetadata,
       );
     }
 
@@ -67,6 +72,7 @@ class GarmentMeasurementEngine {
       fitPreference: fitPreference,
       occasionCategory: occasionCategory,
       designTitle: designTitle,
+      designMetadata: designMetadata,
     );
   }
 
@@ -76,6 +82,7 @@ class GarmentMeasurementEngine {
     required String fitPreference,
     String? occasionCategory,
     String? designTitle,
+    DesignMetadata? designMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -113,6 +120,7 @@ class GarmentMeasurementEngine {
           occasionCategory: occasionCategory,
           designTitle: designTitle,
         ),
+        ..._designMetadataNotes(designMetadata),
       ],
     );
   }
@@ -123,6 +131,7 @@ class GarmentMeasurementEngine {
     required String fitPreference,
     String? occasionCategory,
     String? designTitle,
+    DesignMetadata? designMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -160,6 +169,7 @@ class GarmentMeasurementEngine {
           occasionCategory: occasionCategory,
           designTitle: designTitle,
         ),
+        ..._designMetadataNotes(designMetadata),
       ],
     );
   }
@@ -170,6 +180,7 @@ class GarmentMeasurementEngine {
     required String fitPreference,
     String? occasionCategory,
     String? designTitle,
+    DesignMetadata? designMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -207,6 +218,7 @@ class GarmentMeasurementEngine {
           occasionCategory: occasionCategory,
           designTitle: designTitle,
         ),
+        ..._designMetadataNotes(designMetadata),
       ],
     );
   }
@@ -217,6 +229,7 @@ class GarmentMeasurementEngine {
     required String fitPreference,
     String? occasionCategory,
     String? designTitle,
+    DesignMetadata? designMetadata,
   }) {
         final contextEaseMultiplier = _easeMultiplierForContext(
       occasionCategory: occasionCategory,
@@ -243,6 +256,7 @@ class GarmentMeasurementEngine {
           occasionCategory: occasionCategory,
           designTitle: designTitle,
         ),
+        ..._designMetadataNotes(designMetadata),
       ],
     );
   }
@@ -335,6 +349,25 @@ class GarmentMeasurementEngine {
     }
 
     return multiplier.clamp(0.85, 1.20);
+  }
+  
+    static List<String> _designMetadataNotes(DesignMetadata? metadata) {
+    if (metadata == null) {
+      return const [];
+    }
+
+    final complexityText = switch (metadata.complexity) {
+      DesignComplexity.low => 'low complexity',
+      DesignComplexity.medium => 'medium complexity',
+      DesignComplexity.high => 'high complexity',
+    };
+
+    final liningText =
+        metadata.liningRequired ? 'lining recommended' : 'lining usually not required';
+
+    return [
+      'Design metadata considered: ${metadata.silhouette.name}, $complexityText, $liningText.',
+    ];
   }
 
   static List<String> _contextNotes({
