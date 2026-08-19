@@ -14,9 +14,10 @@ import '../../services/design_metadata_service.dart';
 import '../../services/occasion_metadata_service.dart';
 import '../../models/fabric_metadata.dart';
 import '../../services/fabric_metadata_service.dart';
+import '../../models/fabric_estimate.dart';
+import '../../services/fabric_estimation_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
-import '../../services/claude_pricing_service.dart';
 import '../../services/claude_smart_assistant_service.dart';
 import '../../services/design_template_service.dart';
 import '../../models/design_metadata.dart';
@@ -82,10 +83,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         : AppState.instance.displayName,
   );
   final _deliveryAddressController = TextEditingController();
-  bool _aiLoading = false;
-  PriceEstimate? _priceEstimate;
   GarmentMeasurementEstimate? _garmentMeasurementEstimate;
-
+  FabricEstimate? _fabricEstimate;
   /// null | 'fabric' | 'polish'
   String? _smartAssistBusy;
   String? _fabricStyleAiText;
@@ -2641,9 +2640,74 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       occasionMetadata: occasionMetadata,
       fabricMetadata: fabricMetadata,
     );
+
+    _fabricEstimate = FabricEstimationService.estimate(
+      dressType: _selectedDressType,
+      designMetadata: metadata,
+      occasionMetadata: occasionMetadata,
+      fabricMetadata: fabricMetadata,
+    );
   });
 }
+  Widget _buildFabricEstimateCard() {
+    final estimate = _fabricEstimate;
 
+    if (estimate == null) {
+      return const SizedBox.shrink();
+    }
+
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.primary.withValues(alpha: 0.15),
+          ),
+        ),
+        child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Estimated Fabric Required',
+            style: AppTextStyles.titleMedium,
+          ),
+
+          const SizedBox(height: 8),
+
+          Text(
+            '${estimate.estimatedMeters} meters',
+            style: AppTextStyles.headlineSmall.copyWith(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+
+          const SizedBox(height: 4),
+
+          Text(
+            'Formula ${estimate.formulaVersion} • Confidence ${estimate.confidence}',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+            ),
+          ),
+
+          const SizedBox(height: 8),
+
+          ...estimate.notes.map(
+            (note) => Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Text(
+                '• $note',
+                style: AppTextStyles.bodySmall,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
   Widget _buildGarmentSuggestionCard() {
     final estimate = _garmentMeasurementEstimate;
     if (estimate == null) return const SizedBox.shrink();
@@ -2832,6 +2896,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           ],
         ),
         _buildGarmentSuggestionCard(),
+        _buildFabricEstimateCard(),
       ],
     );
   }
@@ -3044,125 +3109,88 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
-  Future<void> _getAiPrice() async {
-    setState(() {
-      _aiLoading = true;
-      _priceEstimate = null;
-    });
-    final measurements = _measurementsInCmForOrders();
-    final result = await ClaudePricingService.estimate(
-      dressType: _selectedDressType,
-      fit: _selectedFit,
-      measurements: measurements,
-      notes: _composeDetailNotes(),
-      shopRates: AppState.instance.rates,
-    );
-    if (mounted) {
-      setState(() {
-        _priceEstimate = result;
-        _aiLoading = false;
-      });
-    }
-  }
+    Widget _buildAiPricing() {
+    final estimate = _fabricEstimate;
 
-  Widget _buildAiPricing() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
-          children: [
-            Expanded(
-              child: Text(
-                'Price Estimation',
-                style: AppTextStyles.headlineMedium,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _aiLoading ? null : _getAiPrice,
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: _aiLoading
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.auto_awesome_rounded,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Get estimate',
-                            style: AppTextStyles.labelMedium.copyWith(
-                              color: Colors.white,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-              ),
-            ),
-          ],
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.divider,
         ),
-        if (_priceEstimate != null) ...[
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: _priceEstimate!.success
-                  ? AppColors.success.withValues(alpha: 0.08)
-                  : AppColors.secondary.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: _priceEstimate!.success
-                    ? AppColors.success.withValues(alpha: 0.3)
-                    : AppColors.secondary.withValues(alpha: 0.3),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Order Estimate',
+            style: AppTextStyles.headlineMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Fabric and price estimates are guidance only. Final price will be confirmed after design, fabric and tailor review.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 14),
+          if (estimate == null) ...[
+            Text(
+              'Tap “Suggest” in the Measurements section to generate garment and fabric estimates.',
+              style: AppTextStyles.bodyMedium.copyWith(
+                color: AppColors.textHint,
               ),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          ] else ...[
+            Row(
               children: [
-                Icon(
-                  _priceEstimate!.success
-                      ? Icons.auto_awesome_rounded
-                      : Icons.info_outline_rounded,
-                  color: _priceEstimate!.success
-                      ? AppColors.success
-                      : AppColors.secondary,
-                  size: 20,
+                const Icon(
+                  Icons.straighten_rounded,
+                  color: AppColors.primary,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    _priceEstimate!.text,
-                    style: AppTextStyles.bodySmall.copyWith(height: 1.5),
+                    'Estimated fabric required',
+                    style: AppTextStyles.bodyMedium,
+                  ),
+                ),
+                Text(
+                  '${estimate.estimatedMeters} m',
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
               ],
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              'Formula ${estimate.formulaVersion} • Confidence ${estimate.confidence}',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+              ),
+            ),
+            const SizedBox(height: 10),
+            ...estimate.notes.map(
+              (note) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  '• $note',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ],
-      ],
+      ),
     );
   }
 }
