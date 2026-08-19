@@ -66,8 +66,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   String? _resumeDraftPersonName;
   String? _resumeDraftRelationship;
   bool _loadingOrderPeople = true;
-  
-  
+
   final List<_DesignerAddress> _deliveryAddresses = [];
   String? _selectedDeliveryAddressId;
   bool _loadingDeliveryAddresses = true;
@@ -79,8 +78,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     text: widget.initialClientName?.trim().isNotEmpty == true
         ? widget.initialClientName!.trim()
         : AppState.instance.displayName == 'Guest'
-            ? ''
-            : AppState.instance.displayName,
+        ? ''
+        : AppState.instance.displayName,
   );
   final _deliveryAddressController = TextEditingController();
   bool _aiLoading = false;
@@ -129,6 +128,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   bool _placeOrderLoading = false;
   bool _saveDraftLoading = false;
   String? _currentOrderDraftId;
+
   /// PRD Step 11 — advance 30–50%.
   int _advancePercent = 40;
 
@@ -142,24 +142,24 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   /// Avoid re-hydrating on unrelated [AppState] notifications.
   String? _measurementHydrationSignature;
 
-static const List<String> _fabricOptions = [
-  'Cotton',
-  'Silk',
-  'Georgette',
-  'Chiffon',
-  'Linen',
-  'Velvet',
-  'Organza',
-  'Rayon / Viscose',
-  'Crepe',
-  'Satin',
-  'Net / Tulle',
-  'Brocade',
-  'Denim',
-  'Polyester Blend',
-  'Wool Blend',
-  'Other',
-];
+  static const List<String> _fabricOptions = [
+    'Cotton',
+    'Silk',
+    'Georgette',
+    'Chiffon',
+    'Linen',
+    'Velvet',
+    'Organza',
+    'Rayon / Viscose',
+    'Crepe',
+    'Satin',
+    'Net / Tulle',
+    'Brocade',
+    'Denim',
+    'Polyester Blend',
+    'Wool Blend',
+    'Other',
+  ];
 
   String _colorHexRgb(Color c) {
     int ch(double x) => (x * 255.0).round().clamp(0, 255);
@@ -170,6 +170,7 @@ static const List<String> _fabricOptions = [
         '${g.toRadixString(16).padLeft(2, '0')}'
         '${b.toRadixString(16).padLeft(2, '0')}';
   }
+
   Future<void> _loadOrderPeople() async {
     try {
       final profile = AppState.instance.profile;
@@ -189,12 +190,13 @@ static const List<String> _fabricOptions = [
       final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
 
       if (phone != null && phone.trim().isNotEmpty) {
-        final accountId =
-            await AppState.instance.fetchAccountIdForMobile(phone.trim());
+        final accountId = await AppState.instance.fetchAccountIdForMobile(
+          phone.trim(),
+        );
 
         if (accountId != null && accountId.isNotEmpty) {
-          final profiles =
-              await AppState.instance.fetchActiveProfilesForAccount(accountId);
+          final profiles = await AppState.instance
+              .fetchActiveProfilesForAccount(accountId);
 
           Map<String, dynamic>? customerProfile;
           for (final p in profiles) {
@@ -207,7 +209,7 @@ static const List<String> _fabricOptions = [
 
           final customerProfileId =
               customerProfile?['profileId']?.toString() ??
-                  customerProfile?['docId']?.toString();
+              customerProfile?['docId']?.toString();
 
           if (customerProfileId != null &&
               customerProfileId.trim().isNotEmpty) {
@@ -252,7 +254,8 @@ static const List<String> _fabricOptions = [
           final sameName =
               p.name.trim().toLowerCase() == draftPersonName.toLowerCase();
 
-          final sameRelationship = draftRelationship == null ||
+          final sameRelationship =
+              draftRelationship == null ||
               draftRelationship.isEmpty ||
               p.relationship.trim().toLowerCase() ==
                   draftRelationship.toLowerCase();
@@ -288,7 +291,8 @@ static const List<String> _fabricOptions = [
           selectedId = initialPersonId;
         } else if (initialClientName != null && initialClientName.isNotEmpty) {
           for (final p in people) {
-            if (p.name.trim().toLowerCase() == initialClientName.toLowerCase()) {
+            if (p.name.trim().toLowerCase() ==
+                initialClientName.toLowerCase()) {
               selectedId = p.id;
               break;
             }
@@ -331,14 +335,16 @@ static const List<String> _fabricOptions = [
 
       if (phone == null || phone.trim().isEmpty) {
         setState(() {
-          _deliveryAddressError = 'Unable to load addresses. Please sign in again.';
+          _deliveryAddressError =
+              'Unable to load addresses. Please sign in again.';
           _loadingDeliveryAddresses = false;
         });
         return;
       }
 
-      final accountId =
-          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        phone.trim(),
+      );
 
       if (accountId == null || accountId.isEmpty) {
         setState(() {
@@ -356,12 +362,7 @@ static const List<String> _fabricOptions = [
           .get();
 
       final addresses = snap.docs
-          .map(
-            (doc) => _DesignerAddress.fromMap(
-              doc.id,
-              doc.data(),
-            ),
-          )
+          .map((doc) => _DesignerAddress.fromMap(doc.id, doc.data()))
           .toList();
 
       addresses.sort((a, b) {
@@ -376,7 +377,8 @@ static const List<String> _fabricOptions = [
       if (addresses.isNotEmpty) {
         final existingSelectedId = _selectedDeliveryAddressId;
 
-        final existingStillAvailable = existingSelectedId != null &&
+        final existingStillAvailable =
+            existingSelectedId != null &&
             addresses.any((address) => address.addressId == existingSelectedId);
 
         if (existingStillAvailable) {
@@ -472,6 +474,7 @@ static const List<String> _fabricOptions = [
       context.push('/account');
     }
   }
+
   Future<Map<String, String>?> _loadAccountAndCustomerProfileForDraft() async {
     final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
 
@@ -479,15 +482,17 @@ static const List<String> _fabricOptions = [
       return null;
     }
 
-    final accountId =
-        await AppState.instance.fetchAccountIdForMobile(phone.trim());
+    final accountId = await AppState.instance.fetchAccountIdForMobile(
+      phone.trim(),
+    );
 
     if (accountId == null || accountId.isEmpty) {
       return null;
     }
 
-    final profiles =
-        await AppState.instance.fetchActiveProfilesForAccount(accountId);
+    final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+      accountId,
+    );
 
     Map<String, dynamic>? customerProfile;
 
@@ -501,30 +506,25 @@ static const List<String> _fabricOptions = [
 
     final customerProfileId =
         customerProfile?['profileId']?.toString() ??
-            customerProfile?['docId']?.toString();
+        customerProfile?['docId']?.toString();
 
     if (customerProfileId == null || customerProfileId.trim().isEmpty) {
       return null;
     }
 
-    return {
-      'accountId': accountId,
-      'customerProfileId': customerProfileId,
-    };
+    return {'accountId': accountId, 'customerProfileId': customerProfileId};
   }
- 
-    Future<void> _loadOrderDraft(String draftId) async {
+
+  Future<void> _loadOrderDraft(String draftId) async {
     try {
       final doc = await _db.collection('order_drafts').doc(draftId).get();
 
       if (!doc.exists) {
         if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Draft not found.'),
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Draft not found.')));
         return;
       }
 
@@ -536,9 +536,7 @@ static const List<String> _fabricOptions = [
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('This draft is no longer active.'),
-          ),
+          const SnackBar(content: Text('This draft is no longer active.')),
         );
         return;
       }
@@ -575,9 +573,11 @@ static const List<String> _fabricOptions = [
             final sameName =
                 p.name.trim().toLowerCase() == personName.toLowerCase();
 
-            final sameRelationship = relationship == null ||
+            final sameRelationship =
+                relationship == null ||
                 relationship.isEmpty ||
-                p.relationship.trim().toLowerCase() == relationship.toLowerCase();
+                p.relationship.trim().toLowerCase() ==
+                    relationship.toLowerCase();
 
             if (sameName && sameRelationship) {
               resolvedPersonId = p.id;
@@ -601,8 +601,9 @@ static const List<String> _fabricOptions = [
         if ((resolvedPersonId == null || resolvedPersonId.isEmpty) &&
             personName != null &&
             personName.isNotEmpty) {
-          final snapshotPersonId =
-              personId != null && personId.isNotEmpty ? personId : 'draft_person_$draftId';
+          final snapshotPersonId = personId != null && personId.isNotEmpty
+              ? personId
+              : 'draft_person_$draftId';
 
           if (!_orderPeople.any((p) => p.id == snapshotPersonId)) {
             _orderPeople.add(
@@ -686,9 +687,7 @@ static const List<String> _fabricOptions = [
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Draft loaded successfully'),
-        ),
+        const SnackBar(content: Text('Draft loaded successfully')),
       );
     } catch (_) {
       if (!mounted) return;
@@ -708,9 +707,7 @@ static const List<String> _fabricOptions = [
 
     if (selectedPerson == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select who this draft is for.'),
-        ),
+        const SnackBar(content: Text('Please select who this draft is for.')),
       );
       return;
     }
@@ -724,7 +721,9 @@ static const List<String> _fabricOptions = [
     if (_selectedDeliveryAddressId == null || deliveryAddress.length < 12) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a saved delivery address before saving draft.'),
+          content: Text(
+            'Please select a saved delivery address before saving draft.',
+          ),
         ),
       );
       return;
@@ -768,10 +767,11 @@ static const List<String> _fabricOptions = [
         fitPreference: _selectedFit,
         measurements: measurements,
         notes: _composeDetailNotes(),
-        fabricChoice: _fabricChoice == 'Other' &&
-          _customFabricController.text.trim().isNotEmpty
-          ? _customFabricController.text.trim()
-          : _fabricChoice,
+        fabricChoice:
+            _fabricChoice == 'Other' &&
+                _customFabricController.text.trim().isNotEmpty
+            ? _customFabricController.text.trim()
+            : _fabricChoice,
         designTemplateId: _selectedTemplate?.id,
         designTemplateTitle: _selectedTemplate?.title,
         designImageUrl: _selectedTemplate?.imageUrl,
@@ -788,11 +788,9 @@ static const List<String> _fabricOptions = [
         _saveDraftLoading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Draft saved successfully'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Draft saved successfully')));
     } catch (_) {
       if (!mounted) return;
 
@@ -824,7 +822,7 @@ static const List<String> _fabricOptions = [
       _measurementHydrationSignature = _measurementDataSignature();
     });
   }
-  
+
   Future<void> _initializeDesignerScreen() async {
     await _loadOrderPeople();
     await _loadDeliveryAddresses();
@@ -849,7 +847,7 @@ static const List<String> _fabricOptions = [
     final bodyPart = m == null
         ? 'noScan'
         : '${m.capturedAt.millisecondsSinceEpoch}:'
-            '${m.chest}:${m.waist}:${m.hips}:${m.shoulder}:${m.armLength}';
+              '${m.chest}:${m.waist}:${m.hips}:${m.shoulder}:${m.armLength}';
     return '$savedPart::$bodyPart';
   }
 
@@ -999,8 +997,9 @@ static const List<String> _fabricOptions = [
         return;
       }
 
-      final accountId =
-          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        phone.trim(),
+      );
 
       if (accountId == null || accountId.isEmpty) {
         _clearDesignerMeasurementFields();
@@ -1015,20 +1014,18 @@ static const List<String> _fabricOptions = [
           .get();
 
       final usableDocs = snap.docs
-          .map((doc) => {
-                'id': doc.id,
-                ...doc.data(),
-              })
+          .map((doc) => {'id': doc.id, ...doc.data()})
           .where((data) {
-        final status = (data['status'] ?? '').toString();
+            final status = (data['status'] ?? '').toString();
 
-        return status == 'ai_estimated' ||
-            status == 'customer_review_required' ||
-            status == 'partner_review_required' ||
-            status == 'verified' ||
-            status == 'accepted' ||
-            status == 'order_created';
-      }).toList();
+            return status == 'ai_estimated' ||
+                status == 'customer_review_required' ||
+                status == 'partner_review_required' ||
+                status == 'verified' ||
+                status == 'accepted' ||
+                status == 'order_created';
+          })
+          .toList();
 
       usableDocs.sort((a, b) {
         final aTime = a['updatedAt'];
@@ -1293,8 +1290,9 @@ static const List<String> _fabricOptions = [
       designTemplateId: _selectedTemplate?.id,
       designTemplateTitle: _selectedTemplate?.title,
       designImageUrl: _selectedTemplate?.imageUrl,
-      fabricChoice: _fabricChoice == 'Other' &&
-          _customFabricController.text.trim().isNotEmpty
+      fabricChoice:
+          _fabricChoice == 'Other' &&
+              _customFabricController.text.trim().isNotEmpty
           ? _customFabricController.text.trim()
           : _fabricChoice,
       accentColorHex: _colorHexRgb(_accentColor),
@@ -1302,7 +1300,8 @@ static const List<String> _fabricOptions = [
       fabricDescription: (_fabricChoice != null || _selectedTemplate != null)
           ? [
               if (_fabricChoice != null) _fabricChoice!,
-              if (_selectedTemplate != null) 'Design: ${_selectedTemplate!.title}',
+              if (_selectedTemplate != null)
+                'Design: ${_selectedTemplate!.title}',
               'Accent: ${_colorHexRgb(_accentColor)}',
             ].join(' · ')
           : null,
@@ -1315,34 +1314,31 @@ static const List<String> _fabricOptions = [
 
       if (measurementDraftId != null && measurementDraftId.isNotEmpty) {
         unawaited(
-          _db.collection('measurements').doc(measurementDraftId).set(
-            {
-              'status': 'order_created',
-              'linkedOrderId': id,
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          ),
+          _db.collection('measurements').doc(measurementDraftId).set({
+            'status': 'order_created',
+            'linkedOrderId': id,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)),
         );
       }
 
       if (_currentOrderDraftId != null &&
           _currentOrderDraftId!.trim().isNotEmpty) {
         unawaited(
-          _db.collection('order_drafts').doc(_currentOrderDraftId!.trim()).set(
-            {
-              'status': 'converted_to_order',
-              'linkedOrderId': id,
-              'updatedAt': FieldValue.serverTimestamp(),
-            },
-            SetOptions(merge: true),
-          ),
+          _db.collection('order_drafts').doc(_currentOrderDraftId!.trim()).set({
+            'status': 'converted_to_order',
+            'linkedOrderId': id,
+            'updatedAt': FieldValue.serverTimestamp(),
+          }, SetOptions(merge: true)),
         );
       }
 
-      unawaited(AppState.instance
-          .saveDressDesignerMeasurements(_allMeasurementsCmForStorage()));
-          
+      unawaited(
+        AppState.instance.saveDressDesignerMeasurements(
+          _allMeasurementsCmForStorage(),
+        ),
+      );
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1377,9 +1373,7 @@ static const List<String> _fabricOptions = [
           const SizedBox(height: 8),
           Text(
             _deliveryAddressError!,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.secondary,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.secondary),
           ),
           const SizedBox(height: 12),
           SecondaryButton(
@@ -1403,9 +1397,7 @@ static const List<String> _fabricOptions = [
           const SizedBox(height: 4),
           Text(
             'Add a saved Home or Other address before placing an order.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
           SecondaryButton(
@@ -1431,9 +1423,9 @@ static const List<String> _fabricOptions = [
 
     final displayedAddressText =
         _usingResumeDraftDeliveryAddressSnapshot &&
-                _resumeDraftDeliveryAddressSnapshot?.trim().isNotEmpty == true
-            ? _resumeDraftDeliveryAddressSnapshot!.trim()
-            : selectedAddress.formattedAddress;
+            _resumeDraftDeliveryAddressSnapshot?.trim().isNotEmpty == true
+        ? _resumeDraftDeliveryAddressSnapshot!.trim()
+        : selectedAddress.formattedAddress;
 
     final displayedAddressLabel = _usingResumeDraftDeliveryAddressSnapshot
         ? 'Draft saved address'
@@ -1446,9 +1438,7 @@ static const List<String> _fabricOptions = [
         const SizedBox(height: 4),
         Text(
           'Select where the completed order should be delivered.',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textHint,
-          ),
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
@@ -1558,8 +1548,7 @@ static const List<String> _fabricOptions = [
             ButtonSegment(value: 50, label: Text('50%')),
           ],
           selected: {_advancePercent},
-          onSelectionChanged: (s) =>
-              setState(() => _advancePercent = s.first),
+          onSelectionChanged: (s) => setState(() => _advancePercent = s.first),
         ),
         const SizedBox(height: 10),
         Text(
@@ -1605,7 +1594,8 @@ static const List<String> _fabricOptions = [
             _buildDesignLookSection(),
             const SizedBox(height: 24),
             //SUD
-            if (widget.initialMeasurementDraftId?.trim().isNotEmpty == true) ...[
+            if (widget.initialMeasurementDraftId?.trim().isNotEmpty ==
+                true) ...[
               const SizedBox(height: 4),
               Text(
                 'Draft: ${widget.initialMeasurementDraftId}',
@@ -1662,7 +1652,9 @@ static const List<String> _fabricOptions = [
             _buildAdvancePaymentSection(),
             const SizedBox(height: 16),
             PrimaryButton(
-              label: _placeOrderLoading ? 'Placing order…' : 'Place order in app',
+              label: _placeOrderLoading
+                  ? 'Placing order…'
+                  : 'Place order in app',
               icon: Icons.shopping_bag_outlined,
               onTap: _placeOrderLoading ? () {} : _placeOrderInApp,
             ),
@@ -1698,11 +1690,17 @@ static const List<String> _fabricOptions = [
               decoration: BoxDecoration(
                 color: AppColors.primary.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+                border: Border.all(
+                  color: AppColors.primary.withValues(alpha: 0.2),
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.label_rounded, size: 20, color: AppColors.primary),
+                  const Icon(
+                    Icons.label_rounded,
+                    size: 20,
+                    color: AppColors.primary,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -1728,7 +1726,7 @@ static const List<String> _fabricOptions = [
                 ),
               )
               .toList(),
-                    onChanged: (v) => setState(() {
+          onChanged: (v) => setState(() {
             _occasionId = v;
             _garmentMeasurementEstimate = null;
           }),
@@ -1740,7 +1738,9 @@ static const List<String> _fabricOptions = [
   Widget _buildCustomizationSection() {
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
-      collapsedShape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      collapsedShape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+      ),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Text('Dress Customization', style: AppTextStyles.headlineMedium),
       subtitle: Text(
@@ -1857,22 +1857,17 @@ static const List<String> _fabricOptions = [
         const SizedBox(height: 6),
         Text(
           'This profile will be used for measurements and order history.',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textHint,
-          ),
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
         ),
       ],
     );
   }
 
-    Widget _buildDressTypeSelector() {
+  Widget _buildDressTypeSelector() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Dress Type',
-          style: AppTextStyles.headlineMedium,
-        ),
+        Text('Dress Type', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _dressTypes.contains(_selectedDressType)
@@ -1881,14 +1876,10 @@ static const List<String> _fabricOptions = [
           decoration: InputDecoration(
             filled: true,
             fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: AppColors.divider,
-              ),
+              borderSide: BorderSide(color: AppColors.divider),
             ),
           ),
           items: _dressTypes
@@ -1932,9 +1923,7 @@ static const List<String> _fabricOptions = [
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(vertical: 12),
                     decoration: BoxDecoration(
-                      color: selected
-                          ? AppColors.primary
-                          : AppColors.surface,
+                      color: selected ? AppColors.primary : AppColors.surface,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
                         color: selected ? AppColors.primary : AppColors.divider,
@@ -1944,7 +1933,9 @@ static const List<String> _fabricOptions = [
                       fit,
                       textAlign: TextAlign.center,
                       style: AppTextStyles.titleMedium.copyWith(
-                        color: selected ? Colors.white : AppColors.textSecondary,
+                        color: selected
+                            ? Colors.white
+                            : AppColors.textSecondary,
                       ),
                     ),
                   ),
@@ -1956,18 +1947,21 @@ static const List<String> _fabricOptions = [
       ],
     );
   }
+
   // Metadata-based hints for recommended fabrics based on the selected dress type.
-    Widget _buildRecommendedFabricHint() {
-    final metadata =
-        DesignMetadataService.defaultForDressType(_selectedDressType);
+  Widget _buildRecommendedFabricHint() {
+    final metadata = DesignMetadataService.defaultForDressType(
+      _selectedDressType,
+    );
     final fabrics = metadata.recommendedFabrics;
 
     if (fabrics.isEmpty) {
       return const SizedBox.shrink();
     }
 
-    final liningText =
-        metadata.liningRequired ? 'Lining recommended' : 'Lining usually not required';
+    final liningText = metadata.liningRequired
+        ? 'Lining recommended'
+        : 'Lining usually not required';
 
     final complexityText = switch (metadata.complexity) {
       DesignComplexity.low => 'Low complexity',
@@ -2009,10 +2003,10 @@ static const List<String> _fabricOptions = [
       return const SizedBox.shrink();
     }
 
-    final fabricForMetadata = fabric == 'Other' &&
-        _customFabricController.text.trim().isNotEmpty
-    ? _customFabricController.text.trim()
-    : fabric;
+    final fabricForMetadata =
+        fabric == 'Other' && _customFabricController.text.trim().isNotEmpty
+        ? _customFabricController.text.trim()
+        : fabric;
 
     final metadata = FabricMetadataService.forFabric(fabricForMetadata);
 
@@ -2100,13 +2094,21 @@ static const List<String> _fabricOptions = [
             if (snap.hasError) {
               return Text(
                 'Could not load design images.',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                ),
               );
             }
             if (!snap.hasData) {
               return const Padding(
                 padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+                child: Center(
+                  child: SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
               );
             }
             final templates = snap.data!;
@@ -2115,7 +2117,9 @@ static const List<String> _fabricOptions = [
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
                   'No design flats yet. Your tailor can add them under Owner → Dress designs. You can still place an order.',
-                  style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textHint,
+                  ),
                 ),
               );
             }
@@ -2151,27 +2155,37 @@ static const List<String> _fabricOptions = [
                             child: t.imageUrl.isEmpty
                                 ? ColoredBox(
                                     color: AppColors.surfaceVariant,
-                                    child: Icon(Icons.image_not_supported_outlined,
-                                        color: AppColors.textHint, size: 28),
+                                    child: Icon(
+                                      Icons.image_not_supported_outlined,
+                                      color: AppColors.textHint,
+                                      size: 28,
+                                    ),
                                   )
                                 : Image.network(
                                     t.imageUrl,
                                     fit: BoxFit.cover,
                                     errorBuilder: (_, _, _) => ColoredBox(
                                       color: AppColors.surfaceVariant,
-                                      child: Icon(Icons.broken_image_outlined,
-                                          color: AppColors.textHint),
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        color: AppColors.textHint,
+                                      ),
                                     ),
                                   ),
                           ),
                           Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 4,
+                            ),
                             child: Text(
                               t.title,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               textAlign: TextAlign.center,
-                              style: AppTextStyles.labelMedium.copyWith(fontSize: 11),
+                              style: AppTextStyles.labelMedium.copyWith(
+                                fontSize: 11,
+                              ),
                             ),
                           ),
                         ],
@@ -2194,14 +2208,10 @@ static const List<String> _fabricOptions = [
             hintText: 'Select fabric type',
             filled: true,
             fillColor: AppColors.surface,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(
-                color: AppColors.divider,
-              ),
+              borderSide: BorderSide(color: AppColors.divider),
             ),
           ),
           items: _fabricOptions
@@ -2222,7 +2232,7 @@ static const List<String> _fabricOptions = [
         _buildRecommendedFabricHint(),
         _buildFabricMetadataHint(),
         const SizedBox(height: 20),
-                if (_fabricChoice == 'Other') ...[
+        if (_fabricChoice == 'Other') ...[
           const SizedBox(height: 8),
           TextFormField(
             controller: _customFabricController,
@@ -2266,8 +2276,9 @@ static const List<String> _fabricOptions = [
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
                     'Pick a design flat from your shop. You can still change fabric and accent colour above.',
-                    style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.textHint),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -2281,8 +2292,9 @@ static const List<String> _fabricOptions = [
                             padding: const EdgeInsets.all(24),
                             child: Text(
                               'Could not load designs. Check your connection.',
-                              style: AppTextStyles.bodyMedium
-                                  .copyWith(color: AppColors.textHint),
+                              style: AppTextStyles.bodyMedium.copyWith(
+                                color: AppColors.textHint,
+                              ),
                               textAlign: TextAlign.center,
                             ),
                           ),
@@ -2303,8 +2315,9 @@ static const List<String> _fabricOptions = [
                           child: Text(
                             'No design flats yet. Your tailor can add them under '
                             'Owner → Dress designs. You can still place an order.',
-                            style: AppTextStyles.bodyMedium
-                                .copyWith(color: AppColors.textHint),
+                            style: AppTextStyles.bodyMedium.copyWith(
+                              color: AppColors.textHint,
+                            ),
                             textAlign: TextAlign.center,
                           ),
                         );
@@ -2341,7 +2354,8 @@ static const List<String> _fabricOptions = [
                                             ? ColoredBox(
                                                 color: AppColors.surfaceVariant,
                                                 child: Icon(
-                                                  Icons.image_not_supported_outlined,
+                                                  Icons
+                                                      .image_not_supported_outlined,
                                                   color: AppColors.textHint,
                                                 ),
                                               )
@@ -2350,13 +2364,15 @@ static const List<String> _fabricOptions = [
                                                 fit: BoxFit.cover,
                                                 errorBuilder: (_, _, _) =>
                                                     ColoredBox(
-                                                  color:
-                                                      AppColors.surfaceVariant,
-                                                  child: Icon(
-                                                    Icons.broken_image_outlined,
-                                                    color: AppColors.textHint,
-                                                  ),
-                                                ),
+                                                      color: AppColors
+                                                          .surfaceVariant,
+                                                      child: Icon(
+                                                        Icons
+                                                            .broken_image_outlined,
+                                                        color:
+                                                            AppColors.textHint,
+                                                      ),
+                                                    ),
                                               ),
                                       ),
                                     ),
@@ -2399,8 +2415,7 @@ static const List<String> _fabricOptions = [
       builder: (context, _) {
         final photoUrl = AppState.instance.profile?.photoUrl;
         final template = _selectedTemplate;
-        final hasFlat =
-            template != null && template.imageUrl.trim().isNotEmpty;
+        final hasFlat = template != null && template.imageUrl.trim().isNotEmpty;
 
         return Container(
           width: double.infinity,
@@ -2419,7 +2434,9 @@ static const List<String> _fabricOptions = [
                 hasFlat
                     ? 'Your photo + tinted design flat (${_colorHexRgb(_accentColor)}). Tap the design to change it.'
                     : 'Tap the box on the right to choose a design, or use the thumbnails above.',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                ),
               ),
               const SizedBox(height: 14),
               Row(
@@ -2483,8 +2500,9 @@ static const List<String> _fabricOptions = [
                                           Icon(
                                             Icons.add_photo_alternate_outlined,
                                             size: 36,
-                                            color: AppColors.primary
-                                                .withValues(alpha: 0.7),
+                                            color: AppColors.primary.withValues(
+                                              alpha: 0.7,
+                                            ),
                                           ),
                                           const SizedBox(height: 10),
                                           Text(
@@ -2492,9 +2510,10 @@ static const List<String> _fabricOptions = [
                                             textAlign: TextAlign.center,
                                             style: AppTextStyles.titleMedium
                                                 .copyWith(
-                                              color: AppColors.textSecondary,
-                                              fontWeight: FontWeight.w600,
-                                            ),
+                                                  color:
+                                                      AppColors.textSecondary,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                           ),
                                           const SizedBox(height: 4),
                                           Text(
@@ -2502,7 +2521,8 @@ static const List<String> _fabricOptions = [
                                             textAlign: TextAlign.center,
                                             style: AppTextStyles.bodySmall
                                                 .copyWith(
-                                                    color: AppColors.textHint),
+                                                  color: AppColors.textHint,
+                                                ),
                                           ),
                                         ],
                                       ),
@@ -2534,11 +2554,12 @@ static const List<String> _fabricOptions = [
       ),
     );
   }
-    BodyMeasurements? _bodyMeasurementsFromDesignerFields() {
+
+  BodyMeasurements? _bodyMeasurementsFromDesignerFields() {
     final latest = _latestBodyMeasurementsForSuggestion;
-      if (latest != null) {
-        return latest;
-      }
+    if (latest != null) {
+      return latest;
+    }
     final unit = AppState.instance.measurementUnit;
 
     double? readCm(String key) {
@@ -2578,39 +2599,50 @@ static const List<String> _fabricOptions = [
   }
 
   void _suggestGarmentMeasurements() {
-    final body = _bodyMeasurementsFromDesignerFields();
+  final body = _bodyMeasurementsFromDesignerFields();
 
-    if (body == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Please take or select body measurements before generating dress suggestions.',
-          ),
+  if (body == null) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Please take or select body measurements before generating dress suggestions.',
         ),
-      );
-      return;
-    }
-
-    setState(() {
-      final metadata =
-          DesignMetadataService.defaultForDressType(_selectedDressType);
-
-      final occasionMetadata = OccasionMetadataService.forOccasion(
-        occasionId: _occasionId,
-        occasionLabel: _occasionLabel() ?? 'General',
-      );
-
-      _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
-        body: body,
-        dressType: _selectedDressType,
-        fitPreference: _selectedFit,
-        occasionCategory: _occasionLabel(),
-        designTitle: _selectedTemplate?.title,
-        designMetadata: metadata,
-        occasionMetadata: occasionMetadata,
-      );
-    });
+      ),
+    );
+    return;
   }
+
+  setState(() {
+    final metadata = DesignMetadataService.defaultForDressType(
+      _selectedDressType,
+    );
+
+    final fabricForMetadata = _fabricChoice == 'Other' &&
+            _customFabricController.text.trim().isNotEmpty
+        ? _customFabricController.text.trim()
+        : _fabricChoice;
+
+    final fabricMetadata = FabricMetadataService.forFabric(
+      fabricForMetadata,
+    );
+
+    final occasionMetadata = OccasionMetadataService.forOccasion(
+      occasionId: _occasionId,
+      occasionLabel: _occasionLabel() ?? 'General',
+    );
+
+    _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
+      body: body,
+      dressType: _selectedDressType,
+      fitPreference: _selectedFit,
+      occasionCategory: _occasionLabel(),
+      designTitle: _selectedTemplate?.title,
+      designMetadata: metadata,
+      occasionMetadata: occasionMetadata,
+      fabricMetadata: fabricMetadata,
+    );
+  });
+}
 
   Widget _buildGarmentSuggestionCard() {
     final estimate = _garmentMeasurementEstimate;
@@ -2625,9 +2657,7 @@ static const List<String> _fabricOptions = [
       decoration: BoxDecoration(
         color: AppColors.primary.withValues(alpha: 0.06),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.primary.withValues(alpha: 0.22),
-        ),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.22)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -2651,10 +2681,7 @@ static const List<String> _fabricOptions = [
               child: Row(
                 children: [
                   Expanded(
-                    child: Text(
-                      entry.key,
-                      style: AppTextStyles.bodyMedium,
-                    ),
+                    child: Text(entry.key, style: AppTextStyles.bodyMedium),
                   ),
                   Text(
                     displayValue,
@@ -2669,9 +2696,9 @@ static const List<String> _fabricOptions = [
           if (estimate.notes.isNotEmpty) ...[
             const SizedBox(height: 8),
             Theme(
-              data: Theme.of(context).copyWith(
-                dividerColor: Colors.transparent,
-              ),
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
               child: ExpansionTile(
                 tilePadding: EdgeInsets.zero,
                 childrenPadding: EdgeInsets.zero,
@@ -2712,8 +2739,8 @@ static const List<String> _fabricOptions = [
       ),
     );
   }
-  
-   Widget _buildMeasurementInputs() {
+
+  Widget _buildMeasurementInputs() {
     final u = AppState.instance.measurementUnit;
     final suffix = u.abbrev;
     final hasAnyMeasurement = _measurementFields.values.any(
@@ -2752,28 +2779,16 @@ static const List<String> _fabricOptions = [
             ),
             child: Column(
               children: [
-                _buildMeasurementSummaryRow(
-                  'Chest',
-                  'Waist',
-                  suffix,
-                ),
+                _buildMeasurementSummaryRow('Chest', 'Waist', suffix),
                 const SizedBox(height: 8),
-                _buildMeasurementSummaryRow(
-                  'Hip',
-                  'Shoulder',
-                  suffix,
-                ),
+                _buildMeasurementSummaryRow('Hip', 'Shoulder', suffix),
                 const SizedBox(height: 8),
-                _buildMeasurementSummaryRow(
-                  'Length',
-                  'Sleeve Length',
-                  suffix,
-                ),
+                _buildMeasurementSummaryRow('Length', 'Sleeve Length', suffix),
               ],
             ),
           ),
         const SizedBox(height: 8),
-          Wrap(
+        Wrap(
           spacing: 10,
           runSpacing: 10,
           children: [
@@ -2821,7 +2836,7 @@ static const List<String> _fabricOptions = [
     );
   }
 
-    Widget _buildMeasurementSummaryRow(
+  Widget _buildMeasurementSummaryRow(
     String leftKey,
     String rightKey,
     String suffix,
@@ -2883,8 +2898,9 @@ static const List<String> _fabricOptions = [
       dressType: _selectedDressType,
       occasionLabel: (occ == null || occ.isEmpty) ? 'General' : occ,
       fit: _selectedFit,
-      fabricChoice: _fabricChoice == 'Other' &&
-          _customFabricController.text.trim().isNotEmpty
+      fabricChoice:
+          _fabricChoice == 'Other' &&
+              _customFabricController.text.trim().isNotEmpty
           ? _customFabricController.text.trim()
           : _fabricChoice,
       designTemplateTitle: _selectedTemplate?.title,
@@ -2902,7 +2918,6 @@ static const List<String> _fabricOptions = [
           ),
         ),
       );
-
     }
   }
 
@@ -2916,7 +2931,7 @@ static const List<String> _fabricOptions = [
     if (!mounted) return;
     setState(() => _smartAssistBusy = null);
     if (!r.success) {
-     ScaffoldMessenger.of(context).showSnackBar(
+      ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
             'Smart Assist is currently unavailable. Please try again later.',
@@ -2964,8 +2979,11 @@ static const List<String> _fabricOptions = [
         children: [
           Row(
             children: [
-              const Icon(Icons.lightbulb_outline_rounded,
-                  color: AppColors.accent, size: 22),
+              const Icon(
+                Icons.lightbulb_outline_rounded,
+                color: AppColors.accent,
+                size: 22,
+              ),
               const SizedBox(width: 8),
               Text('Smart assist', style: AppTextStyles.headlineMedium),
             ],
@@ -2996,7 +3014,9 @@ static const List<String> _fabricOptions = [
                 ),
               ),
               OutlinedButton.icon(
-                onPressed: _smartAssistBusy != null ? null : _onPolishNotesForTailor,
+                onPressed: _smartAssistBusy != null
+                    ? null
+                    : _onPolishNotesForTailor,
                 icon: _smartAssistBusy == 'polish'
                     ? const SizedBox(
                         width: 18,
@@ -3064,7 +3084,10 @@ static const List<String> _fabricOptions = [
             GestureDetector(
               onTap: _aiLoading ? null : _getAiPrice,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 decoration: BoxDecoration(
                   gradient: AppColors.primaryGradient,
                   borderRadius: BorderRadius.circular(12),
@@ -3074,18 +3097,24 @@ static const List<String> _fabricOptions = [
                         width: 16,
                         height: 16,
                         child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white),
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.auto_awesome_rounded,
-                              color: Colors.white, size: 16),
+                          const Icon(
+                            Icons.auto_awesome_rounded,
+                            color: Colors.white,
+                            size: 16,
+                          ),
                           const SizedBox(width: 4),
                           Text(
                             'Get estimate',
-                            style: AppTextStyles.labelMedium
-                                .copyWith(color: Colors.white),
+                            style: AppTextStyles.labelMedium.copyWith(
+                              color: Colors.white,
+                            ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -3179,10 +3208,7 @@ class _DesignerAddress {
     required this.isDefault,
   });
 
-  factory _DesignerAddress.fromMap(
-    String id,
-    Map<String, dynamic> data,
-  ) {
+  factory _DesignerAddress.fromMap(String id, Map<String, dynamic> data) {
     return _DesignerAddress(
       addressId: data['addressId']?.toString() ?? id,
       addressType: data['addressType']?.toString() ?? 'Home',
