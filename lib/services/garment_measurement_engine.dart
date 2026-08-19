@@ -59,17 +59,32 @@ class GarmentMeasurementEngine {
       );
     }
 
-    if (normalizedDressType.contains('lehenga')) {
-    return _estimateLehengaCholi(
-      body: body,
-      dressType: dressType,
-      fitPreference: fitPreference,
-      occasionCategory: occasionCategory,
-      designTitle: designTitle,
-      designMetadata: designMetadata,
-      occasionMetadata: occasionMetadata,
-    );
+    if (normalizedDressType.contains('saree blouse') ||
+        normalizedDressType == 'blouse' ||
+        normalizedDressType.contains('blouse')) {
+      return _estimateBlouse(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
     }
+
+    if (normalizedDressType.contains('lehenga')) {
+      return _estimateLehengaCholi(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
+    }
+
 
     if (normalizedDressType.contains('gown')) {
       return _estimateGown(
@@ -108,11 +123,12 @@ class GarmentMeasurementEngine {
       designTitle: designTitle,
     );
 
-    final occasionEaseMultiplier = occasionMetadata?.easeMultiplier ?? 1.0;
+    final occasionEaseMultiplier =
+      occasionMetadata?.easeMultiplier ?? 1.0;
 
     final ease = _easeCm(fitPreference) *
-    contextEaseMultiplier *
-    occasionEaseMultiplier;
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -163,7 +179,12 @@ class GarmentMeasurementEngine {
       occasionCategory: occasionCategory,
       designTitle: designTitle,
     );
-    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
+    final occasionEaseMultiplier =
+      occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -214,7 +235,12 @@ class GarmentMeasurementEngine {
       occasionCategory: occasionCategory,
       designTitle: designTitle,
     );
-    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
+    final occasionEaseMultiplier =
+      occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
     final values = <String, double>{};
 
     final lengthMultiplier = _lengthMultiplierForContext(
@@ -253,6 +279,54 @@ class GarmentMeasurementEngine {
     );
   }
 
+  static GarmentMeasurementEstimate _estimateBlouse({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    final occasionEaseMultiplier =
+      occasionMetadata?.easeMultiplier ?? 1.0;
+
+    // Blouse usually needs closer fit than kurti/gown.
+    final ease = (_easeCm(fitPreference) * 0.55) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
+
+    final values = <String, double>{};
+
+    _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Shoulder', body.shoulder);
+    _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.55));
+    _putIfPositive(values, 'Blouse Length', _ratioValue(body.height, 0.22));
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Blouse measurements use a closer-fit formula and should be tailor confirmed.',
+        'Neck depth, back design, padding, lining and margin should be captured in Dress Customization.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
+      ],
+    );
+  }
+
   static GarmentMeasurementEstimate _estimateGown({
     required BodyMeasurements body,
     required String dressType,
@@ -266,7 +340,12 @@ class GarmentMeasurementEngine {
       occasionCategory: occasionCategory,
       designTitle: designTitle,
     );
-    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
+    final occasionEaseMultiplier =
+      occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
@@ -317,7 +396,12 @@ class GarmentMeasurementEngine {
       occasionCategory: occasionCategory,
       designTitle: designTitle,
     );
-    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
+    final occasionEaseMultiplier =
+      occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
     final values = <String, double>{};
 
     _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
