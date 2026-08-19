@@ -124,6 +124,44 @@ class GarmentMeasurementEngine {
       );
     }
 
+    if (normalizedDressType.contains('top') ||
+        normalizedDressType.contains('tunic')) {
+      return _estimateTopTunic(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
+    }
+
+    if (normalizedDressType.contains('skirt')) {
+      return _estimateSkirt(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
+    }
+
+    if (normalizedDressType.contains('salwar')) {
+      return _estimateSalwarSuit(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
+    }
+
+
     return _estimateGeneric(
       body: body,
       dressType: dressType,
@@ -529,6 +567,183 @@ class GarmentMeasurementEngine {
         'Palazzo / Pant measurements use bottom-wear waist, hip and length guidance.',
         'Thigh and inseam should be customer or tailor confirmed for accurate fitting.',
         'Pant length may vary by footwear, heel height and customer preference.',
+        ..._heightGuidanceNotes(body),
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
+      ],
+    );
+  }
+
+  static GarmentMeasurementEstimate _estimateTopTunic({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    final occasionEaseMultiplier =
+        occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
+
+    final values = <String, double>{};
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Hip', _addEase(body.hips, ease * 0.80));
+    _putIfPositive(values, 'Shoulder', body.shoulder);
+    _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.85));
+    _putIfPositive(
+      values,
+      'Top Length',
+      _ratioValue(body.height, 0.38 * lengthMultiplier),
+    );
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Top / Tunic uses upper-body measurements with shorter garment length guidance.',
+        'Final top length should be customer or tailor confirmed.',
+        ..._heightGuidanceNotes(body),
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
+      ],
+    );
+  }
+
+  static GarmentMeasurementEstimate _estimateSkirt({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    final occasionEaseMultiplier =
+        occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
+
+    final values = <String, double>{};
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
+    _putIfPositive(
+      values,
+      'Skirt Length',
+      _ratioValue(body.height, 0.55 * lengthMultiplier),
+    );
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Skirt measurements use waist, hip and skirt length guidance.',
+        'Skirt length depends on design, footwear, lining and customer preference.',
+        'Flare and lining should be reviewed during fabric estimation.',
+        ..._heightGuidanceNotes(body),
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
+      ],
+    );
+  }
+
+    static GarmentMeasurementEstimate _estimateSalwarSuit({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    final occasionEaseMultiplier =
+        occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
+
+    final values = <String, double>{};
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
+    _putIfPositive(values, 'Shoulder', body.shoulder);
+    _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.95));
+    _putIfPositive(
+      values,
+      'Kameez Length',
+      _ratioValue(body.height, 0.52 * lengthMultiplier),
+    );
+    _putIfPositive(values, 'Bottom Inseam', body.inseam);
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Salwar Suit uses kameez and bottom-wear measurement guidance.',
+        'Bottom inseam and salwar style should be customer or tailor confirmed.',
+        'Dupatta, lining and fabric allowance should be reviewed during estimation.',
         ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,

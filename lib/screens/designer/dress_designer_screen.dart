@@ -59,6 +59,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   final List<_OrderPerson> _orderPeople = [];
+  BodyMeasurements? _latestBodyMeasurementsForSuggestion;
   String? _selectedOrderPersonId;
   String? _resumeDraftPersonName;
   String? _resumeDraftRelationship;
@@ -936,6 +937,9 @@ static const List<String> _fabricOptions = [
     for (final controller in _measurementFields.values) {
       controller.clear();
     }
+
+    _latestBodyMeasurementsForSuggestion = null;
+    _garmentMeasurementEstimate = null;
   }
 
   void _applyBodyMeasurementsToDesignerFields(BodyMeasurements measurements) {
@@ -960,6 +964,10 @@ static const List<String> _fabricOptions = [
 
     // Garment length is dress-specific. Do not guess it from body height.
     _measurementFields['Length']?.clear();
+
+    // Keep the complete body measurement object for formula suggestions.
+    // Height is not shown in the order measurement card, but formulas need it.
+    _latestBodyMeasurementsForSuggestion = measurements;
 
     _fieldsUnit = unit;
   }
@@ -2446,6 +2454,10 @@ static const List<String> _fabricOptions = [
     );
   }
     BodyMeasurements? _bodyMeasurementsFromDesignerFields() {
+    final latest = _latestBodyMeasurementsForSuggestion;
+      if (latest != null) {
+        return latest;
+      }
     final unit = AppState.instance.measurementUnit;
 
     double? readCm(String key) {
