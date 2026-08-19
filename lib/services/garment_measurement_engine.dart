@@ -45,6 +45,19 @@ class GarmentMeasurementEngine {
         occasionMetadata: occasionMetadata,
       );
     }
+    
+    if (normalizedDressType.contains('anarkali')) {
+      return _estimateAnarkaliSuit(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
+    }
+
 
     if (normalizedDressType.contains('kurti') ||
         normalizedDressType.contains('kurta')) {
@@ -156,6 +169,65 @@ class GarmentMeasurementEngine {
       notes: [
         'Shirt length is estimated from body height using formula v1.',
         'Final garment length should be customer or tailor confirmed.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
+      ],
+    );
+  }
+
+  static GarmentMeasurementEstimate _estimateAnarkaliSuit({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    final occasionEaseMultiplier =
+        occasionMetadata?.easeMultiplier ?? 1.0;
+
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
+
+    final values = <String, double>{};
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
+    _putIfPositive(values, 'Shoulder', body.shoulder);
+    _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.95));
+    _putIfPositive(
+      values,
+      'Anarkali Length',
+      _ratioValue(body.height, 0.72 * lengthMultiplier),
+    );
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Anarkali Suit uses a longer length and flare-aware formula.',
+        'Flare, lining / astar and embroidery complexity should be reviewed during fabric estimation.',
+        'Final Anarkali length should be confirmed by customer or tailor.',
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
