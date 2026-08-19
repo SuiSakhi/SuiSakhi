@@ -111,6 +111,19 @@ class GarmentMeasurementEngine {
       );
     }
 
+    if (normalizedDressType.contains('palazzo') ||
+        normalizedDressType.contains('pant')) {
+      return _estimatePalazzoPant(
+        body: body,
+        dressType: dressType,
+        fitPreference: fitPreference,
+        occasionCategory: occasionCategory,
+        designTitle: designTitle,
+        designMetadata: designMetadata,
+        occasionMetadata: occasionMetadata,
+      );
+    }
+
     return _estimateGeneric(
       body: body,
       dressType: dressType,
@@ -169,6 +182,7 @@ class GarmentMeasurementEngine {
       notes: [
         'Shirt length is estimated from body height using formula v1.',
         'Final garment length should be customer or tailor confirmed.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -228,6 +242,7 @@ class GarmentMeasurementEngine {
         'Anarkali Suit uses a longer length and flare-aware formula.',
         'Flare, lining / astar and embroidery complexity should be reviewed during fabric estimation.',
         'Final Anarkali length should be confirmed by customer or tailor.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -284,6 +299,7 @@ class GarmentMeasurementEngine {
       notes: [
         'Kurti length is estimated from body height using formula v1.',
         'Kurti length varies by customer preference and should be confirmed.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -341,6 +357,7 @@ class GarmentMeasurementEngine {
       notes: [
         'Lehenga Choli uses separate blouse and lehenga length estimates.',
         'Lehenga flare, lining and embroidery complexity should be reviewed during fabric estimation.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -389,6 +406,7 @@ class GarmentMeasurementEngine {
       notes: [
         'Blouse measurements use a closer-fit formula and should be tailor confirmed.',
         'Neck depth, back design, padding, lining and margin should be captured in Dress Customization.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -445,6 +463,73 @@ class GarmentMeasurementEngine {
       notes: [
         'Gown length is estimated from body height using formula v1.',
         'Gown flare, lining and design complexity must be handled by fabric estimation.',
+        ..._heightGuidanceNotes(body),
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+        ..._occasionMetadataNotes(occasionMetadata),
+      ],
+    );
+  }
+
+  static GarmentMeasurementEstimate _estimatePalazzoPant({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    final occasionEaseMultiplier =
+        occasionMetadata?.easeMultiplier ?? 1.0;
+
+    // Bottom wear usually needs comfortable waist/hip ease.
+    final ease = _easeCm(fitPreference) *
+        contextEaseMultiplier *
+        occasionEaseMultiplier;
+
+    final values = <String, double>{};
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
+    _putIfPositive(values, 'Thigh', _addEase(body.thigh, ease * 0.60));
+    _putIfPositive(values, 'Inseam', body.inseam);
+
+    // Prefer inseam if available. Otherwise estimate pant length from height.
+    if (body.inseam != null && body.inseam! > 0) {
+      _putIfPositive(values, 'Pant Length', body.inseam);
+    } else {
+      _putIfPositive(
+        values,
+        'Pant Length',
+        _ratioValue(body.height, 0.55 * lengthMultiplier),
+      );
+    }
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Palazzo / Pant measurements use bottom-wear waist, hip and length guidance.',
+        'Thigh and inseam should be customer or tailor confirmed for accurate fitting.',
+        'Pant length may vary by footwear, heel height and customer preference.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -490,6 +575,7 @@ class GarmentMeasurementEngine {
       notes: [
         'Generic estimate does not derive garment length.',
         'Dress-specific formula should be added for accurate length and fabric estimation.',
+        ..._heightGuidanceNotes(body),
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -590,6 +676,16 @@ class GarmentMeasurementEngine {
     return multiplier.clamp(0.85, 1.20);
   }
   
+    static List<String> _heightGuidanceNotes(BodyMeasurements body) {
+    if (body.height != null && body.height! > 0) {
+      return const [];
+    }
+
+    return const [
+      'Height is missing. Please update profile height for better length estimation.',
+    ];
+  }
+
   static List<String> _designMetadataNotes(DesignMetadata? metadata) {
     if (metadata == null) {
       return const [];
