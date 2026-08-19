@@ -12,6 +12,8 @@ import '../../models/design_template.dart';
 //Design MetadataService is used to fetch the design metadata for the selected template, which includes information like the design title and occasion category. This metadata is then used to calculate the garment measurements and ease based on the selected fit preference and context.
 import '../../services/design_metadata_service.dart';
 import '../../services/occasion_metadata_service.dart';
+import '../../models/fabric_metadata.dart';
+import '../../services/fabric_metadata_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/claude_pricing_service.dart';
@@ -1991,6 +1993,42 @@ static const List<String> _fabricOptions = [
     );
   }
 
+  Widget _buildFabricMetadataHint() {
+    final fabric = _fabricChoice;
+
+    if (fabric == null || fabric.trim().isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final metadata = FabricMetadataService.forFabric(fabric);
+
+    final liningText = metadata.liningRecommended
+        ? 'Lining / astar recommended'
+        : 'Lining usually not required';
+
+    final preWashText = metadata.preWashRecommended
+        ? 'Pre-wash recommended'
+        : 'Pre-wash usually not required';
+
+    final shrinkageText = switch (metadata.shrinkageRisk) {
+      ShrinkageRisk.none => 'No shrinkage risk',
+      ShrinkageRisk.low => 'Low shrinkage risk',
+      ShrinkageRisk.medium => 'Medium shrinkage risk',
+      ShrinkageRisk.high => 'High shrinkage risk',
+    };
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        'Fabric guidance: $shrinkageText · $liningText · $preWashText',
+        style: AppTextStyles.bodySmall.copyWith(
+          color: AppColors.textHint,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+
   String _designSilhouetteLabel(DesignSilhouette silhouette) {
     switch (silhouette) {
       case DesignSilhouette.straight:
@@ -2151,6 +2189,7 @@ static const List<String> _fabricOptions = [
           },
         ),
         _buildRecommendedFabricHint(),
+        _buildFabricMetadataHint(),
         const SizedBox(height: 20),
         _buildLookPreviewCard(),
       ],
