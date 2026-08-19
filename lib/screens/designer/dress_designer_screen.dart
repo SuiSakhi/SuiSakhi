@@ -2533,7 +2533,7 @@ static const List<String> _fabricOptions = [
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Suggested for ${estimate.dressType} · ${estimate.formulaVersion}',
+            '${_occasionLabel() ?? 'General'} • ${estimate.dressType} • ${estimate.formulaVersion}',
             style: AppTextStyles.titleMedium.copyWith(
               color: AppColors.primary,
               fontWeight: FontWeight.w700,
