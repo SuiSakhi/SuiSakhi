@@ -351,10 +351,12 @@ class GarmentMeasurementEngine {
     return multiplier.clamp(0.85, 1.20);
   }
   
-    static List<String> _designMetadataNotes(DesignMetadata? metadata) {
+  static List<String> _designMetadataNotes(DesignMetadata? metadata) {
     if (metadata == null) {
       return const [];
     }
+
+    final silhouetteText = _silhouetteLabel(metadata.silhouette);
 
     final complexityText = switch (metadata.complexity) {
       DesignComplexity.low => 'low complexity',
@@ -362,14 +364,37 @@ class GarmentMeasurementEngine {
       DesignComplexity.high => 'high complexity',
     };
 
-    final liningText =
-        metadata.liningRequired ? 'lining recommended' : 'lining usually not required';
+    final liningText = metadata.liningRequired
+        ? 'lining recommended'
+        : 'lining usually not required';
 
     return [
-      'Design metadata considered: ${metadata.silhouette.name}, $complexityText, $liningText.',
+      'Design details considered: $silhouetteText, $complexityText, $liningText.',
     ];
   }
-
+    static String _silhouetteLabel(DesignSilhouette silhouette) {
+    switch (silhouette) {
+      case DesignSilhouette.straight:
+        return 'Straight silhouette';
+      case DesignSilhouette.aLine:
+        return 'A-line silhouette';
+      case DesignSilhouette.anarkali:
+        return 'Anarkali silhouette';
+      case DesignSilhouette.fitAndFlare:
+        return 'Fit & flare silhouette';
+      case DesignSilhouette.gathered:
+        return 'Gathered silhouette';
+      case DesignSilhouette.layered:
+        return 'Layered silhouette';
+      case DesignSilhouette.umbrella:
+        return 'Umbrella silhouette';
+      case DesignSilhouette.princessCut:
+        return 'Princess cut';
+      case DesignSilhouette.other:
+        return 'Custom silhouette';
+    }
+  }
+  
   static List<String> _contextNotes({
     String? occasionCategory,
     String? designTitle,
