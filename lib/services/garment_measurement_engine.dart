@@ -55,6 +55,17 @@ class GarmentMeasurementEngine {
       );
     }
 
+    if (normalizedDressType.contains('lehenga')) {
+    return _estimateLehengaCholi(
+      body: body,
+      dressType: dressType,
+      fitPreference: fitPreference,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+      designMetadata: designMetadata,
+    );
+    }
+
     if (normalizedDressType.contains('gown')) {
       return _estimateGown(
         body: body,
@@ -165,6 +176,56 @@ class GarmentMeasurementEngine {
       notes: [
         'Kurti length is estimated from body height using formula v1.',
         'Kurti length varies by customer preference and should be confirmed.',
+        ..._contextNotes(
+          occasionCategory: occasionCategory,
+          designTitle: designTitle,
+        ),
+        ..._designMetadataNotes(designMetadata),
+      ],
+    );
+  }
+  
+    static GarmentMeasurementEstimate _estimateLehengaCholi({
+    required BodyMeasurements body,
+    required String dressType,
+    required String fitPreference,
+    String? occasionCategory,
+    String? designTitle,
+    DesignMetadata? designMetadata,
+  }) {
+    final contextEaseMultiplier = _easeMultiplierForContext(
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+    final ease = _easeCm(fitPreference) * contextEaseMultiplier;
+    final values = <String, double>{};
+
+    final lengthMultiplier = _lengthMultiplierForContext(
+      dressType: dressType,
+      occasionCategory: occasionCategory,
+      designTitle: designTitle,
+    );
+
+    _putIfPositive(values, 'Chest', _addEase(body.chest, ease));
+    _putIfPositive(values, 'Waist', _addEase(body.waist, ease));
+    _putIfPositive(values, 'Hip', _addEase(body.hips, ease));
+    _putIfPositive(values, 'Shoulder', body.shoulder);
+    _putIfPositive(values, 'Sleeve Length', _ratioValue(body.armLength, 0.80));
+    _putIfPositive(values, 'Blouse Length', _ratioValue(body.height, 0.22));
+    _putIfPositive(
+      values,
+      'Lehenga Length',
+      _ratioValue(body.height, 0.58 * lengthMultiplier),
+    );
+
+    return GarmentMeasurementEstimate(
+      dressType: dressType,
+      fitPreference: fitPreference,
+      formulaVersion: formulaVersion,
+      valuesCm: values,
+      notes: [
+        'Lehenga Choli uses separate blouse and lehenga length estimates.',
+        'Lehenga flare, lining and embroidery complexity should be reviewed during fabric estimation.',
         ..._contextNotes(
           occasionCategory: occasionCategory,
           designTitle: designTitle,
@@ -394,7 +455,7 @@ class GarmentMeasurementEngine {
         return 'Custom silhouette';
     }
   }
-  
+
   static List<String> _contextNotes({
     String? occasionCategory,
     String? designTitle,
