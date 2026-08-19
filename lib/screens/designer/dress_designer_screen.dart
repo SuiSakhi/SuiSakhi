@@ -2643,6 +2643,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
     _fabricEstimate = FabricEstimationService.estimate(
       dressType: _selectedDressType,
+      body: body,
       designMetadata: metadata,
       occasionMetadata: occasionMetadata,
       fabricMetadata: fabricMetadata,
