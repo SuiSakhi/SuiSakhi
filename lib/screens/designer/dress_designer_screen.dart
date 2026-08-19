@@ -15,6 +15,8 @@ import '../../models/prd_catalog.dart';
 import '../../services/claude_pricing_service.dart';
 import '../../services/claude_smart_assistant_service.dart';
 import '../../services/design_template_service.dart';
+//Design MetadataService is used to fetch the design metadata for the selected template, which includes information like the design title and occasion category. This metadata is then used to calculate the garment measurements and ease based on the selected fit preference and context.
+import '../../services/design_metadata_service.dart';
 import '../../services/order_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
@@ -1934,6 +1936,26 @@ static const List<String> _fabricOptions = [
       ],
     );
   }
+  // Metadata-based hints for recommended fabrics based on the selected dress type.
+  Widget _buildRecommendedFabricHint() {
+    final fabrics =
+        DesignMetadataService.recommendedFabricsForDressType(_selectedDressType);
+
+    if (fabrics.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Text(
+        'Recommended for $_selectedDressType: ${fabrics.join(', ')}',
+        style: AppTextStyles.bodySmall.copyWith(
+          color: AppColors.textHint,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
 
   Widget _buildDesignLookSection() {
     return Column(
@@ -2071,6 +2093,7 @@ static const List<String> _fabricOptions = [
             });
           },
         ),
+        _buildRecommendedFabricHint(),
         const SizedBox(height: 20),
         _buildLookPreviewCard(),
       ],
