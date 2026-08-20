@@ -16,6 +16,8 @@ import '../../models/fabric_metadata.dart';
 import '../../services/fabric_metadata_service.dart';
 import '../../models/fabric_estimate.dart';
 import '../../services/fabric_estimation_service.dart';
+import '../../models/price_estimate.dart';
+import '../../services/price_estimation_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/claude_smart_assistant_service.dart';
@@ -85,6 +87,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final _deliveryAddressController = TextEditingController();
   GarmentMeasurementEstimate? _garmentMeasurementEstimate;
   FabricEstimate? _fabricEstimate;
+  PriceEstimate? _priceEstimate;
+
   /// null | 'fabric' | 'polish'
   String? _smartAssistBusy;
   String? _fabricStyleAiText;
@@ -1895,6 +1899,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             setState(() {
               _selectedDressType = value;
               _garmentMeasurementEstimate = null;
+              _fabricEstimate = null;
+              _priceEstimate = null;
             });
           },
         ),
@@ -2598,58 +2604,73 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   void _suggestGarmentMeasurements() {
-  final body = _bodyMeasurementsFromDesignerFields();
+    final body = _bodyMeasurementsFromDesignerFields();
 
-  if (body == null) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Please take or select body measurements before generating dress suggestions.',
+    if (body == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Please take or select body measurements before generating dress suggestions.',
+          ),
         ),
-      ),
-    );
-    return;
+      );
+      return;
+    }
+
+    setState(() {
+      final metadata = DesignMetadataService.defaultForDressType(
+        _selectedDressType,
+      );
+
+      final fabricForMetadata =
+          _fabricChoice == 'Other' &&
+              _customFabricController.text.trim().isNotEmpty
+          ? _customFabricController.text.trim()
+          : _fabricChoice;
+
+      final fabricMetadata = FabricMetadataService.forFabric(fabricForMetadata);
+
+      final occasionMetadata = OccasionMetadataService.forOccasion(
+        occasionId: _occasionId,
+        occasionLabel: _occasionLabel() ?? 'General',
+      );
+
+      _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
+        body: body,
+        dressType: _selectedDressType,
+        fitPreference: _selectedFit,
+        occasionCategory: _occasionLabel(),
+        designTitle: _selectedTemplate?.title,
+        designMetadata: metadata,
+        occasionMetadata: occasionMetadata,
+        fabricMetadata: fabricMetadata,
+      );
+
+      _fabricEstimate = FabricEstimationService.estimate(
+        dressType: _selectedDressType,
+        body: body,
+        designMetadata: metadata,
+        occasionMetadata: occasionMetadata,
+        fabricMetadata: fabricMetadata,
+      );
+
+      final fabricEstimate = _fabricEstimate;
+
+      if (fabricEstimate != null) {
+        _priceEstimate = PriceEstimationService.estimate(
+          dressType: _selectedDressType,
+          fabricEstimate: fabricEstimate,
+          designMetadata: metadata,
+          occasionMetadata: occasionMetadata,
+          fabricMetadata: fabricMetadata,
+          customizationAmount: 0,
+        );
+      } else {
+        _priceEstimate = null;
+      }
+    });
   }
 
-  setState(() {
-    final metadata = DesignMetadataService.defaultForDressType(
-      _selectedDressType,
-    );
-
-    final fabricForMetadata = _fabricChoice == 'Other' &&
-            _customFabricController.text.trim().isNotEmpty
-        ? _customFabricController.text.trim()
-        : _fabricChoice;
-
-    final fabricMetadata = FabricMetadataService.forFabric(
-      fabricForMetadata,
-    );
-
-    final occasionMetadata = OccasionMetadataService.forOccasion(
-      occasionId: _occasionId,
-      occasionLabel: _occasionLabel() ?? 'General',
-    );
-
-    _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
-      body: body,
-      dressType: _selectedDressType,
-      fitPreference: _selectedFit,
-      occasionCategory: _occasionLabel(),
-      designTitle: _selectedTemplate?.title,
-      designMetadata: metadata,
-      occasionMetadata: occasionMetadata,
-      fabricMetadata: fabricMetadata,
-    );
-
-    _fabricEstimate = FabricEstimationService.estimate(
-      dressType: _selectedDressType,
-      body: body,
-      designMetadata: metadata,
-      occasionMetadata: occasionMetadata,
-      fabricMetadata: fabricMetadata,
-    );
-  });
-}
   Widget _buildFabricEstimateCard() {
     final estimate = _fabricEstimate;
 
@@ -2657,23 +2678,18 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return const SizedBox.shrink();
     }
 
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: AppColors.primary.withValues(alpha: 0.15),
-          ),
-        ),
-        child: Column(
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
+      ),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Estimated Fabric Required',
-            style: AppTextStyles.titleMedium,
-          ),
+          Text('Estimated Fabric Required', style: AppTextStyles.titleMedium),
 
           const SizedBox(height: 8),
 
@@ -2689,9 +2705,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
           Text(
             'Formula ${estimate.formulaVersion} • Confidence ${estimate.confidence}',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
 
           const SizedBox(height: 8),
@@ -2699,16 +2713,14 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           ...estimate.notes.map(
             (note) => Padding(
               padding: const EdgeInsets.only(bottom: 4),
-              child: Text(
-                '• $note',
-                style: AppTextStyles.bodySmall,
-              ),
+              child: Text('• $note', style: AppTextStyles.bodySmall),
             ),
           ),
         ],
       ),
     );
   }
+
   Widget _buildGarmentSuggestionCard() {
     final estimate = _garmentMeasurementEstimate;
     if (estimate == null) return const SizedBox.shrink();
@@ -3110,8 +3122,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
-    Widget _buildAiPricing() {
-    final estimate = _fabricEstimate;
+  Widget _buildAiPricing() {
+    final fabricEstimate = _fabricEstimate;
+    final priceEstimate = _priceEstimate;
 
     return Container(
       width: double.infinity,
@@ -3119,29 +3132,27 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.divider,
-        ),
+        border: Border.all(color: AppColors.divider),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Order Estimate',
-            style: AppTextStyles.headlineMedium,
-          ),
+          Text('Order Estimate', style: AppTextStyles.headlineMedium),
           const SizedBox(height: 8),
           Text(
-            'Fabric and price estimates are guidance only. Final price will be confirmed after design, fabric and tailor review.',
+            'Fabric and stitching estimates are guidance only. '
+            'Final price will be confirmed after design, fabric, '
+            'customization and tailor review.',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textHint,
               height: 1.35,
             ),
           ),
           const SizedBox(height: 14),
-          if (estimate == null) ...[
+          if (fabricEstimate == null || priceEstimate == null) ...[
             Text(
-              'Tap “Suggest” in the Measurements section to generate garment and fabric estimates.',
+              'Tap “Suggest” in the Measurements section to generate '
+              'garment, fabric and stitching estimates.',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: AppColors.textHint,
               ),
@@ -3149,10 +3160,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           ] else ...[
             Row(
               children: [
-                const Icon(
-                  Icons.straighten_rounded,
-                  color: AppColors.primary,
-                ),
+                const Icon(Icons.straighten_rounded, color: AppColors.primary),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
@@ -3161,7 +3169,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                   ),
                 ),
                 Text(
-                  '${estimate.estimatedMeters} m',
+                  '${fabricEstimate.estimatedMeters.toStringAsFixed(1)} m',
                   style: AppTextStyles.titleMedium.copyWith(
                     color: AppColors.primary,
                     fontWeight: FontWeight.w700,
@@ -3171,22 +3179,118 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Formula ${estimate.formulaVersion} • Confidence ${estimate.confidence}',
+              'Fabric formula ${fabricEstimate.formulaVersion} • '
+              'Confidence ${fabricEstimate.confidence}',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textHint,
               ),
             ),
-            const SizedBox(height: 10),
-            ...estimate.notes.map(
-              (note) => Padding(
-                padding: const EdgeInsets.only(bottom: 4),
-                child: Text(
-                  '• $note',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textHint,
-                    height: 1.35,
+            const SizedBox(height: 14),
+            Divider(color: AppColors.divider, height: 1),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.currency_rupee_rounded,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Estimated stitching price',
+                        style: AppTextStyles.bodyMedium,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '₹${priceEstimate.minimumAmount.toStringAsFixed(0)} '
+                        'to '
+                        '₹${priceEstimate.maximumAmount.toStringAsFixed(0)}',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Price formula ${priceEstimate.formulaVersion} • '
+              'Confidence ${priceEstimate.confidence}',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Theme(
+              data: Theme.of(
+                context,
+              ).copyWith(dividerColor: Colors.transparent),
+              child: ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: EdgeInsets.zero,
+                title: Text(
+                  'Estimate details',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                subtitle: Text(
+                  '${fabricEstimate.notes.length + priceEstimate.notes.length} '
+                  'calculation notes available',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                  ),
+                ),
+                children: [
+                  ...fabricEstimate.notes.map(
+                    (note) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '• $note',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textHint,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  ...priceEstimate.notes.map(
+                    (note) => Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '• $note',
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textHint,
+                            height: 1.35,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Fabric purchase cost is not included. '
+              'Final stitching price will be confirmed after tailor review.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+                fontStyle: FontStyle.italic,
+                height: 1.35,
               ),
             ),
           ],
