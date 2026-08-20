@@ -55,6 +55,34 @@ service cloud.firestore {
           && resource.data.createdBy == request.auth.uid;
     }
 
+    // Private, profile-owned customer design references.
+    match /customer_designs/{designId} {
+      allow create: if signedIn()
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.accountId is string
+          && request.resource.data.accountId.size() > 0
+          && request.resource.data.profileId is string
+          && request.resource.data.profileId.size() > 0
+          && request.resource.data.visibility == 'private'
+          && request.resource.data.status == 'active';
+
+      allow read: if signedIn()
+          && resource.data.createdByUid == request.auth.uid;
+
+      allow update: if signedIn()
+          && resource.data.createdByUid == request.auth.uid
+          && request.resource.data.createdByUid
+              == resource.data.createdByUid
+          && request.resource.data.accountId
+              == resource.data.accountId
+          && request.resource.data.profileId
+              == resource.data.profileId
+          && request.resource.data.visibility
+              == resource.data.visibility;
+
+      allow delete: if false;
+    }
+    
     match /subscriptions/{docId} {
       allow read, write: if signedIn();
     }
