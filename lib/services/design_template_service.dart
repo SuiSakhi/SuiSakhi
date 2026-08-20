@@ -65,8 +65,18 @@ class DesignTemplateService {
     await doc.set({
       'title': label,
       'imageUrl': url,
+
+      // Phase-1 catalog metadata defaults.
+      'catalogType': 'free',
+      'dressType': null,
+      'occasionIds': <String>[],
+      'priceInr': null,
+      'ownerProfileId': null,
+      'isActive': true,
+
       'createdAt': FieldValue.serverTimestamp(),
       'createdBy': uid,
+      'updatedAt': FieldValue.serverTimestamp(),
     });
     return doc.id;
   }
