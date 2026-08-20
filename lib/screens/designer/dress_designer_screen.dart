@@ -1697,12 +1697,17 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             const SizedBox(height: 16),
             ListenableBuilder(
               listenable: AppState.instance,
-              builder: (context, _) => _buildMeasurementInputs(),
+              builder: (context, _) => _buildMeasurementSummary(),
             ),
             const SizedBox(height: 24),
             _buildCustomizationSection(),
             const SizedBox(height: 24),
             _buildNotesSection(),
+            const SizedBox(height: 24),
+            ListenableBuilder(
+              listenable: AppState.instance,
+              builder: (context, _) => _buildMeasurementActionsAndResults(),
+            ),
             const SizedBox(height: 24),
             _buildSmartAssistSection(),
             const SizedBox(height: 24),
@@ -1815,6 +1820,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
       ),
       children: [
+        const SizedBox(height: 12),
         DropdownButtonFormField<String>(
           initialValue: _selectedNeckStyle,
           decoration: const InputDecoration(
@@ -3033,54 +3039,69 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
-  Widget _buildMeasurementInputs() {
-    final u = AppState.instance.measurementUnit;
-    final suffix = u.abbrev;
+  Widget _buildMeasurementSummary() {
+    final unit = AppState.instance.measurementUnit;
+    final suffix = unit.abbrev;
+
     final hasAnyMeasurement = _measurementFields.values.any(
       (controller) => controller.text.trim().isNotEmpty,
     );
 
+    if (!hasAnyMeasurement) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Text(
+          'No saved measurements found for this profile. '
+          'Take a new measurement before generating dress estimates.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textHint,
+            height: 1.35,
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        children: [
+          _buildMeasurementSummaryRow('Chest', 'Waist', suffix),
+          const SizedBox(height: 8),
+          _buildMeasurementSummaryRow('Hip', 'Shoulder', suffix),
+          const SizedBox(height: 8),
+          _buildMeasurementSummaryRow('Length', 'Sleeve Length', suffix),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMeasurementActionsAndResults() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (!hasAnyMeasurement) ...[
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: Text(
-              'No saved measurements found for this profile. Take a new measurement or enter order-specific measurements later.',
-              style: AppTextStyles.bodySmall.copyWith(
-                color: AppColors.textHint,
-                height: 1.35,
-              ),
-            ),
+        Text('Generate Dress Estimate', style: AppTextStyles.headlineMedium),
+        const SizedBox(height: 4),
+        Text(
+          'Generate dress-specific measurements, fabric requirement '
+          'and an estimated stitching price using the selections above.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textHint,
+            height: 1.35,
           ),
-          const SizedBox(height: 12),
-        ],
-        if (hasAnyMeasurement)
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.divider),
-            ),
-            child: Column(
-              children: [
-                _buildMeasurementSummaryRow('Chest', 'Waist', suffix),
-                const SizedBox(height: 8),
-                _buildMeasurementSummaryRow('Hip', 'Shoulder', suffix),
-                const SizedBox(height: 8),
-                _buildMeasurementSummaryRow('Length', 'Sleeve Length', suffix),
-              ],
-            ),
-          ),
-        const SizedBox(height: 8),
+        ),
+        const SizedBox(height: 12),
         Wrap(
           spacing: 10,
           runSpacing: 10,
@@ -3088,7 +3109,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             OutlinedButton.icon(
               onPressed: _suggestGarmentMeasurements,
               icon: const Icon(Icons.auto_awesome_rounded),
-              label: const Text('Suggest for this Dress'),
+              label: const Text('Generate Dress Estimate'),
             ),
             OutlinedButton.icon(
               onPressed: () {
