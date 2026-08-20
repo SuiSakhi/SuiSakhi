@@ -27,7 +27,25 @@ service cloud.firestore {
               || request.resource.data.name is string);
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
     }
+    // Mobile-to-account lookup used after Firebase phone authentication.
+    //
+    // The document ID is normalized as:
+    // m_<country code and mobile digits>
+    // Example: m_919850799272
+    //
+    // A signed-in user may read the lookup required to restore the
+    // generated SuiSakhi account and selected customer profile.
+    match /mobile_accounts/{mobileAccountId} {
+      allow read: if signedIn();
 
+      // Account mapping must be created and maintained only through
+      // the controlled application account-foundation flow.
+      allow create, update: if signedIn()
+        && request.resource.data.accountId is string
+        && request.resource.data.accountId.size() > 0;
+
+      allow delete: if false;
+    }
     // Role lists (owner/tailor/delivery). Any signed-in user may read for routing.
     // Tighten writes in production (e.g. only owner UIDs via custom claims).
     match /config/{document=**} {
