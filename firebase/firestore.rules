@@ -82,7 +82,7 @@ service cloud.firestore {
 
       allow delete: if false;
     }
-    
+
     match /subscriptions/{docId} {
       allow read, write: if signedIn();
     }
