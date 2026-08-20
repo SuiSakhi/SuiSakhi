@@ -2901,56 +2901,6 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     });
   }
 
-  Widget _buildFabricEstimateCard() {
-    final estimate = _fabricEstimate;
-
-    if (estimate == null) {
-      return const SizedBox.shrink();
-    }
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.primary.withValues(alpha: 0.15)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Estimated Fabric Required', style: AppTextStyles.titleMedium),
-
-          const SizedBox(height: 8),
-
-          Text(
-            '${estimate.estimatedMeters} meters',
-            style: AppTextStyles.headlineSmall.copyWith(
-              color: AppColors.primary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-
-          const SizedBox(height: 4),
-
-          Text(
-            'Formula ${estimate.formulaVersion} • Confidence ${estimate.confidence}',
-            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
-          ),
-
-          const SizedBox(height: 8),
-
-          ...estimate.notes.map(
-            (note) => Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: Text('• $note', style: AppTextStyles.bodySmall),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildGarmentSuggestionCard() {
     final estimate = _garmentMeasurementEstimate;
     if (estimate == null) return const SizedBox.shrink();
@@ -3154,7 +3104,6 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           ],
         ),
         _buildGarmentSuggestionCard(),
-        _buildFabricEstimateCard(),
       ],
     );
   }
