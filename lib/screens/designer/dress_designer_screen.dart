@@ -127,6 +127,61 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final _backDesignController = TextEditingController();
   final _marginController = TextEditingController();
   final _customFabricController = TextEditingController();
+  String? _selectedNeckStyle;
+  String? _selectedSleeveStyle;
+  String? _selectedBackDesign;
+  String? _selectedAlterationMargin;
+  String? _selectedLiningPreference;
+
+  static const List<String> _neckStyleOptions = [
+    'Round Neck',
+    'V Neck',
+    'Boat Neck',
+    'Square Neck',
+    'Collar Neck',
+    'Keyhole Neck',
+    'Princess Neck',
+    'Pot Neck',
+    'Other',
+  ];
+
+  static const List<String> _sleeveStyleOptions = [
+    'Sleeveless',
+    'Cap Sleeve',
+    'Short Sleeve',
+    'Elbow Sleeve',
+    'Three Quarter Sleeve',
+    'Full Sleeve',
+    'Puff Sleeve',
+    'Bell Sleeve',
+    'Other',
+  ];
+
+  static const List<String> _backDesignOptions = [
+    'Standard Back',
+    'Round Back',
+    'U Back',
+    'V Back',
+    'Deep Back',
+    'Button Back',
+    'Tie / Dori Back',
+    'Closed Back',
+    'Other',
+  ];
+
+  static const List<String> _alterationMarginOptions = [
+    'No Extra Margin',
+    'Standard Margin',
+    'Extra Margin',
+    'Tailor Recommendation',
+  ];
+
+  static const List<String> _liningPreferenceOptions = [
+    'Not Required',
+    'Required',
+    'As Recommended',
+    'Tailor to Confirm',
+  ];
 
   bool _placeOrderLoading = false;
   bool _saveDraftLoading = false;
@@ -1214,6 +1269,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     if (_marginController.text.trim().isNotEmpty) {
       parts.add('Margin for alteration: ${_marginController.text.trim()}');
     }
+    if (_selectedLiningPreference?.trim().isNotEmpty == true) {
+      parts.add('Lining / Astar: ${_selectedLiningPreference!.trim()}');
+    }
     if (_notesController.text.trim().isNotEmpty) {
       parts.add(_notesController.text.trim());
     }
@@ -1739,6 +1797,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildCustomizationSection() {
+    void clearGeneratedEstimates() {
+      _garmentMeasurementEstimate = null;
+      _fabricEstimate = null;
+      _priceEstimate = null;
+    }
+
     return ExpansionTile(
       tilePadding: EdgeInsets.zero,
       collapsedShape: RoundedRectangleBorder(
@@ -1747,39 +1811,191 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       title: Text('Dress Customization', style: AppTextStyles.headlineMedium),
       subtitle: Text(
-        'Neck, sleeve, back design, lining and stitching preferences.',
+        'Select neck, sleeve, back design, margin and lining preferences.',
         style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
       ),
       children: [
-        TextField(
-          controller: _neckController,
+        DropdownButtonFormField<String>(
+          initialValue: _selectedNeckStyle,
           decoration: const InputDecoration(
-            labelText: 'Neck depth (front / back)',
-            hintText: 'e.g. Front 7", back 8"',
+            labelText: 'Neck Style',
+            hintText: 'Select neck style',
+            prefixIcon: Icon(Icons.checkroom_outlined),
           ),
+          items: _neckStyleOptions
+              .map(
+                (option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(option),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedNeckStyle = value;
+
+              if (value == 'Other') {
+                _neckController.clear();
+              } else {
+                _neckController.text = value ?? '';
+              }
+
+              clearGeneratedEstimates();
+            });
+          },
+        ),
+        if (_selectedNeckStyle == 'Other') ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _neckController,
+            decoration: const InputDecoration(
+              labelText: 'Other neck details',
+              hintText: 'e.g. custom neckline and front/back depth',
+            ),
+            onChanged: (_) {
+              setState(clearGeneratedEstimates);
+            },
+          ),
+        ],
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _selectedSleeveStyle,
+          decoration: const InputDecoration(
+            labelText: 'Sleeve Style',
+            hintText: 'Select sleeve style',
+            prefixIcon: Icon(Icons.dry_cleaning_outlined),
+          ),
+          items: _sleeveStyleOptions
+              .map(
+                (option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(option),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedSleeveStyle = value;
+
+              if (value == 'Other') {
+                _sleeveStyleController.clear();
+              } else {
+                _sleeveStyleController.text = value ?? '';
+              }
+
+              clearGeneratedEstimates();
+            });
+          },
+        ),
+        if (_selectedSleeveStyle == 'Other') ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _sleeveStyleController,
+            decoration: const InputDecoration(
+              labelText: 'Other sleeve details',
+              hintText: 'e.g. layered sleeve with lace border',
+            ),
+            onChanged: (_) {
+              setState(clearGeneratedEstimates);
+            },
+          ),
+        ],
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _selectedBackDesign,
+          decoration: const InputDecoration(
+            labelText: 'Back Design',
+            hintText: 'Select back design',
+            prefixIcon: Icon(Icons.view_agenda_outlined),
+          ),
+          items: _backDesignOptions
+              .map(
+                (option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(option),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedBackDesign = value;
+
+              if (value == 'Other') {
+                _backDesignController.clear();
+              } else {
+                _backDesignController.text = value ?? '';
+              }
+
+              clearGeneratedEstimates();
+            });
+          },
+        ),
+        if (_selectedBackDesign == 'Other') ...[
+          const SizedBox(height: 8),
+          TextFormField(
+            controller: _backDesignController,
+            decoration: const InputDecoration(
+              labelText: 'Other back design details',
+              hintText: 'e.g. custom deep back with dori',
+            ),
+            onChanged: (_) {
+              setState(clearGeneratedEstimates);
+            },
+          ),
+        ],
+        const SizedBox(height: 12),
+        DropdownButtonFormField<String>(
+          initialValue: _selectedAlterationMargin,
+          decoration: const InputDecoration(
+            labelText: 'Alteration Margin',
+            hintText: 'Select alteration margin',
+            prefixIcon: Icon(Icons.straighten_outlined),
+          ),
+          items: _alterationMarginOptions
+              .map(
+                (option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(option),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedAlterationMargin = value;
+              _marginController.text = value ?? '';
+              clearGeneratedEstimates();
+            });
+          },
         ),
         const SizedBox(height: 12),
-        TextField(
-          controller: _sleeveStyleController,
+        DropdownButtonFormField<String>(
+          initialValue: _selectedLiningPreference,
           decoration: const InputDecoration(
-            labelText: 'Sleeve style',
-            hintText: 'Cap / half / full, embellishments',
+            labelText: 'Lining / Astar',
+            hintText: 'Select lining preference',
+            prefixIcon: Icon(Icons.layers_outlined),
           ),
+          items: _liningPreferenceOptions
+              .map(
+                (option) => DropdownMenuItem<String>(
+                  value: option,
+                  child: Text(option),
+                ),
+              )
+              .toList(),
+          onChanged: (value) {
+            setState(() {
+              _selectedLiningPreference = value;
+              clearGeneratedEstimates();
+            });
+          },
         ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _backDesignController,
-          decoration: const InputDecoration(
-            labelText: 'Back design',
-            hintText: 'Deep / closed / dori',
-          ),
-        ),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _marginController,
-          decoration: const InputDecoration(
-            labelText: 'Margin for alteration',
-            hintText: 'Extra seam allowance',
+        const SizedBox(height: 8),
+        Text(
+          'Special or uncommon requests can be added in Special Instructions below.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textHint,
+            height: 1.35,
           ),
         ),
         const SizedBox(height: 8),
