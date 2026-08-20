@@ -1793,10 +1793,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 ),
               )
               .toList(),
-          onChanged: (v) => setState(() {
-            _occasionId = v;
-            _garmentMeasurementEstimate = null;
-          }),
+          onChanged: (value) {
+            setState(() {
+              _occasionId = value;
+              _selectedTemplate = null;
+              _garmentMeasurementEstimate = null;
+              _fabricEstimate = null;
+              _priceEstimate = null;
+            });
+          },
         ),
       ],
     );
@@ -2124,6 +2129,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               _garmentMeasurementEstimate = null;
               _fabricEstimate = null;
               _priceEstimate = null;
+              _selectedTemplate = null;
             });
           },
         ),
@@ -2305,6 +2311,27 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     }
   }
 
+  List<DesignTemplate> _filteredDesignTemplates(
+    List<DesignTemplate> templates,
+  ) {
+    return templates
+        .where((template) => template.isActive)
+        .where((template) => template.matchesDressType(_selectedDressType))
+        .where((template) => template.matchesOccasion(_occasionId))
+        .toList();
+  }
+
+  void _selectDesignTemplate(DesignTemplate template) {
+    setState(() {
+      _selectedTemplate = template;
+
+      // Design changes invalidate all previously generated estimates.
+      _garmentMeasurementEstimate = null;
+      _fabricEstimate = null;
+      _priceEstimate = null;
+    });
+  }
+
   Widget _buildDesignLookSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -2339,12 +2366,17 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 ),
               );
             }
-            final templates = snap.data!;
+            final allTemplates = snap.data!;
+            final templates = _filteredDesignTemplates(allTemplates);
+
             if (templates.isEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  'No design flats yet. Your tailor can add them under Owner → Dress designs. You can still place an order.',
+                  'No ${_occasionLabel() ?? 'matching'} '
+                  '$_selectedDressType designs are available yet. '
+                  'Try another occasion or dress type. '
+                  'You can still continue without selecting a catalog design.',
                   style: AppTextStyles.bodyMedium.copyWith(
                     color: AppColors.textHint,
                   ),
@@ -2361,10 +2393,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                   final t = templates[i];
                   final sel = _selectedTemplate?.id == t.id;
                   return GestureDetector(
-                    onTap: () => setState(() {
-                      _selectedTemplate = t;
-                      _garmentMeasurementEstimate = null;
-                    }),
+                    onTap: () => _selectDesignTemplate(t),
                     child: Container(
                       width: 88,
                       decoration: BoxDecoration(
@@ -2380,26 +2409,55 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
                           Expanded(
-                            child: t.imageUrl.isEmpty
-                                ? ColoredBox(
-                                    color: AppColors.surfaceVariant,
-                                    child: Icon(
-                                      Icons.image_not_supported_outlined,
-                                      color: AppColors.textHint,
-                                      size: 28,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                t.imageUrl.isEmpty
+                                    ? ColoredBox(
+                                        color: AppColors.surfaceVariant,
+                                        child: Icon(
+                                          Icons.image_not_supported_outlined,
+                                          color: AppColors.textHint,
+                                          size: 28,
+                                        ),
+                                      )
+                                    : Image.network(
+                                        t.imageUrl,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, _, _) => ColoredBox(
+                                          color: AppColors.surfaceVariant,
+                                          child: Icon(
+                                            Icons.broken_image_outlined,
+                                            color: AppColors.textHint,
+                                          ),
+                                        ),
+                                      ),
+                                Positioned(
+                                  top: 4,
+                                  left: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 3,
                                     ),
-                                  )
-                                : Image.network(
-                                    t.imageUrl,
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (_, _, _) => ColoredBox(
-                                      color: AppColors.surfaceVariant,
-                                      child: Icon(
-                                        Icons.broken_image_outlined,
-                                        color: AppColors.textHint,
+                                    decoration: BoxDecoration(
+                                      color: t.isPremium
+                                          ? AppColors.accent
+                                          : AppColors.primary,
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      t.isPremium ? 'PREMIUM' : 'FREE',
+                                      style: AppTextStyles.labelMedium.copyWith(
+                                        color: Colors.white,
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.w700,
                                       ),
                                     ),
                                   ),
+                                ),
+                              ],
+                            ),
                           ),
                           Padding(
                             padding: const EdgeInsets.symmetric(
@@ -2496,14 +2554,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                   child: Text(
-                    'Select a design',
+                    'Select $_selectedDressType Design',
                     style: AppTextStyles.headlineMedium,
                   ),
                 ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: Text(
-                    'Pick a design flat from your shop. You can still change fabric and accent colour above.',
+                    'Showing ${_occasionLabel() ?? 'matching'} '
+                    '$_selectedDressType designs from the SuiSakhi catalog.',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.textHint,
                     ),
@@ -2536,13 +2595,17 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                           ),
                         );
                       }
-                      final templates = snap.data!;
+                      final allTemplates = snap.data!;
+                      final templates = _filteredDesignTemplates(allTemplates);
+
                       if (templates.isEmpty) {
                         return Padding(
                           padding: const EdgeInsets.all(24),
                           child: Text(
-                            'No design flats yet. Your tailor can add them under '
-                            'Owner → Dress designs. You can still place an order.',
+                            'No ${_occasionLabel() ?? 'matching'} '
+                            '$_selectedDressType designs are available yet.\n\n'
+                            'Try another occasion or dress type. '
+                            'You can still continue without selecting a catalog design.',
                             style: AppTextStyles.bodyMedium.copyWith(
                               color: AppColors.textHint,
                             ),
@@ -2563,10 +2626,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                             child: InkWell(
                               borderRadius: BorderRadius.circular(14),
                               onTap: () {
-                                setState(() {
-                                  _selectedTemplate = t;
-                                  _garmentMeasurementEstimate = null;
-                                });
+                                _selectDesignTemplate(t);
                                 Navigator.pop(sheetCtx);
                               },
                               child: Padding(
