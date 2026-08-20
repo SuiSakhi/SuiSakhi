@@ -8,6 +8,18 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function hasAuthenticatedPhone() {
+      return signedIn()
+        && request.auth.token.phone_number is string
+        && request.auth.token.phone_number.size() > 0;
+    }
+
+    function ownsExistingAccount(accountId) {
+      return hasAuthenticatedPhone()
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+        ).data.mobileE164 == request.auth.token.phone_number;
+    }
     // Profile + phone lookup field (used after first successful save)
     match /users/{userId} {
       allow read, write: if signedIn() && request.auth.uid == userId;
@@ -43,6 +55,63 @@ service cloud.firestore {
       allow create, update: if signedIn()
         && request.resource.data.accountId is string
         && request.resource.data.accountId.size() > 0;
+
+      allow delete: if false;
+    }
+    // Account and account-owned profile context.
+    //
+    // Account ownership is verified against the phone number supplied by
+    // Firebase Phone Authentication.
+    match /accounts/{accountId} {
+      allow create: if hasAuthenticatedPhone()
+        && request.resource.data.accountId == accountId
+        && request.resource.data.mobileE164
+            == request.auth.token.phone_number;
+
+      allow read, update: if hasAuthenticatedPhone()
+        && resource.data.mobileE164
+            == request.auth.token.phone_number;
+
+      allow delete: if false;
+
+      // Customer and partner profiles belonging to this account.
+      match /profiles/{profileId} {
+        allow read, create, update: if ownsExistingAccount(accountId);
+        allow delete: if false;
+
+        // Family members belong to the owning Customer profile.
+        // Archived members remain available for historical records but
+        // are excluded by application queries for new orders.
+        match /family_members/{familyMemberId} {
+          allow read, create, update: if ownsExistingAccount(accountId);
+          allow delete: if false;
+        }
+      }
+
+      // Addresses belonging to this account.
+      match /addresses/{addressId} {
+        allow read, create, update: if ownsExistingAccount(accountId);
+        allow delete: if ownsExistingAccount(accountId);
+      }
+    }
+    // Measurements owned by an account.
+    match /measurements/{measurementId} {
+
+      allow read: if signedIn()
+        && resource.data.accountId is string
+        && ownsExistingAccount(resource.data.accountId);
+
+      allow create: if signedIn()
+        && request.resource.data.accountId is string
+        && ownsExistingAccount(
+            request.resource.data.accountId
+          );
+
+      allow update: if signedIn()
+      allow update: if signedIn()
+        && resource.data.accountId is string
+        && request.resource.data.accountId == resource.data.accountId
+        && ownsExistingAccount(resource.data.accountId);
 
       allow delete: if false;
     }
