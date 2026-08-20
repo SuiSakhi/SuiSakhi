@@ -29,6 +29,10 @@ import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
 import '../../services/order_draft_service.dart';
 import '../../services/garment_measurement_engine.dart';
+import 'package:image_picker/image_picker.dart';
+
+import '../../models/customer_design.dart';
+import '../../services/customer_design_service.dart';
 
 class DressDesignerScreen extends StatefulWidget {
   const DressDesignerScreen({
@@ -2576,6 +2580,238 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
+  DesignTemplate _customerDesignAsTemplate(CustomerDesign design) {
+    return DesignTemplate(
+      id: design.id,
+      title: design.title,
+      imageUrl: design.imageUrl,
+      catalogType: DesignCatalogType.customerUpload,
+      dressType: design.dressType,
+      occasionIds: design.occasionId?.trim().isNotEmpty == true
+          ? [design.occasionId!.trim()]
+          : const [],
+      priceInr: null,
+      createdBy: null,
+      ownerProfileId: design.profileId,
+      isActive: design.isActive,
+    );
+  }
+
+  Future<void> _uploadOwnDesign() async {
+    final messenger = ScaffoldMessenger.of(context);
+
+    final ownerContext = await _resolveSelectedCustomerDesignOwner();
+
+    if (!mounted) {
+      return;
+    }
+
+    if (ownerContext == null) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Could not resolve the selected profile. '
+            'Please select who this order is for and try again.',
+          ),
+        ),
+      );
+      return;
+    }
+
+    final titleController = TextEditingController();
+    final notesController = TextEditingController();
+
+    try {
+      final shouldContinue = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Upload Own Design'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Uploading privately for '
+                    '${ownerContext.profileName}.',
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Dress Type: $_selectedDressType\n'
+                    'Occasion: ${_occasionLabel() ?? 'General'}',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: titleController,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Design title',
+                      hintText: 'e.g. Boutique Anarkali Reference',
+                    ),
+                    textCapitalization: TextCapitalization.words,
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: notesController,
+                    minLines: 2,
+                    maxLines: 4,
+                    decoration: const InputDecoration(
+                      labelText: 'Notes for tailor (optional)',
+                      hintText:
+                          'Mention important elements to follow from the reference.',
+                    ),
+                    textCapitalization: TextCapitalization.sentences,
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    'The uploaded design will remain private '
+                    'to the selected profile.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                      height: 1.35,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext, false);
+                },
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext, true);
+                },
+                child: const Text('Choose Image'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (shouldContinue != true || !mounted) {
+        return;
+      }
+
+      final source = await showModalBottomSheet<ImageSource>(
+        context: context,
+        showDragHandle: true,
+        builder: (bottomSheetContext) {
+          return SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.photo_library_outlined),
+                  title: const Text('Gallery'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext, ImageSource.gallery);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.camera_alt_outlined),
+                  title: const Text('Camera'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext, ImageSource.camera);
+                  },
+                ),
+              ],
+            ),
+          );
+        },
+      );
+
+      if (source == null || !mounted) {
+        return;
+      }
+
+      final file = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 2000,
+        maxHeight: 2000,
+        imageQuality: 88,
+      );
+
+      if (file == null || !mounted) {
+        return;
+      }
+
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Uploading design for '
+            '${ownerContext.profileName}...',
+          ),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+
+      try {
+        final uploadedDesign = await CustomerDesignService.uploadDesign(
+          accountId: ownerContext.accountId,
+          profileId: ownerContext.profileId,
+          title: titleController.text,
+          dressType: _selectedDressType,
+          occasionId: _occasionId,
+          notes: notesController.text,
+          file: file,
+        );
+
+        if (!mounted) {
+          return;
+        }
+
+        if (uploadedDesign == null) {
+          messenger.showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Could not upload the design. '
+                'Please check sign-in and Firebase rules.',
+              ),
+            ),
+          );
+          return;
+        }
+
+        final uploadedTemplate = _customerDesignAsTemplate(uploadedDesign);
+
+        _selectDesignTemplate(uploadedTemplate);
+
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              'Design uploaded privately for '
+              '${ownerContext.profileName} and selected.',
+            ),
+          ),
+        );
+      } catch (error) {
+        if (!mounted) {
+          return;
+        }
+
+        messenger.showSnackBar(
+          SnackBar(content: Text('Could not upload the design: $error')),
+        );
+      }
+    } finally {
+      titleController.dispose();
+      notesController.dispose();
+    }
+  }
+
   Future<void> _showDesignPickerSheet() async {
     var selectedCatalogFilter = 'all';
 
@@ -2668,35 +2904,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: OutlinedButton.icon(
                         onPressed: () async {
-                          final messenger = ScaffoldMessenger.of(this.context);
-
-                          final ownerContext =
-                              await _resolveSelectedCustomerDesignOwner();
-
-                          if (!mounted) {
-                            return;
-                          }
-
-                          if (ownerContext == null) {
-                            messenger.showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Could not resolve the selected profile.',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-
-                          messenger.showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                'Upload Own Design coming next. '
-                                'Design will be uploaded for '
-                                '${ownerContext.profileName}.',
-                              ),
-                            ),
-                          );
+                          Navigator.pop(sheetContext);
+                          await _uploadOwnDesign();
                         },
                         icon: const Icon(Icons.upload_file_outlined),
                         label: const Text('Upload Own Design'),
