@@ -18,6 +18,7 @@ import '../../models/fabric_estimate.dart';
 import '../../services/fabric_estimation_service.dart';
 import '../../models/price_estimate.dart';
 import '../../services/price_estimation_service.dart';
+import '../../services/dress_customization_estimation_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/claude_smart_assistant_service.dart';
@@ -2839,57 +2840,64 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return;
     }
 
+    final designMetadata = DesignMetadataService.defaultForDressType(
+      _selectedDressType,
+    );
+
+    final fabricForMetadata =
+        _fabricChoice == 'Other' &&
+            _customFabricController.text.trim().isNotEmpty
+        ? _customFabricController.text.trim()
+        : _fabricChoice;
+
+    final fabricMetadata = FabricMetadataService.forFabric(fabricForMetadata);
+
+    final occasionMetadata = OccasionMetadataService.forOccasion(
+      occasionId: _occasionId,
+      occasionLabel: _occasionLabel() ?? 'General',
+    );
+
+    final customizationEstimate = DressCustomizationEstimationService.estimate(
+      neckStyle: _selectedNeckStyle,
+      sleeveStyle: _selectedSleeveStyle,
+      backDesign: _selectedBackDesign,
+      alterationMargin: _selectedAlterationMargin,
+      liningPreference: _selectedLiningPreference,
+    );
+
+    final garmentEstimate = GarmentMeasurementEngine.estimate(
+      body: body,
+      dressType: _selectedDressType,
+      fitPreference: _selectedFit,
+      occasionCategory: _occasionLabel(),
+      designTitle: _selectedTemplate?.title,
+      designMetadata: designMetadata,
+      occasionMetadata: occasionMetadata,
+      fabricMetadata: fabricMetadata,
+    );
+
+    final fabricEstimate = FabricEstimationService.estimate(
+      dressType: _selectedDressType,
+      body: body,
+      designMetadata: designMetadata,
+      occasionMetadata: occasionMetadata,
+      fabricMetadata: fabricMetadata,
+      customizationEstimate: customizationEstimate,
+    );
+
+    final priceEstimate = PriceEstimationService.estimate(
+      dressType: _selectedDressType,
+      fabricEstimate: fabricEstimate,
+      designMetadata: designMetadata,
+      occasionMetadata: occasionMetadata,
+      fabricMetadata: fabricMetadata,
+      customizationAmount: customizationEstimate.additionalStitchingAmount,
+    );
+
     setState(() {
-      final metadata = DesignMetadataService.defaultForDressType(
-        _selectedDressType,
-      );
-
-      final fabricForMetadata =
-          _fabricChoice == 'Other' &&
-              _customFabricController.text.trim().isNotEmpty
-          ? _customFabricController.text.trim()
-          : _fabricChoice;
-
-      final fabricMetadata = FabricMetadataService.forFabric(fabricForMetadata);
-
-      final occasionMetadata = OccasionMetadataService.forOccasion(
-        occasionId: _occasionId,
-        occasionLabel: _occasionLabel() ?? 'General',
-      );
-
-      _garmentMeasurementEstimate = GarmentMeasurementEngine.estimate(
-        body: body,
-        dressType: _selectedDressType,
-        fitPreference: _selectedFit,
-        occasionCategory: _occasionLabel(),
-        designTitle: _selectedTemplate?.title,
-        designMetadata: metadata,
-        occasionMetadata: occasionMetadata,
-        fabricMetadata: fabricMetadata,
-      );
-
-      _fabricEstimate = FabricEstimationService.estimate(
-        dressType: _selectedDressType,
-        body: body,
-        designMetadata: metadata,
-        occasionMetadata: occasionMetadata,
-        fabricMetadata: fabricMetadata,
-      );
-
-      final fabricEstimate = _fabricEstimate;
-
-      if (fabricEstimate != null) {
-        _priceEstimate = PriceEstimationService.estimate(
-          dressType: _selectedDressType,
-          fabricEstimate: fabricEstimate,
-          designMetadata: metadata,
-          occasionMetadata: occasionMetadata,
-          fabricMetadata: fabricMetadata,
-          customizationAmount: 0,
-        );
-      } else {
-        _priceEstimate = null;
-      }
+      _garmentMeasurementEstimate = garmentEstimate;
+      _fabricEstimate = fabricEstimate;
+      _priceEstimate = priceEstimate;
     });
   }
 

@@ -1,4 +1,5 @@
 import '../models/design_metadata.dart';
+import '../models/dress_customization_estimate.dart';
 import '../models/fabric_estimate.dart';
 import '../models/fabric_metadata.dart';
 import '../models/occasion_metadata.dart';
@@ -9,13 +10,14 @@ class FabricEstimationService {
 
   static const String formulaVersion = 'v1';
 
-static FabricEstimate estimate({
-  required String dressType,
-  required BodyMeasurements body,
-  DesignMetadata? designMetadata,
-  OccasionMetadata? occasionMetadata,
-  FabricMetadata? fabricMetadata,
-}) {
+  static FabricEstimate estimate({
+    required String dressType,
+    required BodyMeasurements body,
+    DesignMetadata? designMetadata,
+    OccasionMetadata? occasionMetadata,
+    FabricMetadata? fabricMetadata,
+    DressCustomizationEstimate? customizationEstimate,
+  }) {
     final normalizedDressType = dressType.trim().toLowerCase();
 
     double meters;
@@ -81,6 +83,8 @@ static FabricEstimate estimate({
       meters += 0.25;
     }
 
+    meters += customizationEstimate?.additionalFabricMeters ?? 0;
+
     meters *= fabricMetadata?.fabricAllowanceMultiplier ?? 1.0;
 
     return FabricEstimate(
@@ -99,6 +103,12 @@ static FabricEstimate estimate({
           'Occasion recommendation increases fabric requirement.',
         if (fabricMetadata != null)
           'Fabric behavior and allowance multipliers were considered.',
+        if ((customizationEstimate?.additionalFabricMeters ?? 0) > 0)
+          'Dress customization added '
+              '${customizationEstimate!.additionalFabricMeters.toStringAsFixed(2)} '
+              'meters to the fabric allowance.',
+        if (customizationEstimate != null)
+          ...customizationEstimate.notes,
       ],
     );
   }
