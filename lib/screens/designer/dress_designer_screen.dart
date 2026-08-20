@@ -577,6 +577,45 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     return {'accountId': accountId, 'customerProfileId': customerProfileId};
   }
 
+  Future<_CustomerDesignOwnerContext?>
+  _resolveSelectedCustomerDesignOwner() async {
+    final selectedPerson = _selectedOrderPerson();
+
+    if (selectedPerson == null) {
+      return null;
+    }
+
+    final accountContext = await _loadAccountAndCustomerProfileForDraft();
+
+    if (accountContext == null) {
+      return null;
+    }
+
+    final accountId = accountContext['accountId']?.trim() ?? '';
+
+    final customerProfileId = accountContext['customerProfileId']?.trim() ?? '';
+
+    if (accountId.isEmpty || customerProfileId.isEmpty) {
+      return null;
+    }
+
+    final resolvedProfileId = selectedPerson.isSelf
+        ? customerProfileId
+        : selectedPerson.id.trim();
+
+    if (resolvedProfileId.isEmpty || resolvedProfileId == 'self') {
+      return null;
+    }
+
+    return _CustomerDesignOwnerContext(
+      accountId: accountId,
+      profileId: resolvedProfileId,
+      profileName: selectedPerson.name.trim().isEmpty
+          ? 'Customer'
+          : selectedPerson.name.trim(),
+    );
+  }
+
   Future<void> _loadOrderDraft(String draftId) async {
     try {
       final doc = await _db.collection('order_drafts').doc(draftId).get();
@@ -2611,10 +2650,61 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                               });
                             },
                           ),
+                          ChoiceChip(
+                            label: const Text('My Uploads'),
+                            selected: selectedCatalogFilter == 'uploads',
+                            onSelected: (_) {
+                              setSheetState(() {
+                                selectedCatalogFilter = 'uploads';
+                              });
+                            },
+                          ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 14),
+
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: OutlinedButton.icon(
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(this.context);
+
+                          final ownerContext =
+                              await _resolveSelectedCustomerDesignOwner();
+
+                          if (!mounted) {
+                            return;
+                          }
+
+                          if (ownerContext == null) {
+                            messenger.showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                  'Could not resolve the selected profile.',
+                                ),
+                              ),
+                            );
+                            return;
+                          }
+
+                          messenger.showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Upload Own Design coming next. '
+                                'Design will be uploaded for '
+                                '${ownerContext.profileName}.',
+                              ),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.upload_file_outlined),
+                        label: const Text('Upload Own Design'),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
                     Expanded(
                       child: StreamBuilder<List<DesignTemplate>>(
                         stream: DesignTemplateService.watchTemplates(),
@@ -2650,10 +2740,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
                           final templates = matchingTemplates.where((template) {
                             switch (selectedCatalogFilter) {
+                              case 'uploads':
+                                return false;
+
                               case 'free':
                                 return template.isFree;
+
                               case 'premium':
                                 return template.isPremium;
+
                               case 'all':
                               default:
                                 return true;
@@ -2662,7 +2757,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
                           if (templates.isEmpty) {
                             final filterLabel =
-                                selectedCatalogFilter == 'premium'
+                                selectedCatalogFilter == 'uploads'
+                                ? 'uploaded'
+                                : selectedCatalogFilter == 'premium'
                                 ? 'premium'
                                 : selectedCatalogFilter == 'free'
                                 ? 'free'
@@ -2672,14 +2769,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                               child: Padding(
                                 padding: const EdgeInsets.all(24),
                                 child: Text(
-                                  'No $filterLabel '
-                                  '${_occasionLabel() ?? ''} '
-                                  '$_selectedDressType designs '
-                                  'are available yet.\n\n'
-                                  'Try another catalog filter, '
-                                  'occasion or dress type. '
-                                  'You can still continue without '
-                                  'selecting a catalog design.',
+                                  selectedCatalogFilter == 'uploads'
+                                      ? 'No uploaded designs found for this profile yet.\n\n'
+                                            'Use "Upload Own Design" to add your personal design references.'
+                                      : 'No $filterLabel '
+                                            '${_occasionLabel() ?? ''} '
+                                            '$_selectedDressType designs '
+                                            'are available yet.\n\n'
+                                            'Try another catalog filter, occasion or dress type. '
+                                            'You can still continue without selecting a catalog design.',
                                   style: AppTextStyles.bodyMedium.copyWith(
                                     color: AppColors.textHint,
                                     height: 1.4,
@@ -3763,6 +3861,18 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       ),
     );
   }
+}
+
+class _CustomerDesignOwnerContext {
+  const _CustomerDesignOwnerContext({
+    required this.accountId,
+    required this.profileId,
+    required this.profileName,
+  });
+
+  final String accountId;
+  final String profileId;
+  final String profileName;
 }
 
 class _OrderPerson {
