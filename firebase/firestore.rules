@@ -31,6 +31,19 @@ service cloud.firestore {
             /profiles/$(profileId)
         ).data.status == 'active';
     }
+    function isConfiguredAdmin() {
+      return signedIn()
+        && 'adminUids' in get(
+          /databases/$(database)/documents/config/admin
+        ).data
+        && get(
+          /databases/$(database)/documents/config/admin
+        ).data.adminUids is list
+        && request.auth.uid in get(
+          /databases/$(database)/documents/config/admin
+        ).data.adminUids;
+    }
+
     // Profile + phone lookup field (used after first successful save)
     match /users/{userId} {
       allow read, write: if signedIn() && request.auth.uid == userId;
@@ -164,13 +177,16 @@ service cloud.firestore {
         && request.resource.data.rejectionReason == null
         && request.resource.data.approvedPartnerProfileId == null;
 
-      allow read: if signedIn()
-        && resource.data.createdByUid == request.auth.uid
-        && resource.data.accountId is string
-        && resource.data.customerProfileId is string
-        && ownsActiveCustomerProfile(
-          resource.data.accountId,
-          resource.data.customerProfileId
+      allow read: if isConfiguredAdmin()
+        || (
+          signedIn()
+          && resource.data.createdByUid == request.auth.uid
+          && resource.data.accountId is string
+          && resource.data.customerProfileId is string
+          && ownsActiveCustomerProfile(
+            resource.data.accountId,
+            resource.data.customerProfileId
+          )
         );
 
       allow update: if signedIn()
@@ -270,7 +286,7 @@ service cloud.firestore {
     // Tighten writes in production (e.g. only owner UIDs via custom claims).
     match /config/{document=**} {
       allow read: if signedIn();
-      allow write: if signedIn();
+      allow write: if isConfiguredAdmin();
     }
 
     // Rate card — customers need read; owner dashboard writes.
