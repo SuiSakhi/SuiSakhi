@@ -32,6 +32,11 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   bool _loading = true;
   bool _saving = false;
   String? _loadError;
+  bool get _canSubmit {
+    return _contactNameController.text.trim().isNotEmpty &&
+        _businessNameController.text.trim().isNotEmpty &&
+        _mobileController.text.trim().isNotEmpty;
+  }
 
   @override
   void initState() {
@@ -342,7 +347,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Application status: Draft',
+                  'Application status: ${_application?.status.name ?? 'draft'}',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: const Color(0xFF2E7D32),
                     fontWeight: FontWeight.w700,
@@ -510,6 +515,60 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     );
   }
 
+  Future<void> _submitForReview() async {
+    if (_saving) return;
+
+    final application = _application;
+    final accountId = _accountId;
+    final customerProfileId = _customerProfileId;
+
+    if (application == null || accountId == null || customerProfileId == null) {
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      await _saveDraft();
+
+      await PartnerService.submitApplication(
+        applicationId: application.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!mounted) return;
+
+      setState(() {
+        _saving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Application submitted for Admin review'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+
+      context.pop();
+    } catch (e) {
+      if (!mounted) return;
+
+      setState(() {
+        _saving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to submit application.\n$e'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildActions() {
     return Column(
       children: [
@@ -528,6 +587,16 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
                   )
                 : const Icon(Icons.save_outlined),
             label: Text(_saving ? 'Saving Draft...' : 'Save Draft'),
+          ),
+        ),
+        const SizedBox(height: 10),
+
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: _canSubmit && !_saving ? _submitForReview : null,
+            icon: const Icon(Icons.send_rounded),
+            label: const Text('Submit For Review'),
           ),
         ),
         const SizedBox(height: 10),
