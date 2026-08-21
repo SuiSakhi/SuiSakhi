@@ -33,6 +33,7 @@ import 'screens/checkout/order_checkout_screen.dart';
 import 'screens/measurements/measurement_context_screen.dart';
 import 'screens/tailor/tailor_dashboard_screen.dart';
 import 'screens/profile/tailor_account_center_screen.dart' as tailor_account;
+import 'screens/partner/partner_opportunities_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
 
 class StitchSmartApp extends StatelessWidget {
@@ -65,14 +66,8 @@ final _router = GoRouter(
   },
   errorBuilder: (context, state) => const LoginScreen(),
   routes: [
-    GoRoute(
-      path: '/',
-      builder: (ctx, state) => const SplashScreen(),
-    ),
-    GoRoute(
-      path: '/login',
-      builder: (ctx, state) => const LoginScreen(),
-    ),
+    GoRoute(path: '/', builder: (ctx, state) => const SplashScreen()),
+    GoRoute(path: '/login', builder: (ctx, state) => const LoginScreen()),
     GoRoute(
       path: '/profile-selection',
       builder: (ctx, state) => ProfileSelectionScreen(
@@ -92,10 +87,7 @@ final _router = GoRouter(
             'displayName': 'Ramesh',
             'shopName': 'Perfect Tailors',
           },
-          {
-            'role': 'delivery_partner',
-            'displayName': 'Sunil',
-          },
+          {'role': 'delivery_partner', 'displayName': 'Sunil'},
           {
             'role': 'supplier',
             'displayName': 'Anand',
@@ -111,6 +103,10 @@ final _router = GoRouter(
     GoRoute(
       path: '/account',
       builder: (ctx, state) => const CustomerAccountCenterScreen(),
+    ),
+    GoRoute(
+      path: '/partner/opportunities',
+      builder: (ctx, state) => const PartnerOpportunitiesScreen(),
     ),
     GoRoute(
       path: '/customer-profile',
@@ -132,10 +128,7 @@ final _router = GoRouter(
       path: '/profile-setup',
       builder: (ctx, state) => const ProfileSetupScreen(),
     ),
-    GoRoute(
-      path: '/home',
-      builder: (ctx, state) => const HomeScreen(),
-    ),
+    GoRoute(path: '/home', builder: (ctx, state) => const HomeScreen()),
     // ── Owner routes ──────────────────────────────────────────────────────
     GoRoute(
       path: '/owner',
@@ -155,9 +148,8 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/checkout/:orderId',
-      builder: (ctx, state) => OrderCheckoutScreen(
-        orderId: state.pathParameters['orderId']!,
-      ),
+      builder: (ctx, state) =>
+          OrderCheckoutScreen(orderId: state.pathParameters['orderId']!),
     ),
     // ── Tailor routes ─────────────────────────────────────────────────────
     GoRoute(
@@ -166,15 +158,14 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/tailor-account',
-      builder: (ctx, state) =>
-          const tailor_account.TailorAccountCenterScreen(),
+      builder: (ctx, state) => const tailor_account.TailorAccountCenterScreen(),
     ),
     // ── Delivery routes ───────────────────────────────────────────────────
     GoRoute(
       path: '/delivery',
       builder: (ctx, state) => const DeliveryDashboardScreen(),
     ),
-        // ── Customer routes ───────────────────────────────────────────────────
+    // ── Customer routes ───────────────────────────────────────────────────
     GoRoute(
       path: '/measurements',
       builder: (ctx, state) => const MeasurementDashboardScreen(),
@@ -243,9 +234,6 @@ final _router = GoRouter(
       path: '/offers',
       builder: (ctx, state) => const OffersMembershipScreen(),
     ),
-    GoRoute(
-      path: '/orders',
-      builder: (ctx, state) => const OrdersScreen(),
-    ),
+    GoRoute(path: '/orders', builder: (ctx, state) => const OrdersScreen()),
   ],
 );

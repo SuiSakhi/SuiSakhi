@@ -48,10 +48,7 @@ class _CustomerAccountCenterScreenState
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _ProfileHeader(
-            displayName: displayName,
-            phone: phone,
-          ),
+          _ProfileHeader(displayName: displayName, phone: phone),
           const SizedBox(height: 20),
 
           _SectionTitle(title: 'My Profile'),
@@ -142,10 +139,11 @@ class _CustomerAccountCenterScreenState
           _MenuItem(
             icon: Icons.handshake_outlined,
             title: 'Become a Partner',
-            subtitle: 'Register as Owner, Tailor, Supplier or Delivery Partner',
-            onTap: () => _comingSoon(context, 'Become a Partner'),
+            subtitle:
+                'Apply as a Tailor, Designer, Supplier or Service Partner',
+            onTap: () => context.push('/partner/opportunities'),
           ),
-          
+
           const SizedBox(height: 16),
           _SectionTitle(title: 'Settings & Support'),
           _MenuItem(
@@ -200,10 +198,7 @@ class _ProfileHeader extends StatelessWidget {
   final String displayName;
   final String phone;
 
-  const _ProfileHeader({
-    required this.displayName,
-    required this.phone,
-  });
+  const _ProfileHeader({required this.displayName, required this.phone});
 
   @override
   Widget build(BuildContext context) {
@@ -255,10 +250,7 @@ class _ProfileHeader extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   phone.isEmpty ? 'Mobile not available' : phone,
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    fontSize: 13,
-                  ),
+                  style: const TextStyle(color: Colors.black54, fontSize: 13),
                 ),
                 const SizedBox(height: 8),
                 Container(
@@ -291,9 +283,7 @@ class _ProfileHeader extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   final String title;
 
-  const _SectionTitle({
-    required this.title,
-  });
+  const _SectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -328,9 +318,7 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final itemColor = isDestructive
-        ? Colors.red
-        : const Color(0xFF7B3FB2);
+    final itemColor = isDestructive ? Colors.red : const Color(0xFF7B3FB2);
 
     final iconBackgroundColor = isDestructive
         ? const Color(0xFFFFEBEE)
@@ -357,10 +345,7 @@ class _MenuItem extends StatelessWidget {
           ),
           leading: CircleAvatar(
             backgroundColor: iconBackgroundColor,
-            child: Icon(
-              icon,
-              color: itemColor,
-            ),
+            child: Icon(icon, color: itemColor),
           ),
           title: Text(
             title,
