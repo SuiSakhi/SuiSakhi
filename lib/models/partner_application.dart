@@ -19,6 +19,7 @@ enum PartnerApplicationStatus {
   draft,
   submitted,
   underReview,
+  changesRequested,
   approved,
   rejected,
   suspended,
@@ -103,11 +104,11 @@ class PartnerApplication {
 
   bool get canEdit =>
       status == PartnerApplicationStatus.draft ||
-      status == PartnerApplicationStatus.rejected;
+      status == PartnerApplicationStatus.changesRequested;
 
   bool get canSubmit =>
       status == PartnerApplicationStatus.draft ||
-      status == PartnerApplicationStatus.rejected;
+      status == PartnerApplicationStatus.changesRequested;
 
   Map<String, dynamic> toMap() {
     return {

@@ -27,6 +27,7 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
               whereIn: [
                 PartnerApplicationStatus.submitted.name,
                 PartnerApplicationStatus.underReview.name,
+                PartnerApplicationStatus.changesRequested.name,
                 PartnerApplicationStatus.rejected.name,
                 PartnerApplicationStatus.approved.name,
               ],
@@ -41,13 +42,11 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
             return _buildErrorState(context, snapshot.error);
           }
 
-          final applications =
+          final loadedApplications =
               snapshot.data?.docs.map(PartnerApplication.fromDoc).toList() ??
               <PartnerApplication>[];
 
-          applications.sort(
-            (left, right) => right.updatedAt.compareTo(left.updatedAt),
-          );
+          final applications = _canonicalApplications(loadedApplications);
 
           if (applications.isEmpty) {
             return _buildEmptyState();
@@ -62,6 +61,7 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
                     whereIn: [
                       PartnerApplicationStatus.submitted.name,
                       PartnerApplicationStatus.underReview.name,
+                      PartnerApplicationStatus.changesRequested.name,
                       PartnerApplicationStatus.rejected.name,
                       PartnerApplicationStatus.approved.name,
                     ],
@@ -86,6 +86,35 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
         },
       ),
     );
+  }
+
+  List<PartnerApplication> _canonicalApplications(
+    List<PartnerApplication> source,
+  ) {
+    final byAccountProfileAndType = <String, PartnerApplication>{};
+
+    for (final application in source) {
+      final key = [
+        application.accountId,
+        application.customerProfileId,
+        application.partnerType.name,
+      ].join('|');
+
+      final existing = byAccountProfileAndType[key];
+
+      if (existing == null ||
+          application.updatedAt.isAfter(existing.updatedAt)) {
+        byAccountProfileAndType[key] = application;
+      }
+    }
+
+    final applications = byAccountProfileAndType.values.toList();
+
+    applications.sort(
+      (left, right) => right.updatedAt.compareTo(left.updatedAt),
+    );
+
+    return applications;
   }
 
   Widget _buildSummaryCard(List<PartnerApplication> applications) {
@@ -399,6 +428,8 @@ class _PartnerApplicationCard extends StatelessWidget {
         return 'Submitted';
       case PartnerApplicationStatus.underReview:
         return 'Under Review';
+      case PartnerApplicationStatus.changesRequested:
+        return 'Changes Requested';
       case PartnerApplicationStatus.approved:
         return 'Approved';
       case PartnerApplicationStatus.rejected:
@@ -418,6 +449,8 @@ class _PartnerApplicationCard extends StatelessWidget {
         return const Color(0xFFFF9800);
       case PartnerApplicationStatus.underReview:
         return const Color(0xFF2196F3);
+      case PartnerApplicationStatus.changesRequested:
+        return const Color(0xFFFF9800);
       case PartnerApplicationStatus.approved:
         return const Color(0xFF4CAF50);
       case PartnerApplicationStatus.rejected:

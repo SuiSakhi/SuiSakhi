@@ -264,6 +264,107 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _requestChanges(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final instructionsController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final instructions = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Request Application Changes'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: instructionsController,
+              minLines: 4,
+              maxLines: 7,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Required corrections',
+                hintText: 'Explain what information or documents are required.',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              validator: (value) {
+                if (value == null || value.trim().isEmpty) {
+                  return 'Correction instructions are required';
+                }
+
+                if (value.trim().length < 10) {
+                  return 'Please provide clear correction instructions';
+                }
+
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) {
+                  return;
+                }
+
+                Navigator.pop(
+                  dialogContext,
+                  instructionsController.text.trim(),
+                );
+              },
+              child: const Text('Send Request'),
+            ),
+          ],
+        );
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      instructionsController.dispose();
+    });
+
+    if (instructions == null || instructions.isEmpty || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.requestChanges(
+        applicationId: application.id,
+        instructions: instructions,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Correction request sent to the applicant'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to request changes.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildReviewActions(
     BuildContext context,
     PartnerApplication application,
@@ -301,7 +402,12 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: null,
+            onPressed:
+                application.status == PartnerApplicationStatus.underReview
+                ? () {
+                    _requestChanges(context, application);
+                  }
+                : null,
             icon: const Icon(Icons.edit_note_rounded),
             label: const Text('Request Changes'),
           ),
@@ -409,6 +515,8 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         return 'Submitted';
       case PartnerApplicationStatus.underReview:
         return 'Under Review';
+      case PartnerApplicationStatus.changesRequested:
+        return 'Changes Requested';
       case PartnerApplicationStatus.approved:
         return 'Approved';
       case PartnerApplicationStatus.rejected:
@@ -428,6 +536,8 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         return const Color(0xFFFF9800);
       case PartnerApplicationStatus.underReview:
         return const Color(0xFF2196F3);
+      case PartnerApplicationStatus.changesRequested:
+        return const Color(0xFFFF9800);
       case PartnerApplicationStatus.approved:
         return const Color(0xFF4CAF50);
       case PartnerApplicationStatus.rejected:

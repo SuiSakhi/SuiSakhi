@@ -57,15 +57,35 @@ class PartnerService {
         .where('partnerType', isEqualTo: partnerType.name)
         .get();
 
-    for (final document in existing.docs) {
-      final application = PartnerApplication.fromDoc(document);
+    final existingApplications = existing.docs
+        .map(PartnerApplication.fromDoc)
+        .where(
+          (application) =>
+              application.status == PartnerApplicationStatus.draft ||
+              application.status == PartnerApplicationStatus.submitted ||
+              application.status == PartnerApplicationStatus.underReview ||
+              application.status == PartnerApplicationStatus.changesRequested ||
+              application.status == PartnerApplicationStatus.approved ||
+              application.status == PartnerApplicationStatus.rejected,
+        )
+        .toList();
 
-      if (application.status == PartnerApplicationStatus.draft ||
-          application.status == PartnerApplicationStatus.submitted ||
-          application.status == PartnerApplicationStatus.underReview ||
-          application.status == PartnerApplicationStatus.approved) {
-        return application;
-      }
+    if (existingApplications.isNotEmpty) {
+        existingApplications.sort((left, right) {
+          final updatedComparison =
+              right.updatedAt.compareTo(left.updatedAt);
+
+          if (updatedComparison != 0) {
+            return updatedComparison;
+          }
+
+          final leftScore = _applicationResumeScore(left);
+          final rightScore = _applicationResumeScore(right);
+
+          return rightScore.compareTo(leftScore);
+        });
+
+      return existingApplications.first;
     }
 
     final document = _applicationsCollection.doc();
@@ -271,6 +291,95 @@ class PartnerService {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     });
+  }
+
+  /// Returns an application to the applicant for required corrections.
+  ///
+  /// This action does not reject the application permanently and does not
+  /// create or activate a Partner profile.
+  static Future<void> requestChanges({
+    required String applicationId,
+    required String instructions,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('A signed-in Admin is required to request changes.');
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+    final normalizedInstructions = instructions.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    if (normalizedInstructions.isEmpty) {
+      throw ArgumentError.value(
+        instructions,
+        'instructions',
+        'Correction instructions are required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.underReview) {
+        throw StateError(
+          'Changes can be requested only while an application '
+          'is under review.',
+        );
+      }
+
+      transaction.set(document, {
+        'status': PartnerApplicationStatus.changesRequested.name,
+        'reviewedByUid': user.uid,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'reviewNotes': normalizedInstructions,
+        'rejectionReason': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
+  static int _applicationResumeScore(PartnerApplication application) {
+    var score = switch (application.status) {
+      PartnerApplicationStatus.approved => 600,
+      PartnerApplicationStatus.underReview => 500,
+      PartnerApplicationStatus.changesRequested => 400,
+      PartnerApplicationStatus.submitted => 300,
+      PartnerApplicationStatus.draft => 200,
+      PartnerApplicationStatus.rejected => 100,
+      PartnerApplicationStatus.suspended => 50,
+      PartnerApplicationStatus.inactive => 0,
+    };
+
+    if (application.reviewNotes?.trim().isNotEmpty == true) {
+      score += 40;
+    }
+
+    if (application.businessName?.trim().isNotEmpty == true) {
+      score += 20;
+    }
+
+    if (application.contactName?.trim().isNotEmpty == true) {
+      score += 10;
+    }
+
+    return score;
   }
 
   static void _validateCustomerOwnership({

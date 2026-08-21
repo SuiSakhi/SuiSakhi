@@ -36,7 +36,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     final status = _application?.status;
 
     return status == PartnerApplicationStatus.draft ||
-        status == PartnerApplicationStatus.rejected;
+        status == PartnerApplicationStatus.changesRequested;
   }
 
   bool get _isUnderAdminReview {
@@ -57,6 +57,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       case PartnerApplicationStatus.underReview:
         return 'Under Review';
 
+      case PartnerApplicationStatus.changesRequested:
+        return 'Changes Requested';
+
       case PartnerApplicationStatus.approved:
         return 'Approved';
 
@@ -71,6 +74,39 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       case null:
         return 'Loading';
+    }
+  }
+  
+  String get _applicationHeaderMessage {
+    switch (_application?.status) {
+      case PartnerApplicationStatus.changesRequested:
+        return 'SuiSakhi Admin has requested additional information. '
+            'Review the instructions below, update the required details, '
+            'and submit the application again.';
+
+      case PartnerApplicationStatus.submitted:
+        return 'Your application has been submitted and is waiting '
+            'for SuiSakhi Admin review.';
+
+      case PartnerApplicationStatus.underReview:
+        return 'Your application is currently being reviewed by '
+            'SuiSakhi Admin. Editing is temporarily unavailable.';
+
+      case PartnerApplicationStatus.approved:
+        return 'Your Partner application has been approved. '
+            'Partner profile activation will follow.';
+
+      case PartnerApplicationStatus.rejected:
+        return 'This application was not approved. Review the reason '
+            'provided by SuiSakhi Admin.';
+
+      case PartnerApplicationStatus.draft:
+      case PartnerApplicationStatus.suspended:
+      case PartnerApplicationStatus.inactive:
+      case null:
+        return 'Saving this form does not activate a Tailor profile. '
+            'The application will be submitted for Admin review only '
+            'after the required information is completed.';
     }
   }
 
@@ -404,9 +440,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Saving this form does not activate a Tailor profile. '
-                  'The application will be submitted for Admin review '
-                  'only after all required sections are completed.',
+                  _applicationHeaderMessage,
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.textSecondary,
                     height: 1.4,
@@ -568,13 +602,29 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   }
 
   Future<void> _submitForReview() async {
-    if (_saving) return;
+    if (_saving) {
+      return;
+    }
+
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
 
     final application = _application;
     final accountId = _accountId;
     final customerProfileId = _customerProfileId;
 
-    if (application == null || accountId == null || customerProfileId == null) {
+    if (application == null ||
+        accountId == null ||
+        customerProfileId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Application context is unavailable. Please reopen the form.',
+          ),
+          backgroundColor: AppColors.error,
+        ),
+      );
       return;
     }
 
@@ -583,7 +633,16 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     });
 
     try {
-      await _saveDraft();
+      // Persist the latest form values before changing application status.
+      await PartnerService.updateDraft(
+        applicationId: application.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+        contactName: _contactNameController.text,
+        businessName: _businessNameController.text,
+        mobileE164: _mobileController.text,
+        email: _emailController.text,
+      );
 
       await PartnerService.submitApplication(
         applicationId: application.id,
@@ -591,7 +650,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         customerProfileId: customerProfileId,
       );
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _saving = false;
@@ -599,14 +660,18 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Application submitted for Admin review'),
+          content: Text(
+            'Application submitted for Admin review',
+          ),
           backgroundColor: AppColors.success,
         ),
       );
 
       context.pop();
-    } catch (e) {
-      if (!mounted) return;
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
 
       setState(() {
         _saving = false;
@@ -614,7 +679,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to submit application.\n$e'),
+          content: Text(
+            'Unable to submit application.\n$error',
+          ),
           backgroundColor: AppColors.error,
         ),
       );
@@ -644,6 +711,20 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             'You cannot edit or resubmit it during the review. We will '
             'notify you if any additional information or corrections are required.',
         color: const Color(0xFF2196F3),
+      );
+    }
+
+    if (status == PartnerApplicationStatus.changesRequested) {
+      final instructions = _application?.reviewNotes?.trim();
+
+      return _buildStatusNotice(
+        icon: Icons.edit_note_rounded,
+        title: 'Changes Requested',
+        message: instructions == null || instructions.isEmpty
+            ? 'SuiSakhi Admin needs additional information. '
+                  'Please update the application and submit it again.'
+            : 'Admin instructions: $instructions',
+        color: const Color(0xFFFF9800),
       );
     }
 

@@ -218,6 +218,39 @@ service cloud.firestore {
             'reviewedAt',
             'updatedAt'
           ]);
+      // Configured Admin may request corrections while an application
+      // is under review.
+      allow update: if isConfiguredAdmin()
+        && resource.data.status == 'underReview'
+        && request.resource.data.status == 'changesRequested'
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && request.resource.data.approvedPartnerProfileId
+            == resource.data.approvedPartnerProfileId
+        && request.resource.data.reviewedByUid
+            == request.auth.uid
+        && request.resource.data.reviewedAt != null
+        && request.resource.data.reviewNotes is string
+        && request.resource.data.reviewNotes.size() > 0
+        && request.resource.data.rejectionReason == null
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'reviewedByUid',
+            'reviewedAt',
+            'reviewNotes',
+            'rejectionReason',
+            'updatedAt'
+          ]);
       allow update: if signedIn()
         && resource.data.createdByUid == request.auth.uid
         && request.resource.data.createdByUid
@@ -252,8 +285,8 @@ service cloud.firestore {
           )
           ||
           (
-            resource.data.status == 'rejected'
-            && request.resource.data.status == 'rejected'
+          resource.data.status == 'changesRequested'
+          && request.resource.data.status == 'changesRequested'
             && request.resource.data.diff(resource.data)
               .affectedKeys()
               .hasOnly([
@@ -287,7 +320,7 @@ service cloud.firestore {
           )
           ||
           (
-            resource.data.status == 'rejected'
+            resource.data.status == 'changesRequested'
             && request.resource.data.status == 'submitted'
             && request.resource.data.submittedAt != null
             && request.resource.data.reviewedAt == null
