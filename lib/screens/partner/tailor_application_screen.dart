@@ -32,8 +32,51 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   bool _loading = true;
   bool _saving = false;
   String? _loadError;
+  bool get _isEditable {
+    final status = _application?.status;
+
+    return status == PartnerApplicationStatus.draft ||
+        status == PartnerApplicationStatus.rejected;
+  }
+
+  bool get _isUnderAdminReview {
+    final status = _application?.status;
+
+    return status == PartnerApplicationStatus.submitted ||
+        status == PartnerApplicationStatus.underReview;
+  }
+
+  String get _applicationStatusLabel {
+    switch (_application?.status) {
+      case PartnerApplicationStatus.draft:
+        return 'Draft';
+
+      case PartnerApplicationStatus.submitted:
+        return 'Submitted';
+
+      case PartnerApplicationStatus.underReview:
+        return 'Under Review';
+
+      case PartnerApplicationStatus.approved:
+        return 'Approved';
+
+      case PartnerApplicationStatus.rejected:
+        return 'Requires Attention';
+
+      case PartnerApplicationStatus.suspended:
+        return 'Suspended';
+
+      case PartnerApplicationStatus.inactive:
+        return 'Inactive';
+
+      case null:
+        return 'Loading';
+    }
+  }
+
   bool get _canSubmit {
-    return _contactNameController.text.trim().isNotEmpty &&
+    return _isEditable &&
+        _contactNameController.text.trim().isNotEmpty &&
         _businessNameController.text.trim().isNotEmpty &&
         _mobileController.text.trim().isNotEmpty;
   }
@@ -263,6 +306,12 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           const SizedBox(height: 20),
           _buildNextStepsCard(),
           const SizedBox(height: 20),
+
+          if (_application?.status != PartnerApplicationStatus.draft) ...[
+            _buildApplicationStatusMessage(),
+            const SizedBox(height: 20),
+          ],
+
           _buildActions(),
           const SizedBox(height: 28),
         ],
@@ -347,7 +396,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Application status: ${_application?.status.name ?? 'draft'}',
+                  'Application status: $_applicationStatusLabel',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: const Color(0xFF2E7D32),
                     fontWeight: FontWeight.w700,
@@ -411,6 +460,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           const SizedBox(height: 14),
           TextFormField(
             controller: _businessNameController,
+            onChanged: (_) {
+              setState(() {});
+            },
             textCapitalization: TextCapitalization.words,
             decoration: const InputDecoration(
               labelText: 'Business or workshop name',
@@ -569,13 +621,135 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     }
   }
 
+  Widget _buildApplicationStatusMessage() {
+    final status = _application?.status;
+
+    if (status == PartnerApplicationStatus.submitted) {
+      return _buildStatusNotice(
+        icon: Icons.schedule_send_outlined,
+        title: 'Application Submitted',
+        message:
+            'Your Tailor Partner application has been submitted to '
+            'SuiSakhi Admin. Review has not started yet.',
+        color: const Color(0xFFFF9800),
+      );
+    }
+
+    if (status == PartnerApplicationStatus.underReview) {
+      return _buildStatusNotice(
+        icon: Icons.manage_search_rounded,
+        title: 'Application Under Review',
+        message:
+            'SuiSakhi Admin is reviewing your Tailor Partner application. '
+            'You cannot edit or resubmit it during the review. We will '
+            'notify you if any additional information or corrections are required.',
+        color: const Color(0xFF2196F3),
+      );
+    }
+
+    if (status == PartnerApplicationStatus.approved) {
+      return _buildStatusNotice(
+        icon: Icons.verified_rounded,
+        title: 'Application Approved',
+        message:
+            'Your Tailor Partner application has been approved. '
+            'Partner profile activation details will appear here.',
+        color: const Color(0xFF4CAF50),
+      );
+    }
+
+    if (status == PartnerApplicationStatus.rejected) {
+      final reason = _application?.rejectionReason?.trim();
+
+      return _buildStatusNotice(
+        icon: Icons.info_outline_rounded,
+        title: 'Application Requires Attention',
+        message: reason == null || reason.isEmpty
+            ? 'Please review the Admin feedback, update the application, '
+                  'and submit it again.'
+            : 'Admin feedback: $reason',
+        color: AppColors.error,
+      );
+    }
+
+    return const SizedBox.shrink();
+  }
+
+  Widget _buildStatusNotice({
+    required IconData icon,
+    required String title,
+    required String message,
+    required Color color,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: color, size: 26),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: color,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  message,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildActions() {
+    if (_isUnderAdminReview) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _saving ? null : _continueLater,
+          icon: const Icon(Icons.arrow_back_rounded),
+          label: const Text('Back to Partner Opportunities'),
+        ),
+      );
+    }
+
+    if (_application?.status == PartnerApplicationStatus.approved) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _continueLater,
+          icon: const Icon(Icons.check_circle_outline_rounded),
+          label: const Text('Back to Partner Opportunities'),
+        ),
+      );
+    }
+
     return Column(
       children: [
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: _saving ? null : _saveDraft,
+            onPressed: _saving || !_isEditable ? null : _saveDraft,
             icon: _saving
                 ? const SizedBox(
                     width: 18,
@@ -590,7 +764,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           ),
         ),
         const SizedBox(height: 10),
-
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/partner_application.dart';
+import '../../services/partner_service.dart';
 
 class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
   const OwnerPartnerApplicationReviewScreen({
@@ -70,7 +71,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _buildKycCard(),
         const SizedBox(height: 18),
-        _buildReviewActions(context),
+        _buildReviewActions(context, application),
         const SizedBox(height: 28),
       ],
     );
@@ -201,7 +202,72 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildReviewActions(BuildContext context) {
+  Future<void> _startReview(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Start Partner Review'),
+          content: const Text(
+            'This application will move from Submitted to Under Review.\n\n'
+            'No Partner profile will be approved or activated at this stage.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Start Review'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.startReview(applicationId: application.id);
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Partner application moved to Under Review'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to start review.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Widget _buildReviewActions(
+    BuildContext context,
+    PartnerApplication application,
+  ) {
     return _ReviewSection(
       title: 'Admin Actions',
       icon: Icons.admin_panel_settings_outlined,
@@ -218,9 +284,17 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: null,
+            onPressed: application.status == PartnerApplicationStatus.submitted
+                ? () {
+                    _startReview(context, application);
+                  }
+                : null,
             icon: const Icon(Icons.rate_review_outlined),
-            label: const Text('Start Review'),
+            label: Text(
+              application.status == PartnerApplicationStatus.underReview
+                  ? 'Review Started'
+                  : 'Start Review',
+            ),
           ),
         ),
         const SizedBox(height: 10),

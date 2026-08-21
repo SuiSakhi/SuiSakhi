@@ -226,6 +226,53 @@ class PartnerService {
     });
   }
 
+  /// Moves a submitted Partner application into Admin review.
+  ///
+  /// This action does not approve the application and does not create
+  /// or activate a Partner profile.
+  static Future<void> startReview({required String applicationId}) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in Admin is required to review an application.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.submitted) {
+        throw StateError('Only a submitted application can enter review.');
+      }
+
+      transaction.set(document, {
+        'status': PartnerApplicationStatus.underReview.name,
+        'reviewedByUid': user.uid,
+        'reviewedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
   static void _validateCustomerOwnership({
     required PartnerApplication application,
     required String uid,

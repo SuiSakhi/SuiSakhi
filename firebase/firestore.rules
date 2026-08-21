@@ -188,7 +188,36 @@ service cloud.firestore {
             resource.data.customerProfileId
           )
         );
-
+      // Configured Admin may start reviewing a submitted application.
+      //
+      // This operation cannot modify application ownership, Partner type,
+      // applicant-entered information, or approved Partner profile linkage.
+      allow update: if isConfiguredAdmin()
+        && resource.data.status == 'submitted'
+        && request.resource.data.status == 'underReview'
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && request.resource.data.approvedPartnerProfileId
+            == resource.data.approvedPartnerProfileId
+        && request.resource.data.reviewedByUid
+            == request.auth.uid
+        && request.resource.data.reviewedAt != null
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'reviewedByUid',
+            'reviewedAt',
+            'updatedAt'
+          ]);
       allow update: if signedIn()
         && resource.data.createdByUid == request.auth.uid
         && request.resource.data.createdByUid
