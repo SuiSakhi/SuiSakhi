@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import 'package:go_router/go_router.dart';
 
 class PartnerOpportunitiesScreen extends StatelessWidget {
   const PartnerOpportunitiesScreen({super.key});
@@ -41,15 +42,7 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
                 'Stitching, alterations, bridal, designer and garment services',
             color: const Color(0xFF4CAF50),
             statusLabel: 'Applications opening first',
-            onTap: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Tailor application form will be added in the next step.',
-                  ),
-                ),
-              );
-            },
+            onTap: () => context.push('/partner/apply/tailor'),
           ),
           _PartnerTypeCard(
             icon: Icons.storefront_outlined,
