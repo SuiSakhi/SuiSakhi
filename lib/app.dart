@@ -28,6 +28,7 @@ import 'screens/prd/offers_membership_screen.dart';
 import 'screens/owner/owner_dashboard_screen.dart';
 import 'screens/owner/owner_design_templates_screen.dart';
 import 'screens/owner/owner_partner_applications_screen.dart';
+import 'screens/owner/owner_partner_application_review_screen.dart';
 import 'screens/owner/rates_management_screen.dart';
 import 'screens/owner/owner_payout_settings_screen.dart';
 import 'screens/checkout/order_checkout_screen.dart';
@@ -155,6 +156,12 @@ final _router = GoRouter(
     GoRoute(
       path: '/owner/partner-applications',
       builder: (ctx, state) => const OwnerPartnerApplicationsScreen(),
+    ),
+    GoRoute(
+      path: '/owner/partner-applications/:applicationId',
+      builder: (ctx, state) => OwnerPartnerApplicationReviewScreen(
+        applicationId: state.pathParameters['applicationId']!,
+      ),
     ),
     GoRoute(
       path: '/checkout/:orderId',

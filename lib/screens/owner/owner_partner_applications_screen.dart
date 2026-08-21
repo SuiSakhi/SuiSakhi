@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/partner_application.dart';
+import 'package:go_router/go_router.dart';
 
 class OwnerPartnerApplicationsScreen extends StatelessWidget {
   const OwnerPartnerApplicationsScreen({super.key});
@@ -339,13 +340,7 @@ class _PartnerApplicationCard extends StatelessWidget {
             width: double.infinity,
             child: OutlinedButton.icon(
               onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Application review screen will be added next.',
-                    ),
-                  ),
-                );
+                context.push('/owner/partner-applications/${application.id}');
               },
               icon: const Icon(Icons.visibility_outlined),
               label: const Text('View Application'),
