@@ -45,6 +45,8 @@ class PartnerApplication {
     this.reviewedByUid,
     this.reviewNotes,
     this.rejectionReason,
+    this.rejectedByUid,
+    this.rejectedAt,
     this.approvedPartnerProfileId,
   });
 
@@ -90,6 +92,8 @@ class PartnerApplication {
 
   /// Customer-visible or internal rejection reason.
   final String? rejectionReason;
+  final String? rejectedByUid;
+  final DateTime? rejectedAt;
 
   /// Populated only after approval and partner-profile creation.
   final String? approvedPartnerProfileId;
@@ -131,6 +135,8 @@ class PartnerApplication {
       'reviewedByUid': reviewedByUid,
       'reviewNotes': reviewNotes,
       'rejectionReason': rejectionReason,
+      'rejectedByUid': rejectedByUid,
+      'rejectedAt': rejectedAt == null ? null : Timestamp.fromDate(rejectedAt!),
       'approvedPartnerProfileId': approvedPartnerProfileId,
     };
   }
@@ -158,6 +164,8 @@ class PartnerApplication {
       reviewedByUid: data['reviewedByUid']?.toString(),
       reviewNotes: data['reviewNotes']?.toString(),
       rejectionReason: data['rejectionReason']?.toString(),
+      rejectedByUid: data['rejectedByUid']?.toString(),
+      rejectedAt: _dateFromValue(data['rejectedAt']),
       approvedPartnerProfileId: data['approvedPartnerProfileId']?.toString(),
     );
   }

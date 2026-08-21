@@ -76,7 +76,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         return 'Loading';
     }
   }
-  
+
   String get _applicationHeaderMessage {
     switch (_application?.status) {
       case PartnerApplicationStatus.changesRequested:
@@ -614,9 +614,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     final accountId = _accountId;
     final customerProfileId = _customerProfileId;
 
-    if (application == null ||
-        accountId == null ||
-        customerProfileId == null) {
+    if (application == null || accountId == null || customerProfileId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
@@ -660,9 +658,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Application submitted for Admin review',
-          ),
+          content: Text('Application submitted for Admin review'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -679,9 +675,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Unable to submit application.\n$error',
-          ),
+          content: Text('Unable to submit application.\n$error'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -743,12 +737,13 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       final reason = _application?.rejectionReason?.trim();
 
       return _buildStatusNotice(
-        icon: Icons.info_outline_rounded,
-        title: 'Application Requires Attention',
+        icon: Icons.cancel_outlined,
+        title: 'Application Not Approved',
         message: reason == null || reason.isEmpty
-            ? 'Please review the Admin feedback, update the application, '
-                  'and submit it again.'
-            : 'Admin feedback: $reason',
+            ? 'SuiSakhi could not approve this Partner application. '
+                  'Please contact SuiSakhi Helpdesk for clarification.'
+            : 'Reason: $reason\n\n'
+                  'Please contact SuiSakhi Helpdesk if clarification is required.',
         color: AppColors.error,
       );
     }
@@ -820,6 +815,17 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         child: OutlinedButton.icon(
           onPressed: _continueLater,
           icon: const Icon(Icons.check_circle_outline_rounded),
+          label: const Text('Back to Partner Opportunities'),
+        ),
+      );
+    }
+
+    if (_application?.status == PartnerApplicationStatus.rejected) {
+      return SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: _continueLater,
+          icon: const Icon(Icons.support_agent_outlined),
           label: const Text('Back to Partner Opportunities'),
         ),
       );

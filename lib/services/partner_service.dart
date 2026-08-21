@@ -71,19 +71,18 @@ class PartnerService {
         .toList();
 
     if (existingApplications.isNotEmpty) {
-        existingApplications.sort((left, right) {
-          final updatedComparison =
-              right.updatedAt.compareTo(left.updatedAt);
+      existingApplications.sort((left, right) {
+        final updatedComparison = right.updatedAt.compareTo(left.updatedAt);
 
-          if (updatedComparison != 0) {
-            return updatedComparison;
-          }
+        if (updatedComparison != 0) {
+          return updatedComparison;
+        }
 
-          final leftScore = _applicationResumeScore(left);
-          final rightScore = _applicationResumeScore(right);
+        final leftScore = _applicationResumeScore(left);
+        final rightScore = _applicationResumeScore(right);
 
-          return rightScore.compareTo(leftScore);
-        });
+        return rightScore.compareTo(leftScore);
+      });
 
       return existingApplications.first;
     }
@@ -350,6 +349,68 @@ class PartnerService {
         'reviewedAt': FieldValue.serverTimestamp(),
         'reviewNotes': normalizedInstructions,
         'rejectionReason': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
+  /// Permanently rejects an application with a customer-visible reason.
+  ///
+  /// Rejection does not delete the application and does not create
+  /// or activate a Partner profile.
+  static Future<void> rejectApplication({
+    required String applicationId,
+    required String reason,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in Admin is required to reject an application.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+    final normalizedReason = reason.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    if (normalizedReason.isEmpty) {
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'Rejection reason is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.underReview) {
+        throw StateError('Only an application under review can be rejected.');
+      }
+
+      transaction.set(document, {
+        'status': PartnerApplicationStatus.rejected.name,
+        'rejectionReason': normalizedReason,
+        'rejectedByUid': user.uid,
+        'rejectedAt': FieldValue.serverTimestamp(),
+        'reviewedByUid': user.uid,
+        'reviewedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     });

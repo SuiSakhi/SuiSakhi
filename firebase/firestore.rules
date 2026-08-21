@@ -188,6 +188,44 @@ service cloud.firestore {
             resource.data.customerProfileId
           )
         );
+      // Configured Admin may reject an application that is under review.
+      //
+      // Rejection preserves application ownership and history and requires
+      // a customer-visible reason.
+      allow update: if isConfiguredAdmin()
+        && resource.data.status == 'underReview'
+        && request.resource.data.status == 'rejected'
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && request.resource.data.approvedPartnerProfileId
+            == resource.data.approvedPartnerProfileId
+        && request.resource.data.rejectionReason is string
+        && request.resource.data.rejectionReason.size() >= 10
+        && request.resource.data.rejectedByUid
+            == request.auth.uid
+        && request.resource.data.rejectedAt != null
+        && request.resource.data.reviewedByUid
+            == request.auth.uid
+        && request.resource.data.reviewedAt != null
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'rejectionReason',
+            'rejectedByUid',
+            'rejectedAt',
+            'reviewedByUid',
+            'reviewedAt',
+            'updatedAt'
+          ]);
       // Configured Admin may start reviewing a submitted application.
       //
       // This operation cannot modify application ownership, Partner type,

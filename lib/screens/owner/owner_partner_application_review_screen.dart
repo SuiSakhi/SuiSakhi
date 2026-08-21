@@ -163,6 +163,20 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
           value: _partnerTypeLabel(application.partnerType),
         ),
         _ReviewDetail(label: 'Submitted', value: _formatDateTime(submittedAt)),
+
+        if (application.status == PartnerApplicationStatus.rejected &&
+            application.rejectionReason?.trim().isNotEmpty == true)
+          _ReviewDetail(
+            label: 'Rejection reason',
+            value: application.rejectionReason!.trim(),
+          ),
+
+        if (application.rejectedAt != null)
+          _ReviewDetail(
+            label: 'Rejected',
+            value: _formatDateTime(application.rejectedAt!),
+          ),
+
         _ReviewDetail(label: 'Account ID', value: application.accountId),
         _ReviewDetail(
           label: 'Customer profile ID',
@@ -365,6 +379,154 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _rejectApplication(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Reject Partner Application'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Rejection is a final decision for this application. '
+                  'Use Request Changes when the applicant can correct '
+                  'missing or incomplete information.',
+                  style: TextStyle(fontSize: 13, height: 1.4),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: reasonController,
+                  minLines: 4,
+                  maxLines: 7,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: const InputDecoration(
+                    labelText: 'Customer-visible rejection reason',
+                    hintText:
+                        'Explain clearly why the application cannot be approved.',
+                    border: OutlineInputBorder(),
+                    alignLabelWithHint: true,
+                  ),
+                  validator: (value) {
+                    final reason = value?.trim() ?? '';
+
+                    if (reason.isEmpty) {
+                      return 'Rejection reason is required';
+                    }
+
+                    if (reason.length < 10) {
+                      return 'Please provide a clear rejection reason';
+                    }
+
+                    return null;
+                  },
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) {
+                  return;
+                }
+
+                Navigator.pop(dialogContext, reasonController.text.trim());
+              },
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('Reject Application'),
+            ),
+          ],
+        );
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      reasonController.dispose();
+    });
+
+    if (reason == null || reason.isEmpty || !context.mounted) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirm Rejection'),
+          content: const Text(
+            'This application will be marked as Rejected and '
+            'the applicant will see the rejection reason.\n\n'
+            'No Partner profile will be created.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Go Back'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('Confirm Rejection'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.rejectApplication(
+        applicationId: application.id,
+        reason: reason,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Partner application rejected'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to reject application.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildReviewActions(
     BuildContext context,
     PartnerApplication application,
@@ -416,7 +578,16 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: OutlinedButton.icon(
-            onPressed: null,
+            onPressed:
+                application.status == PartnerApplicationStatus.underReview
+                ? () {
+                    _rejectApplication(context, application);
+                  }
+                : null,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.error,
+              side: const BorderSide(color: AppColors.error),
+            ),
             icon: const Icon(Icons.cancel_outlined),
             label: const Text('Reject Application'),
           ),
