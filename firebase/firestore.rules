@@ -20,6 +20,17 @@ service cloud.firestore {
           /databases/$(database)/documents/accounts/$(accountId)
         ).data.mobileE164 == request.auth.token.phone_number;
     }
+    function ownsActiveCustomerProfile(accountId, profileId) {
+      return ownsExistingAccount(accountId)
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.role == 'customer'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.status == 'active';
+    }
     // Profile + phone lookup field (used after first successful save)
     match /users/{userId} {
       allow read, write: if signedIn() && request.auth.uid == userId;
@@ -115,6 +126,146 @@ service cloud.firestore {
 
       allow delete: if false;
     }
+    // Customer-owned Partner Applications.
+    //
+    // Creating or submitting an application does not create an active
+    // Partner profile. Only a future Admin approval workflow may approve
+    // an application and populate approvedPartnerProfileId.
+    match /partner_applications/{applicationId} {
+      allow create: if signedIn()
+        && request.resource.data.applicationId == applicationId
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.accountId is string
+        && request.resource.data.accountId.size() > 0
+        && request.resource.data.customerProfileId is string
+        && request.resource.data.customerProfileId.size() > 0
+        && ownsActiveCustomerProfile(
+          request.resource.data.accountId,
+          request.resource.data.customerProfileId
+        )
+        && request.resource.data.partnerType in [
+          'tailor',
+          'boutique',
+          'designer',
+          'fabricSupplier',
+          'printing',
+          'embroidery',
+          'rental',
+          'accessories',
+          'brand',
+          'deliveryPartner',
+          'doorstepServices',
+          'other'
+        ]
+        && request.resource.data.status == 'draft'
+        && request.resource.data.reviewedAt == null
+        && request.resource.data.reviewedByUid == null
+        && request.resource.data.reviewNotes == null
+        && request.resource.data.rejectionReason == null
+        && request.resource.data.approvedPartnerProfileId == null;
+
+      allow read: if signedIn()
+        && resource.data.createdByUid == request.auth.uid
+        && resource.data.accountId is string
+        && resource.data.customerProfileId is string
+        && ownsActiveCustomerProfile(
+          resource.data.accountId,
+          resource.data.customerProfileId
+        );
+
+      allow update: if signedIn()
+        && resource.data.createdByUid == request.auth.uid
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && ownsActiveCustomerProfile(
+          resource.data.accountId,
+          resource.data.customerProfileId
+        )
+        && request.resource.data.approvedPartnerProfileId
+            == resource.data.approvedPartnerProfileId
+        && (
+          (
+            resource.data.status == 'draft'
+            && request.resource.data.status == 'draft'
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'businessName',
+                'contactName',
+                'mobileE164',
+                'email',
+                'updatedAt'
+              ])
+          )
+          ||
+          (
+            resource.data.status == 'rejected'
+            && request.resource.data.status == 'rejected'
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'businessName',
+                'contactName',
+                'mobileE164',
+                'email',
+                'updatedAt'
+              ])
+          )
+          ||
+          (
+            resource.data.status == 'draft'
+            && request.resource.data.status == 'submitted'
+            && request.resource.data.submittedAt != null
+            && request.resource.data.reviewedAt == null
+            && request.resource.data.reviewedByUid == null
+            && request.resource.data.reviewNotes == null
+            && request.resource.data.rejectionReason == null
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'submittedAt',
+                'updatedAt',
+                'reviewedAt',
+                'reviewedByUid',
+                'reviewNotes',
+                'rejectionReason'
+              ])
+          )
+          ||
+          (
+            resource.data.status == 'rejected'
+            && request.resource.data.status == 'submitted'
+            && request.resource.data.submittedAt != null
+            && request.resource.data.reviewedAt == null
+            && request.resource.data.reviewedByUid == null
+            && request.resource.data.reviewNotes == null
+            && request.resource.data.rejectionReason == null
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'status',
+                'submittedAt',
+                'updatedAt',
+                'reviewedAt',
+                'reviewedByUid',
+                'reviewNotes',
+                'rejectionReason'
+              ])
+          )
+        );
+
+      allow delete: if false;
+    }
+
     // Role lists (owner/tailor/delivery). Any signed-in user may read for routing.
     // Tighten writes in production (e.g. only owner UIDs via custom claims).
     match /config/{document=**} {
