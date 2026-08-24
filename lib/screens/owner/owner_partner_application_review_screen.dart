@@ -69,7 +69,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _buildOnboardingProgress(),
         const SizedBox(height: 18),
-        _buildKycCard(),
+        _buildKycCard(application),
         const SizedBox(height: 18),
         _buildReviewActions(context, application),
         const SizedBox(height: 28),
@@ -203,15 +203,33 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildKycCard() {
-    return const _ReviewSection(
+  Widget _buildKycCard(PartnerApplication application) {
+    return _ReviewSection(
       title: 'KYC and Verification',
       icon: Icons.verified_user_outlined,
       children: [
-        _ReviewDetail(label: 'KYC status', value: 'Not started'),
-        _ReviewDetail(label: 'Documents', value: 'Not uploaded'),
-        _ReviewDetail(label: 'Verified by', value: 'Not assigned'),
-        _ReviewDetail(label: 'Verification date', value: 'Not available'),
+        _ReviewDetail(
+          label: 'KYC status',
+          value: _kycStatusLabel(application.kycStatus),
+        ),
+        const _ReviewDetail(label: 'Documents', value: 'Not uploaded'),
+        _ReviewDetail(
+          label: 'Verified by',
+          value: application.kycVerifiedByUid?.trim().isNotEmpty == true
+              ? application.kycVerifiedByUid!.trim()
+              : 'Not assigned',
+        ),
+        _ReviewDetail(
+          label: 'Verification date',
+          value: application.kycVerifiedAt == null
+              ? 'Not available'
+              : _formatDateTime(application.kycVerifiedAt!),
+        ),
+        if (application.kycFailureReason?.trim().isNotEmpty == true)
+          _ReviewDetail(
+            label: 'Failure reason',
+            value: application.kycFailureReason!.trim(),
+          ),
       ],
     );
   }
@@ -675,6 +693,28 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         return 'Doorstep Services';
       case PartnerType.other:
         return 'Other Partner';
+    }
+  }
+
+  static String _kycStatusLabel(PartnerKycStatus status) {
+    switch (status) {
+      case PartnerKycStatus.notStarted:
+        return 'Not Started';
+
+      case PartnerKycStatus.pendingDocuments:
+        return 'Pending Documents';
+
+      case PartnerKycStatus.underVerification:
+        return 'Under Verification';
+
+      case PartnerKycStatus.verified:
+        return 'Verified';
+
+      case PartnerKycStatus.failed:
+        return 'Failed';
+
+      case PartnerKycStatus.expired:
+        return 'Expired';
     }
   }
 

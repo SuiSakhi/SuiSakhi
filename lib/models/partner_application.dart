@@ -26,6 +26,15 @@ enum PartnerApplicationStatus {
   inactive,
 }
 
+enum PartnerKycStatus {
+  notStarted,
+  pendingDocuments,
+  underVerification,
+  verified,
+  failed,
+  expired,
+}
+
 class PartnerApplication {
   const PartnerApplication({
     required this.id,
@@ -47,6 +56,11 @@ class PartnerApplication {
     this.rejectionReason,
     this.rejectedByUid,
     this.rejectedAt,
+    this.kycStatus = PartnerKycStatus.notStarted,
+    this.kycVerifiedByUid,
+    this.kycVerifiedAt,
+    this.kycUpdatedAt,
+    this.kycFailureReason,
     this.approvedPartnerProfileId,
   });
 
@@ -90,10 +104,25 @@ class PartnerApplication {
   /// Internal Admin review notes.
   final String? reviewNotes;
 
-  /// Customer-visible or internal rejection reason.
+  /// Customer-visible rejection reason for a final rejection.
   final String? rejectionReason;
   final String? rejectedByUid;
   final DateTime? rejectedAt;
+
+  /// Current KYC and verification lifecycle state.
+  final PartnerKycStatus kycStatus;
+
+  /// Admin UID that successfully verified KYC.
+  final String? kycVerifiedByUid;
+
+  /// Date and time when KYC was successfully verified.
+  final DateTime? kycVerifiedAt;
+
+  /// Date and time when the KYC lifecycle was last updated.
+  final DateTime? kycUpdatedAt;
+
+  /// Customer-visible reason when KYC verification fails.
+  final String? kycFailureReason;
 
   /// Populated only after approval and partner-profile creation.
   final String? approvedPartnerProfileId;
@@ -137,6 +166,16 @@ class PartnerApplication {
       'rejectionReason': rejectionReason,
       'rejectedByUid': rejectedByUid,
       'rejectedAt': rejectedAt == null ? null : Timestamp.fromDate(rejectedAt!),
+      //KYC
+      'kycStatus': kycStatus.name,
+      'kycVerifiedByUid': kycVerifiedByUid,
+      'kycVerifiedAt': kycVerifiedAt == null
+          ? null
+          : Timestamp.fromDate(kycVerifiedAt!),
+      'kycUpdatedAt': kycUpdatedAt == null
+          ? null
+          : Timestamp.fromDate(kycUpdatedAt!),
+      'kycFailureReason': kycFailureReason,
       'approvedPartnerProfileId': approvedPartnerProfileId,
     };
   }
@@ -166,7 +205,12 @@ class PartnerApplication {
       rejectionReason: data['rejectionReason']?.toString(),
       rejectedByUid: data['rejectedByUid']?.toString(),
       rejectedAt: _dateFromValue(data['rejectedAt']),
-      approvedPartnerProfileId: data['approvedPartnerProfileId']?.toString(),
+
+      kycStatus: _kycStatusFromValue(data['kycStatus']),
+      kycVerifiedByUid: data['kycVerifiedByUid']?.toString(),
+      kycVerifiedAt: _dateFromValue(data['kycVerifiedAt']),
+      kycUpdatedAt: _dateFromValue(data['kycUpdatedAt']),
+      kycFailureReason: data['kycFailureReason']?.toString(),
     );
   }
 
@@ -192,6 +236,18 @@ class PartnerApplication {
     }
 
     return PartnerApplicationStatus.draft;
+  }
+
+  static PartnerKycStatus _kycStatusFromValue(dynamic value) {
+    final raw = value?.toString() ?? '';
+
+    for (final status in PartnerKycStatus.values) {
+      if (status.name == raw) {
+        return status;
+      }
+    }
+
+    return PartnerKycStatus.notStarted;
   }
 
   static DateTime? _dateFromValue(dynamic value) {
