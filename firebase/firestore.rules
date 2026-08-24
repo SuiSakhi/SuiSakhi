@@ -189,7 +189,40 @@ service cloud.firestore {
           )
         );
       // Configured Admin may reject an application that is under review.
-      //
+      // Configured Admin may start KYC verification while an application
+      // is under review.
+      allow update: if isConfiguredAdmin()
+        && resource.data.status == 'underReview'
+        && request.resource.data.status
+            == resource.data.status
+        && (
+          !('kycStatus' in resource.data)
+          || resource.data.kycStatus == 'notStarted'
+        )
+        && request.resource.data.kycStatus
+            == 'underVerification'
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && request.resource.data.approvedPartnerProfileId
+            == resource.data.approvedPartnerProfileId
+        && request.resource.data.kycUpdatedAt != null
+        && request.resource.data.kycFailureReason == null
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'kycStatus',
+            'kycUpdatedAt',
+            'kycFailureReason',
+            'updatedAt'
+          ]);
       // Rejection preserves application ownership and history and requires
       // a customer-visible reason.
       allow update: if isConfiguredAdmin()

@@ -69,7 +69,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _buildOnboardingProgress(),
         const SizedBox(height: 18),
-        _buildKycCard(application),
+        _buildKycCard(context, application),
         const SizedBox(height: 18),
         _buildReviewActions(context, application),
         const SizedBox(height: 28),
@@ -203,7 +203,11 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildKycCard(PartnerApplication application) {
+  Widget _buildKycCard(BuildContext context, PartnerApplication application) {
+    final canStartKyc =
+        application.status == PartnerApplicationStatus.underReview &&
+        application.kycStatus == PartnerKycStatus.notStarted;
+
     return _ReviewSection(
       title: 'KYC and Verification',
       icon: Icons.verified_user_outlined,
@@ -225,13 +229,100 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
               ? 'Not available'
               : _formatDateTime(application.kycVerifiedAt!),
         ),
+        if (application.kycUpdatedAt != null)
+          _ReviewDetail(
+            label: 'KYC updated',
+            value: _formatDateTime(application.kycUpdatedAt!),
+          ),
         if (application.kycFailureReason?.trim().isNotEmpty == true)
           _ReviewDetail(
             label: 'Failure reason',
             value: application.kycFailureReason!.trim(),
           ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: canStartKyc
+                ? () {
+                    _startKycVerification(context, application);
+                  }
+                : null,
+            icon: const Icon(Icons.manage_search_outlined),
+            label: Text(
+              application.kycStatus == PartnerKycStatus.underVerification
+                  ? 'KYC Under Verification'
+                  : application.kycStatus == PartnerKycStatus.verified
+                  ? 'KYC Verified'
+                  : 'Start KYC Verification',
+            ),
+          ),
+        ),
       ],
     );
+  }
+
+  Future<void> _startKycVerification(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Start KYC Verification'),
+          content: const Text(
+            'KYC will move from Not Started to Under Verification.\n\n'
+            'This action does not verify KYC, approve the application, '
+            'or activate a Partner profile.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Start Verification'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.startKycVerification(applicationId: application.id);
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('KYC verification started'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to start KYC verification.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Future<void> _startReview(

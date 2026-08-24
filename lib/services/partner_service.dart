@@ -416,6 +416,62 @@ class PartnerService {
     });
   }
 
+  /// Starts KYC verification for an application under Admin review.
+  ///
+  /// This action does not verify KYC, approve the application,
+  /// or create an active Partner profile.
+  static Future<void> startKycVerification({
+    required String applicationId,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in Admin is required to start KYC verification.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.underReview) {
+        throw StateError(
+          'KYC verification can start only while the '
+          'application is under review.',
+        );
+      }
+
+      if (application.kycStatus != PartnerKycStatus.notStarted) {
+        throw StateError('KYC verification has already been started.');
+      }
+
+      transaction.set(document, {
+        'kycStatus': PartnerKycStatus.underVerification.name,
+        'kycUpdatedAt': FieldValue.serverTimestamp(),
+        'kycFailureReason': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
   static int _applicationResumeScore(PartnerApplication application) {
     var score = switch (application.status) {
       PartnerApplicationStatus.approved => 600,
