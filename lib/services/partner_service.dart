@@ -472,6 +472,140 @@ class PartnerService {
     });
   }
 
+  /// Marks KYC as successfully verified by the signed-in Admin.
+  ///
+  /// This action does not approve the Partner application and does not
+  /// create or activate a Partner profile.
+  static Future<void> markKycVerified({required String applicationId}) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('A signed-in Admin is required to verify KYC.');
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.underReview) {
+        throw StateError(
+          'KYC can be verified only while the application '
+          'is under review.',
+        );
+      }
+
+      if (application.kycStatus != PartnerKycStatus.underVerification) {
+        throw StateError(
+          'KYC must be under verification before it can be verified.',
+        );
+      }
+
+      transaction.set(document, {
+        'kycStatus': PartnerKycStatus.verified.name,
+        'kycVerifiedByUid': user.uid,
+        'kycVerifiedAt': FieldValue.serverTimestamp(),
+        'kycUpdatedAt': FieldValue.serverTimestamp(),
+        'kycFailureReason': null,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
+  /// Marks KYC verification as failed with a customer-visible reason.
+  ///
+  /// This action does not automatically reject the Partner application.
+  /// Admin may request corrected documents or reject the application
+  /// separately.
+  static Future<void> markKycFailed({
+    required String applicationId,
+    required String reason,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in Admin is required to fail KYC verification.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+    final normalizedReason = reason.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    if (normalizedReason.isEmpty) {
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'KYC failure reason is required.',
+      );
+    }
+
+    if (normalizedReason.length < 10) {
+      throw ArgumentError.value(
+        reason,
+        'reason',
+        'Please provide a clear KYC failure reason.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.underReview) {
+        throw StateError(
+          'KYC can fail only while the application is under review.',
+        );
+      }
+
+      if (application.kycStatus != PartnerKycStatus.underVerification) {
+        throw StateError(
+          'KYC must be under verification before it can be failed.',
+        );
+      }
+
+      transaction.set(document, {
+        'kycStatus': PartnerKycStatus.failed.name,
+        'kycVerifiedByUid': null,
+        'kycVerifiedAt': null,
+        'kycUpdatedAt': FieldValue.serverTimestamp(),
+        'kycFailureReason': normalizedReason,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
   static int _applicationResumeScore(PartnerApplication application) {
     var score = switch (application.status) {
       PartnerApplicationStatus.approved => 600,

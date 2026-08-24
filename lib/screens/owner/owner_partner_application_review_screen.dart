@@ -240,24 +240,52 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
             value: application.kycFailureReason!.trim(),
           ),
         const SizedBox(height: 8),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: canStartKyc
-                ? () {
-                    _startKycVerification(context, application);
-                  }
-                : null,
-            icon: const Icon(Icons.manage_search_outlined),
-            label: Text(
-              application.kycStatus == PartnerKycStatus.underVerification
-                  ? 'KYC Under Verification'
-                  : application.kycStatus == PartnerKycStatus.verified
-                  ? 'KYC Verified'
-                  : 'Start KYC Verification',
+
+        if (application.kycStatus == PartnerKycStatus.underVerification) ...[
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: () {
+                _markKycVerified(context, application);
+              },
+              icon: const Icon(Icons.verified_outlined),
+              label: const Text('Mark KYC Verified'),
             ),
           ),
-        ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                _markKycFailed(context, application);
+              },
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.error,
+                side: const BorderSide(color: AppColors.error),
+              ),
+              icon: const Icon(Icons.gpp_bad_outlined),
+              label: const Text('Mark KYC Failed'),
+            ),
+          ),
+        ] else
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: canStartKyc
+                  ? () {
+                      _startKycVerification(context, application);
+                    }
+                  : null,
+              icon: const Icon(Icons.manage_search_outlined),
+              label: Text(
+                application.kycStatus == PartnerKycStatus.verified
+                    ? 'KYC Verified'
+                    : application.kycStatus == PartnerKycStatus.failed
+                    ? 'KYC Failed'
+                    : 'Start KYC Verification',
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -319,6 +347,171 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Unable to start KYC verification.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markKycVerified(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Mark KYC Verified'),
+          content: const Text(
+            'Confirm that the required identity and business documents '
+            'have been successfully verified.\n\n'
+            'This action does not approve or activate the Partner profile.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Mark Verified'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.markKycVerified(applicationId: application.id);
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('KYC marked as verified'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to verify KYC.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Future<void> _markKycFailed(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final reasonController = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Mark KYC Failed'),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: reasonController,
+              minLines: 4,
+              maxLines: 7,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                labelText: 'Customer-visible failure reason',
+                hintText:
+                    'Explain which identity or business verification failed.',
+                border: OutlineInputBorder(),
+                alignLabelWithHint: true,
+              ),
+              validator: (value) {
+                final reason = value?.trim() ?? '';
+
+                if (reason.isEmpty) {
+                  return 'KYC failure reason is required';
+                }
+
+                if (reason.length < 10) {
+                  return 'Please provide a clear KYC failure reason';
+                }
+
+                return null;
+              },
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (!formKey.currentState!.validate()) {
+                  return;
+                }
+
+                Navigator.pop(dialogContext, reasonController.text.trim());
+              },
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('Mark KYC Failed'),
+            ),
+          ],
+        );
+      },
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      reasonController.dispose();
+    });
+
+    if (reason == null || reason.isEmpty || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.markKycFailed(
+        applicationId: application.id,
+        reason: reason,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('KYC marked as failed'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to fail KYC.\n$error'),
           backgroundColor: AppColors.error,
         ),
       );

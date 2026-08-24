@@ -190,6 +190,76 @@ service cloud.firestore {
         );
       // Configured Admin may reject an application that is under review.
       // Configured Admin may start KYC verification while an application
+      // Configured Admin may mark KYC as verified while an application
+  // is under review and KYC is under verification.
+  allow update: if isConfiguredAdmin()
+    && resource.data.status == 'underReview'
+    && request.resource.data.status
+        == resource.data.status
+    && resource.data.kycStatus == 'underVerification'
+    && request.resource.data.kycStatus == 'verified'
+    && request.resource.data.applicationId
+        == resource.data.applicationId
+    && request.resource.data.createdByUid
+        == resource.data.createdByUid
+    && request.resource.data.accountId
+        == resource.data.accountId
+    && request.resource.data.customerProfileId
+        == resource.data.customerProfileId
+    && request.resource.data.partnerType
+        == resource.data.partnerType
+    && request.resource.data.approvedPartnerProfileId
+        == resource.data.approvedPartnerProfileId
+    && request.resource.data.kycVerifiedByUid
+        == request.auth.uid
+    && request.resource.data.kycVerifiedAt != null
+    && request.resource.data.kycUpdatedAt != null
+    && request.resource.data.kycFailureReason == null
+    && request.resource.data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'kycStatus',
+        'kycVerifiedByUid',
+        'kycVerifiedAt',
+        'kycUpdatedAt',
+        'kycFailureReason',
+        'updatedAt'
+      ]);
+      // Configured Admin may mark KYC as failed with a customer-visible
+      // reason while an application is under review.
+      allow update: if isConfiguredAdmin()
+        && resource.data.status == 'underReview'
+        && request.resource.data.status
+            == resource.data.status
+        && resource.data.kycStatus == 'underVerification'
+        && request.resource.data.kycStatus == 'failed'
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && request.resource.data.approvedPartnerProfileId
+            == resource.data.approvedPartnerProfileId
+        && request.resource.data.kycVerifiedByUid == null
+        && request.resource.data.kycVerifiedAt == null
+        && request.resource.data.kycUpdatedAt != null
+        && request.resource.data.kycFailureReason is string
+        && request.resource.data.kycFailureReason.size() >= 10
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'kycStatus',
+            'kycVerifiedByUid',
+            'kycVerifiedAt',
+            'kycUpdatedAt',
+            'kycFailureReason',
+            'updatedAt'
+          ]);
       // is under review.
       allow update: if isConfiguredAdmin()
         && resource.data.status == 'underReview'
