@@ -35,6 +35,26 @@ enum PartnerKycStatus {
   expired,
 }
 
+enum PartnerOnboardingSection {
+  basicDetails,
+  workshopDetails,
+  servicesAndSpecialization,
+  capacityAndAvailability,
+  measurementPreferences,
+  qualityAndRework,
+  expectedRates,
+  documentsAndDeclaration,
+  commercialTerms,
+}
+
+enum PartnerOnboardingSectionStatus {
+  notStarted,
+  inProgress,
+  completed,
+  verified,
+  changesRequired,
+}
+
 class PartnerApplication {
   const PartnerApplication({
     required this.id,
@@ -61,6 +81,7 @@ class PartnerApplication {
     this.kycVerifiedAt,
     this.kycUpdatedAt,
     this.kycFailureReason,
+    this.onboardingSections = const {},
     this.approvedPartnerProfileId,
   });
 
@@ -124,6 +145,13 @@ class PartnerApplication {
   /// Customer-visible reason when KYC verification fails.
   final String? kycFailureReason;
 
+  /// Status of every Partner onboarding section.
+  ///
+  /// Existing applications may not yet contain this map. The effective
+  /// section-status helpers provide safe defaults for those applications.
+  final Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>
+  onboardingSections;
+
   /// Populated only after approval and partner-profile creation.
   final String? approvedPartnerProfileId;
 
@@ -142,6 +170,42 @@ class PartnerApplication {
   bool get canSubmit =>
       status == PartnerApplicationStatus.draft ||
       status == PartnerApplicationStatus.changesRequested;
+
+  PartnerOnboardingSectionStatus onboardingStatusFor(
+    PartnerOnboardingSection section,
+  ) {
+    final storedStatus = onboardingSections[section];
+
+    if (storedStatus != null) {
+      return storedStatus;
+    }
+
+    if (section == PartnerOnboardingSection.basicDetails) {
+      return PartnerOnboardingSectionStatus.completed;
+    }
+
+    return PartnerOnboardingSectionStatus.notStarted;
+  }
+
+  int get completedOnboardingSectionCount {
+    return PartnerOnboardingSection.values.where((section) {
+      final sectionStatus = onboardingStatusFor(section);
+
+      return sectionStatus == PartnerOnboardingSectionStatus.completed ||
+          sectionStatus == PartnerOnboardingSectionStatus.verified;
+    }).length;
+  }
+
+  int get verifiedOnboardingSectionCount {
+    return PartnerOnboardingSection.values.where((section) {
+      return onboardingStatusFor(section) ==
+          PartnerOnboardingSectionStatus.verified;
+    }).length;
+  }
+
+  int get totalOnboardingSectionCount {
+    return PartnerOnboardingSection.values.length;
+  }
 
   Map<String, dynamic> toMap() {
     return {
@@ -176,6 +240,10 @@ class PartnerApplication {
           ? null
           : Timestamp.fromDate(kycUpdatedAt!),
       'kycFailureReason': kycFailureReason,
+      'onboardingSections': {
+        for (final entry in onboardingSections.entries)
+          entry.key.name: entry.value.name,
+      },
       'approvedPartnerProfileId': approvedPartnerProfileId,
     };
   }
@@ -205,12 +273,15 @@ class PartnerApplication {
       rejectionReason: data['rejectionReason']?.toString(),
       rejectedByUid: data['rejectedByUid']?.toString(),
       rejectedAt: _dateFromValue(data['rejectedAt']),
-
       kycStatus: _kycStatusFromValue(data['kycStatus']),
       kycVerifiedByUid: data['kycVerifiedByUid']?.toString(),
       kycVerifiedAt: _dateFromValue(data['kycVerifiedAt']),
       kycUpdatedAt: _dateFromValue(data['kycUpdatedAt']),
       kycFailureReason: data['kycFailureReason']?.toString(),
+      onboardingSections: _onboardingSectionsFromValue(
+        data['onboardingSections'],
+      ),
+      approvedPartnerProfileId: data['approvedPartnerProfileId']?.toString(),
     );
   }
 
@@ -248,6 +319,43 @@ class PartnerApplication {
     }
 
     return PartnerKycStatus.notStarted;
+  }
+
+  static Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>
+  _onboardingSectionsFromValue(dynamic value) {
+    if (value is! Map) {
+      return const {};
+    }
+
+    final result = <PartnerOnboardingSection, PartnerOnboardingSectionStatus>{};
+
+    for (final entry in value.entries) {
+      final sectionName = entry.key.toString();
+      final statusName = entry.value?.toString() ?? '';
+
+      PartnerOnboardingSection? matchedSection;
+      PartnerOnboardingSectionStatus? matchedStatus;
+
+      for (final section in PartnerOnboardingSection.values) {
+        if (section.name == sectionName) {
+          matchedSection = section;
+          break;
+        }
+      }
+
+      for (final status in PartnerOnboardingSectionStatus.values) {
+        if (status.name == statusName) {
+          matchedStatus = status;
+          break;
+        }
+      }
+
+      if (matchedSection != null && matchedStatus != null) {
+        result[matchedSection] = matchedStatus;
+      }
+    }
+
+    return result;
   }
 
   static DateTime? _dateFromValue(dynamic value) {
