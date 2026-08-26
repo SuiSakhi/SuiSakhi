@@ -606,6 +606,98 @@ class PartnerService {
     });
   }
 
+  /// Updates one Partner onboarding-section status.
+  ///
+  /// The first controlled implementation supports Workshop Details only.
+  /// This action does not approve the application or create a Partner profile.
+  static Future<void> updateOnboardingSectionStatus({
+    required String applicationId,
+    required PartnerOnboardingSection section,
+    required PartnerOnboardingSectionStatus targetStatus,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('A signed-in Admin is required to update onboarding.');
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    if (section != PartnerOnboardingSection.workshopDetails) {
+      throw StateError(
+        'Only Workshop Details is enabled in this onboarding phase.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      if (application.status != PartnerApplicationStatus.underReview) {
+        throw StateError(
+          'Onboarding can be updated only while the application '
+          'is under review.',
+        );
+      }
+
+      final currentStatus = application.onboardingStatusFor(section);
+
+      if (!_isAllowedOnboardingTransition(
+        currentStatus: currentStatus,
+        targetStatus: targetStatus,
+      )) {
+        throw StateError(
+          'The onboarding section cannot move from '
+          '${currentStatus.name} to ${targetStatus.name}.',
+        );
+      }
+
+      transaction.update(document, {
+        'onboardingSections.${section.name}': targetStatus.name,
+        'onboardingUpdatedByUid': user.uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  static bool _isAllowedOnboardingTransition({
+    required PartnerOnboardingSectionStatus currentStatus,
+    required PartnerOnboardingSectionStatus targetStatus,
+  }) {
+    switch (currentStatus) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return targetStatus == PartnerOnboardingSectionStatus.inProgress;
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return targetStatus == PartnerOnboardingSectionStatus.completed;
+
+      case PartnerOnboardingSectionStatus.completed:
+        return targetStatus == PartnerOnboardingSectionStatus.verified;
+
+      case PartnerOnboardingSectionStatus.verified:
+        return false;
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return targetStatus == PartnerOnboardingSectionStatus.inProgress;
+    }
+  }
+
   static int _applicationResumeScore(PartnerApplication application) {
     var score = switch (application.status) {
       PartnerApplicationStatus.approved => 600,

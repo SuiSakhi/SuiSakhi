@@ -189,6 +189,97 @@ service cloud.firestore {
           )
         );
       // Configured Admin may reject an application that is under review.
+    // Configured Admin may update the Workshop Details onboarding status.
+  //
+  // Allowed lifecycle:
+  // notStarted -> inProgress
+  // inProgress -> completed
+  // completed -> verified
+  // changesRequired -> inProgress
+  allow update: if isConfiguredAdmin()
+    && resource.data.status == 'underReview'
+    && request.resource.data.status
+        == resource.data.status
+    && request.resource.data.applicationId
+        == resource.data.applicationId
+    && request.resource.data.createdByUid
+        == resource.data.createdByUid
+    && request.resource.data.accountId
+        == resource.data.accountId
+    && request.resource.data.customerProfileId
+        == resource.data.customerProfileId
+    && request.resource.data.partnerType
+        == resource.data.partnerType
+    && request.resource.data.approvedPartnerProfileId
+        == resource.data.approvedPartnerProfileId
+    && request.resource.data.onboardingSections is map
+    && request.resource.data.onboardingUpdatedByUid
+        == request.auth.uid
+    && request.resource.data.onboardingUpdatedAt != null
+
+    && (
+      (
+        resource.data
+            .get('onboardingSections', {})
+            .get('workshopDetails', 'notStarted')
+            == 'notStarted'
+        && request.resource.data
+            .onboardingSections
+            .workshopDetails
+            == 'inProgress'
+      )
+      ||
+      (
+        resource.data
+            .get('onboardingSections', {})
+            .get('workshopDetails', 'notStarted')
+            == 'inProgress'
+        && request.resource.data
+            .onboardingSections
+            .workshopDetails
+            == 'completed'
+      )
+      ||
+      (
+        resource.data
+            .get('onboardingSections', {})
+            .get('workshopDetails', 'notStarted')
+            == 'completed'
+        && request.resource.data
+            .onboardingSections
+            .workshopDetails
+            == 'verified'
+      )
+      ||
+      (
+        resource.data
+            .get('onboardingSections', {})
+            .get('workshopDetails', 'notStarted')
+            == 'changesRequired'
+        && request.resource.data
+            .onboardingSections
+            .workshopDetails
+            == 'inProgress'
+      )
+    )
+
+    && request.resource.data.onboardingSections
+      .diff(
+        resource.data.get('onboardingSections', {})
+      )
+      .affectedKeys()
+      .hasOnly([
+        'workshopDetails'
+      ])
+
+    && request.resource.data.diff(resource.data)
+      .affectedKeys()
+      .hasOnly([
+        'onboardingSections',
+        'onboardingUpdatedByUid',
+        'onboardingUpdatedAt',
+        'updatedAt'
+      ]);
       // Configured Admin may start KYC verification while an application
       // Configured Admin may mark KYC as verified while an application
   // is under review and KYC is under verification.

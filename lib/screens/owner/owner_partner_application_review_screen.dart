@@ -67,7 +67,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _buildApplicantDetails(application),
         const SizedBox(height: 18),
-        _buildOnboardingProgress(application),
+        _buildOnboardingProgress(context, application),
         const SizedBox(height: 18),
         _buildKycCard(context, application),
         const SizedBox(height: 18),
@@ -186,12 +186,105 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildOnboardingProgress(PartnerApplication application) {
+  Future<void> _updateWorkshopStatus(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    final currentStatus = application.onboardingStatusFor(
+      PartnerOnboardingSection.workshopDetails,
+    );
+
+    final targetStatus = _nextWorkshopStatus(currentStatus);
+
+    if (targetStatus == null) {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(_workshopActionLabel(currentStatus)),
+          content: Text(
+            'Workshop Details will move from '
+            '${_onboardingStatusLabel(currentStatus)} to '
+            '${_onboardingStatusLabel(targetStatus)}.\n\n'
+            'This action does not approve or activate the '
+            'Partner profile.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, false);
+              },
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(dialogContext, true);
+              },
+              child: const Text('Continue'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+
+    try {
+      await PartnerService.updateOnboardingSectionStatus(
+        applicationId: application.id,
+        section: PartnerOnboardingSection.workshopDetails,
+        targetStatus: targetStatus,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Workshop Details marked as '
+            '${_onboardingStatusLabel(targetStatus)}',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to update Workshop Details.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
+  Widget _buildOnboardingProgress(
+    BuildContext context,
+    PartnerApplication application,
+  ) {
     final completedCount = application.completedOnboardingSectionCount;
 
     final verifiedCount = application.verifiedOnboardingSectionCount;
 
     final totalCount = application.totalOnboardingSectionCount;
+
+    final workshopStatus = application.onboardingStatusFor(
+      PartnerOnboardingSection.workshopDetails,
+    );
+
+    final canUpdateWorkshop =
+        application.status == PartnerApplicationStatus.underReview &&
+        workshopStatus != PartnerOnboardingSectionStatus.verified;
 
     return _ReviewSection(
       title: 'Onboarding Progress',
@@ -222,6 +315,33 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
             label: _onboardingSectionLabel(section),
             status: application.onboardingStatusFor(section),
           ),
+        const SizedBox(height: 8),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: canUpdateWorkshop
+                ? () {
+                    _updateWorkshopStatus(context, application);
+                  }
+                : null,
+            icon: Icon(
+              workshopStatus == PartnerOnboardingSectionStatus.verified
+                  ? Icons.verified_rounded
+                  : Icons.store_outlined,
+            ),
+            label: Text(_workshopActionLabel(workshopStatus)),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Workshop Details is the first enabled onboarding '
+          'section. The remaining sections will be enabled '
+          'after this reusable workflow is validated.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+            height: 1.4,
+          ),
+        ),
       ],
     );
   }
@@ -1000,6 +1120,67 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         return 'Doorstep Services';
       case PartnerType.other:
         return 'Other Partner';
+    }
+  }
+
+  static PartnerOnboardingSectionStatus? _nextWorkshopStatus(
+    PartnerOnboardingSectionStatus currentStatus,
+  ) {
+    switch (currentStatus) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return PartnerOnboardingSectionStatus.inProgress;
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return PartnerOnboardingSectionStatus.completed;
+
+      case PartnerOnboardingSectionStatus.completed:
+        return PartnerOnboardingSectionStatus.verified;
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return PartnerOnboardingSectionStatus.inProgress;
+
+      case PartnerOnboardingSectionStatus.verified:
+        return null;
+    }
+  }
+
+  static String _workshopActionLabel(
+    PartnerOnboardingSectionStatus currentStatus,
+  ) {
+    switch (currentStatus) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return 'Start Workshop Details';
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return 'Mark Workshop Details Completed';
+
+      case PartnerOnboardingSectionStatus.completed:
+        return 'Verify Workshop Details';
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return 'Resume Workshop Details';
+
+      case PartnerOnboardingSectionStatus.verified:
+        return 'Workshop Details Verified';
+    }
+  }
+
+  static String _onboardingStatusLabel(PartnerOnboardingSectionStatus status) {
+    switch (status) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return 'Not Started';
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return 'In Progress';
+
+      case PartnerOnboardingSectionStatus.completed:
+        return 'Completed';
+
+      case PartnerOnboardingSectionStatus.verified:
+        return 'Verified';
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return 'Changes Required';
     }
   }
 

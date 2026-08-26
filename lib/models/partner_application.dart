@@ -82,6 +82,8 @@ class PartnerApplication {
     this.kycUpdatedAt,
     this.kycFailureReason,
     this.onboardingSections = const {},
+    this.onboardingUpdatedByUid,
+    this.onboardingUpdatedAt,
     this.approvedPartnerProfileId,
   });
 
@@ -151,6 +153,12 @@ class PartnerApplication {
   /// section-status helpers provide safe defaults for those applications.
   final Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>
   onboardingSections;
+
+  /// Admin UID that last updated an onboarding-section status.
+  final String? onboardingUpdatedByUid;
+
+  /// Date and time when an onboarding-section status was last updated.
+  final DateTime? onboardingUpdatedAt;
 
   /// Populated only after approval and partner-profile creation.
   final String? approvedPartnerProfileId;
@@ -244,6 +252,10 @@ class PartnerApplication {
         for (final entry in onboardingSections.entries)
           entry.key.name: entry.value.name,
       },
+      'onboardingUpdatedByUid': onboardingUpdatedByUid,
+      'onboardingUpdatedAt': onboardingUpdatedAt == null
+          ? null
+          : Timestamp.fromDate(onboardingUpdatedAt!),
       'approvedPartnerProfileId': approvedPartnerProfileId,
     };
   }
@@ -281,6 +293,8 @@ class PartnerApplication {
       onboardingSections: _onboardingSectionsFromValue(
         data['onboardingSections'],
       ),
+      onboardingUpdatedByUid: data['onboardingUpdatedByUid']?.toString(),
+      onboardingUpdatedAt: _dateFromValue(data['onboardingUpdatedAt']),
       approvedPartnerProfileId: data['approvedPartnerProfileId']?.toString(),
     );
   }
