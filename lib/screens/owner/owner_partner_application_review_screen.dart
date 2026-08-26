@@ -67,7 +67,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _buildApplicantDetails(application),
         const SizedBox(height: 18),
-        _buildOnboardingProgress(),
+        _buildOnboardingProgress(application),
         const SizedBox(height: 18),
         _buildKycCard(context, application),
         const SizedBox(height: 18),
@@ -186,19 +186,42 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildOnboardingProgress() {
-    return const _ReviewSection(
+  Widget _buildOnboardingProgress(PartnerApplication application) {
+    final completedCount = application.completedOnboardingSectionCount;
+
+    final verifiedCount = application.verifiedOnboardingSectionCount;
+
+    final totalCount = application.totalOnboardingSectionCount;
+
+    return _ReviewSection(
       title: 'Onboarding Progress',
       icon: Icons.checklist_rounded,
       children: [
-        _ProgressItem(label: 'Basic details', completed: true),
-        _ProgressItem(label: 'Workshop details', completed: false),
-        _ProgressItem(label: 'Services and specialization', completed: false),
-        _ProgressItem(label: 'Capacity and availability', completed: false),
-        _ProgressItem(label: 'Measurement preferences', completed: false),
-        _ProgressItem(label: 'Quality and verification', completed: false),
-        _ProgressItem(label: 'Expected rate information', completed: false),
-        _ProgressItem(label: 'Documents and declaration', completed: false),
+        Row(
+          children: [
+            Expanded(
+              child: _OnboardingSummaryValue(
+                label: 'Completed',
+                value: '$completedCount of $totalCount',
+                color: const Color(0xFF4CAF50),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _OnboardingSummaryValue(
+                label: 'Verified',
+                value: '$verifiedCount of $totalCount',
+                color: const Color(0xFF2196F3),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 18),
+        for (final section in PartnerOnboardingSection.values)
+          _ProgressItem(
+            label: _onboardingSectionLabel(section),
+            status: application.onboardingStatusFor(section),
+          ),
       ],
     );
   }
@@ -980,6 +1003,37 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
   }
 
+  static String _onboardingSectionLabel(PartnerOnboardingSection section) {
+    switch (section) {
+      case PartnerOnboardingSection.basicDetails:
+        return 'Basic details';
+
+      case PartnerOnboardingSection.workshopDetails:
+        return 'Workshop details';
+
+      case PartnerOnboardingSection.servicesAndSpecialization:
+        return 'Services and specialization';
+
+      case PartnerOnboardingSection.capacityAndAvailability:
+        return 'Capacity and availability';
+
+      case PartnerOnboardingSection.measurementPreferences:
+        return 'Measurement preferences';
+
+      case PartnerOnboardingSection.qualityAndRework:
+        return 'Quality and rework';
+
+      case PartnerOnboardingSection.expectedRates:
+        return 'Expected rate information';
+
+      case PartnerOnboardingSection.documentsAndDeclaration:
+        return 'Documents and declaration';
+
+      case PartnerOnboardingSection.commercialTerms:
+        return 'Commercial terms';
+    }
+  }
+
   static String _kycStatusLabel(PartnerKycStatus status) {
     switch (status) {
       case PartnerKycStatus.notStarted:
@@ -1128,41 +1182,152 @@ class _ReviewDetail extends StatelessWidget {
   }
 }
 
-class _ProgressItem extends StatelessWidget {
-  const _ProgressItem({required this.label, required this.completed});
+class _OnboardingSummaryValue extends StatelessWidget {
+  const _OnboardingSummaryValue({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
 
   final String label;
-  final bool completed;
+  final String value;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
-    final color = completed ? const Color(0xFF4CAF50) : AppColors.textHint;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(
+            value,
+            style: AppTextStyles.titleLarge.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            label,
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ProgressItem extends StatelessWidget {
+  const _ProgressItem({required this.label, required this.status});
+
+  final String label;
+  final PartnerOnboardingSectionStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = _statusColor(status);
+    final icon = _statusIcon(status);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Icon(
-            completed
-                ? Icons.check_circle_rounded
-                : Icons.radio_button_unchecked_rounded,
-            color: color,
-            size: 20,
-          ),
+          Icon(icon, color: color, size: 20),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               label,
               style: AppTextStyles.bodyMedium.copyWith(
-                color: completed
-                    ? AppColors.textPrimary
-                    : AppColors.textSecondary,
-                fontWeight: completed ? FontWeight.w700 : FontWeight.w500,
+                color: status == PartnerOnboardingSectionStatus.notStarted
+                    ? AppColors.textSecondary
+                    : AppColors.textPrimary,
+                fontWeight: status == PartnerOnboardingSectionStatus.notStarted
+                    ? FontWeight.w500
+                    : FontWeight.w700,
+              ),
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.10),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _statusLabel(status),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: color,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
         ],
       ),
     );
+  }
+
+  static String _statusLabel(PartnerOnboardingSectionStatus status) {
+    switch (status) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return 'Not Started';
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return 'In Progress';
+
+      case PartnerOnboardingSectionStatus.completed:
+        return 'Completed';
+
+      case PartnerOnboardingSectionStatus.verified:
+        return 'Verified';
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return 'Changes Required';
+    }
+  }
+
+  static IconData _statusIcon(PartnerOnboardingSectionStatus status) {
+    switch (status) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return Icons.radio_button_unchecked_rounded;
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return Icons.timelapse_rounded;
+
+      case PartnerOnboardingSectionStatus.completed:
+        return Icons.check_circle_outline_rounded;
+
+      case PartnerOnboardingSectionStatus.verified:
+        return Icons.verified_rounded;
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return Icons.edit_note_rounded;
+    }
+  }
+
+  static Color _statusColor(PartnerOnboardingSectionStatus status) {
+    switch (status) {
+      case PartnerOnboardingSectionStatus.notStarted:
+        return AppColors.textHint;
+
+      case PartnerOnboardingSectionStatus.inProgress:
+        return const Color(0xFFFF9800);
+
+      case PartnerOnboardingSectionStatus.completed:
+        return const Color(0xFF4CAF50);
+
+      case PartnerOnboardingSectionStatus.verified:
+        return const Color(0xFF2196F3);
+
+      case PartnerOnboardingSectionStatus.changesRequired:
+        return AppColors.error;
+    }
   }
 }
