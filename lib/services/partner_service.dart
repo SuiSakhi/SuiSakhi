@@ -193,6 +193,102 @@ class PartnerService {
     }, SetOptions(merge: true));
   }
 
+  /// Saves structured Tailor Workshop Details in the existing application.
+  ///
+  /// The applicant may update this section only while the application is
+  /// Draft or Changes Requested.
+  ///
+  /// Saving complete mandatory information marks the section Completed.
+  /// Partial information marks the section In Progress.
+  ///
+  /// This action never verifies the section, approves the application,
+  /// or creates or activates a Partner profile.
+  static Future<void> updateWorkshopDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required PartnerWorkshopDetails workshopDetails,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in user is required to update Workshop Details.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      _validateCustomerOwnership(
+        application: application,
+        uid: user.uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!application.canEdit) {
+        throw StateError(
+          'Workshop Details can be edited only while the '
+          'application is Draft or Changes Requested.',
+        );
+      }
+
+      if (application.partnerType != PartnerType.tailor) {
+        throw StateError(
+          'Workshop Details are currently supported only '
+          'for Tailor applications.',
+        );
+      }
+
+      final targetStatus = workshopDetails.hasMinimumRequiredData
+          ? PartnerOnboardingSectionStatus.completed
+          : PartnerOnboardingSectionStatus.inProgress;
+
+      final updatedOnboardingData = _withTailorWorkshopDetails(
+        application.onboardingData,
+        workshopDetails,
+      );
+
+      final updatedOnboardingSections =
+          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
+            application.onboardingSections,
+          );
+
+      updatedOnboardingSections[PartnerOnboardingSection.workshopDetails] =
+          targetStatus;
+
+      transaction.set(document, {
+        'onboardingData': updatedOnboardingData,
+        'onboardingSections': {
+          for (final entry in updatedOnboardingSections.entries)
+            entry.key.name: entry.value.name,
+        },
+        'onboardingUpdatedByUid': user.uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
   /// Submits a draft or rejected application for Admin review.
   ///
   /// Submission does not activate a Partner profile.
@@ -696,6 +792,32 @@ class PartnerService {
       case PartnerOnboardingSectionStatus.changesRequired:
         return targetStatus == PartnerOnboardingSectionStatus.inProgress;
     }
+  }
+
+  static Map<String, dynamic> _withTailorWorkshopDetails(
+    Map<String, dynamic> existingOnboardingData,
+    PartnerWorkshopDetails workshopDetails,
+  ) {
+    final onboardingData = Map<String, dynamic>.from(existingOnboardingData);
+
+    final existingExtensions = onboardingData['extensions'];
+
+    final extensions = existingExtensions is Map
+        ? Map<String, dynamic>.from(existingExtensions)
+        : <String, dynamic>{};
+
+    final existingTailor = extensions['tailor'];
+
+    final tailor = existingTailor is Map
+        ? Map<String, dynamic>.from(existingTailor)
+        : <String, dynamic>{};
+
+    tailor['workshopDetails'] = workshopDetails.toMap();
+
+    extensions['tailor'] = tailor;
+    onboardingData['extensions'] = extensions;
+
+    return onboardingData;
   }
 
   static int _applicationResumeScore(PartnerApplication application) {

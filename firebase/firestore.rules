@@ -529,6 +529,232 @@ service cloud.firestore {
                 'updatedAt'
               ])
           )
+                    ||
+          (
+            resource.data.status == 'draft'
+            && request.resource.data.status == 'draft'
+            && request.resource.data.partnerType == 'tailor'
+            && request.resource.data.onboardingData is map
+            && request.resource.data.onboardingSections is map
+            && request.resource.data.onboardingUpdatedByUid
+                == request.auth.uid
+            && request.resource.data.onboardingUpdatedAt != null
+            && request.resource.data.onboardingSections.workshopDetails
+                in ['inProgress', 'completed']
+
+            // Only the top-level extensions map may change.
+            && request.resource.data.onboardingData
+              .diff(
+                resource.data.get('onboardingData', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'extensions'
+              ])
+
+            // Inside extensions, only the Tailor extension may change.
+            && request.resource.data.onboardingData.extensions is map
+            && request.resource.data.onboardingData.extensions
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'tailor'
+              ])
+
+            // Inside Tailor, only Workshop Details may change.
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor is map
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+                  .get('tailor', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'workshopDetails'
+              ])
+
+            // Workshop Details must contain only approved fields.
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor
+              .workshopDetails is map
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor
+              .workshopDetails
+              .keys()
+              .hasOnly([
+                'workshopTypeCode',
+                'addressLine1',
+                'addressLine2',
+                'locality',
+                'city',
+                'state',
+                'pincode',
+                'placeId',
+                'latitude',
+                'longitude',
+                'serviceAreaPincodes',
+                'operatingDays',
+                'openingTime',
+                'closingTime',
+                'teamSize',
+                'normalDailyCapacity',
+                'peakDailyCapacity',
+                'machineCodes',
+                'pickupAvailable',
+                'deliveryAvailable',
+                'homeVisitAvailable',
+                'additionalNotes'
+              ])
+
+            // No other onboarding-section status may change.
+            && request.resource.data.onboardingSections
+              .diff(
+                resource.data.get('onboardingSections', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'workshopDetails'
+              ])
+
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'onboardingData',
+                'onboardingSections',
+                'onboardingUpdatedByUid',
+                'onboardingUpdatedAt',
+                'updatedAt'
+              ])
+          )
+          ||
+          (
+            resource.data.status == 'changesRequested'
+            && request.resource.data.status == 'changesRequested'
+            && request.resource.data.partnerType == 'tailor'
+            && request.resource.data.onboardingData is map
+            && request.resource.data.onboardingSections is map
+            && request.resource.data.onboardingUpdatedByUid
+                == request.auth.uid
+            && request.resource.data.onboardingUpdatedAt != null
+            && request.resource.data.onboardingSections.workshopDetails
+                in ['inProgress', 'completed']
+
+            // Only the top-level extensions map may change.
+            && request.resource.data.onboardingData
+              .diff(
+                resource.data.get('onboardingData', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'extensions'
+              ])
+
+            // Inside extensions, only the Tailor extension may change.
+            && request.resource.data.onboardingData.extensions is map
+            && request.resource.data.onboardingData.extensions
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'tailor'
+              ])
+
+            // Inside Tailor, only Workshop Details may change.
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor is map
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+                  .get('tailor', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'workshopDetails'
+              ])
+
+            // Workshop Details must contain only approved fields.
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor
+              .workshopDetails is map
+            && request.resource.data
+              .onboardingData
+              .extensions
+              .tailor
+              .workshopDetails
+              .keys()
+              .hasOnly([
+                'workshopTypeCode',
+                'addressLine1',
+                'addressLine2',
+                'locality',
+                'city',
+                'state',
+                'pincode',
+                'placeId',
+                'latitude',
+                'longitude',
+                'serviceAreaPincodes',
+                'operatingDays',
+                'openingTime',
+                'closingTime',
+                'teamSize',
+                'normalDailyCapacity',
+                'peakDailyCapacity',
+                'machineCodes',
+                'pickupAvailable',
+                'deliveryAvailable',
+                'homeVisitAvailable',
+                'additionalNotes'
+              ])
+
+            // No other onboarding-section status may change.
+            && request.resource.data.onboardingSections
+              .diff(
+                resource.data.get('onboardingSections', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'workshopDetails'
+              ])
+
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'onboardingData',
+                'onboardingSections',
+                'onboardingUpdatedByUid',
+                'onboardingUpdatedAt',
+                'updatedAt'
+              ])
+          )
           ||
           (
             resource.data.status == 'draft'
