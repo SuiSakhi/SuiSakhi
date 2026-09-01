@@ -66,7 +66,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
   bool _loading = true;
   bool _saving = false;
-  bool _savingWorkshopDetails = false;
+
   String? _loadError;
   static const Map<String, String> _workshopTypes = {
     'homeBased': 'Home-based workshop',
@@ -388,6 +388,15 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         email: _emailController.text,
       );
 
+      final workshopDetails = _buildWorkshopDetails();
+
+      await PartnerService.updateWorkshopDetails(
+        applicationId: application.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+        workshopDetails: workshopDetails,
+      );
+
       if (!mounted) {
         return;
       }
@@ -398,7 +407,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Tailor application draft saved'),
+          content: Text(
+            'Partner application draft saved successfully',
+          ),
           backgroundColor: AppColors.success,
         ),
       );
@@ -444,34 +455,10 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     return value;
   }
 
-  Future<void> _saveWorkshopDetails() async {
-    if (_savingWorkshopDetails) {
-      return;
-    }
+  PartnerWorkshopDetails _buildWorkshopDetails() {
+    final existingDetails = _application?.workshopDetails;
 
-    final application = _application;
-    final accountId = _accountId;
-    final customerProfileId = _customerProfileId;
-
-    if (application == null || accountId == null || customerProfileId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Application context is unavailable. '
-            'Please reopen the form.',
-          ),
-          backgroundColor: AppColors.error,
-        ),
-      );
-
-      return;
-    }
-
-    if (!_isEditable) {
-      return;
-    }
-
-    final workshopDetails = PartnerWorkshopDetails(
+    return PartnerWorkshopDetails(
       workshopTypeCode: _workshopTypeCode,
       addressLine1: _workshopAddressLine1Controller.text.trim(),
       addressLine2: _workshopAddressLine2Controller.text.trim(),
@@ -480,137 +467,36 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       state: _workshopStateController.text.trim(),
       pincode: _workshopPincodeController.text.trim(),
 
-      // Map values remain optional until the map picker is added.
-      placeId: application.workshopDetails?.placeId,
-      latitude: application.workshopDetails?.latitude,
-      longitude: application.workshopDetails?.longitude,
+      // Map-derived values remain unchanged until the map picker is added.
+      placeId: existingDetails?.placeId,
+      latitude: existingDetails?.latitude,
+      longitude: existingDetails?.longitude,
 
       serviceAreaPincodes: _commaSeparatedValues(
         _serviceAreaPincodesController.text,
       ),
-      operatingDays: _selectedOperatingDays.toList(growable: false),
+      operatingDays: _selectedOperatingDays.toList(
+        growable: false,
+      ),
       openingTime: _openingTimeController.text.trim(),
       closingTime: _closingTimeController.text.trim(),
-      teamSize: _positiveIntOrNull(_teamSizeController.text),
+      teamSize: _positiveIntOrNull(
+        _teamSizeController.text,
+      ),
       normalDailyCapacity: _positiveIntOrNull(
         _normalDailyCapacityController.text,
       ),
-      peakDailyCapacity: _positiveIntOrNull(_peakDailyCapacityController.text),
-      machineCodes: _commaSeparatedValues(_machineCodesController.text),
+      peakDailyCapacity: _positiveIntOrNull(
+        _peakDailyCapacityController.text,
+      ),
+      machineCodes: _commaSeparatedValues(
+        _machineCodesController.text,
+      ),
       pickupAvailable: _pickupAvailable,
       deliveryAvailable: _deliveryAvailable,
       homeVisitAvailable: _homeVisitAvailable,
       additionalNotes: _workshopNotesController.text.trim(),
     );
-
-    setState(() {
-      _savingWorkshopDetails = true;
-    });
-
-    try {
-      await PartnerService.updateWorkshopDetails(
-        applicationId: application.id,
-        accountId: accountId,
-        customerProfileId: customerProfileId,
-        workshopDetails: workshopDetails,
-      );
-
-      if (!mounted) {
-        return;
-      }
-
-      final targetStatus = workshopDetails.hasMinimumRequiredData
-          ? PartnerOnboardingSectionStatus.completed
-          : PartnerOnboardingSectionStatus.inProgress;
-
-      final updatedSections =
-          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
-            application.onboardingSections,
-          );
-
-      updatedSections[PartnerOnboardingSection.workshopDetails] = targetStatus;
-
-      final updatedData = Map<String, dynamic>.from(application.onboardingData);
-
-      final existingExtensions = updatedData['extensions'];
-
-      final extensions = existingExtensions is Map
-          ? Map<String, dynamic>.from(existingExtensions)
-          : <String, dynamic>{};
-
-      final existingTailor = extensions['tailor'];
-
-      final tailor = existingTailor is Map
-          ? Map<String, dynamic>.from(existingTailor)
-          : <String, dynamic>{};
-
-      tailor['workshopDetails'] = workshopDetails.toMap();
-
-      extensions['tailor'] = tailor;
-      updatedData['extensions'] = extensions;
-
-      setState(() {
-        _savingWorkshopDetails = false;
-
-        _application = PartnerApplication(
-          id: application.id,
-          accountId: application.accountId,
-          customerProfileId: application.customerProfileId,
-          createdByUid: application.createdByUid,
-          partnerType: application.partnerType,
-          status: application.status,
-          createdAt: application.createdAt,
-          updatedAt: DateTime.now(),
-          businessName: application.businessName,
-          contactName: application.contactName,
-          mobileE164: application.mobileE164,
-          email: application.email,
-          submittedAt: application.submittedAt,
-          reviewedAt: application.reviewedAt,
-          reviewedByUid: application.reviewedByUid,
-          reviewNotes: application.reviewNotes,
-          rejectionReason: application.rejectionReason,
-          rejectedByUid: application.rejectedByUid,
-          rejectedAt: application.rejectedAt,
-          kycStatus: application.kycStatus,
-          kycVerifiedByUid: application.kycVerifiedByUid,
-          kycVerifiedAt: application.kycVerifiedAt,
-          kycUpdatedAt: application.kycUpdatedAt,
-          kycFailureReason: application.kycFailureReason,
-          onboardingSections: updatedSections,
-          onboardingData: updatedData,
-          onboardingUpdatedByUid: FirebaseAuth.instance.currentUser?.uid,
-          onboardingUpdatedAt: DateTime.now(),
-          approvedPartnerProfileId: application.approvedPartnerProfileId,
-        );
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            targetStatus == PartnerOnboardingSectionStatus.completed
-                ? 'Workshop Details saved and marked Completed'
-                : 'Workshop Details saved as In Progress',
-          ),
-          backgroundColor: AppColors.success,
-        ),
-      );
-    } catch (error) {
-      if (!mounted) {
-        return;
-      }
-
-      setState(() {
-        _savingWorkshopDetails = false;
-      });
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Unable to save Workshop Details.\n$error'),
-          backgroundColor: AppColors.error,
-        ),
-      );
-    }
   }
 
   void _continueLater() {
@@ -880,7 +766,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             children: [
               Expanded(
                 child: Text(
-                  'Workshop Details',
+                  'Business & Operations',
                   style: AppTextStyles.headlineMedium,
                 ),
               ),
@@ -905,9 +791,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'Provide the operational details of your primary '
-            'Tailor workshop. Workshop photographs are optional '
-            'during Phase 1.',
+            'Provide the business location, operating schedule, '
+            'capacity and service-support information. Business '
+            'photographs are optional during Phase 1.',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textSecondary,
               height: 1.4,
@@ -1218,31 +1104,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             ),
           ),
           const SizedBox(height: 18),
-
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _isEditable && !_savingWorkshopDetails
-                  ? _saveWorkshopDetails
-                  : null,
-              icon: _savingWorkshopDetails
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.save_outlined),
-              label: Text(
-                _savingWorkshopDetails
-                    ? 'Saving Workshop Details...'
-                    : 'Save Workshop Details',
-              ),
-            ),
-          ),
-
           if (!_isEditable) ...[
             const SizedBox(height: 10),
             Text(
@@ -1278,7 +1139,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          _buildNextStep(Icons.store_outlined, 'Workshop details'),
           _buildNextStep(
             Icons.checklist_rounded,
             'Services and specialization',
@@ -1372,6 +1232,15 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
         email: _emailController.text,
+      );
+
+      final workshopDetails = _buildWorkshopDetails();
+
+      await PartnerService.updateWorkshopDetails(
+        applicationId: application.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+        workshopDetails: workshopDetails,
       );
 
       await PartnerService.submitApplication(
