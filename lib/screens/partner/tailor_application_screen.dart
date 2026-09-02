@@ -5,8 +5,13 @@ import 'package:go_router/go_router.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/metadata/india_address_metadata.dart';
+import '../../models/address_details.dart';
+import '../../models/operating_schedule.dart';
 import '../../models/partner_application.dart';
 import '../../services/partner_service.dart';
+import '../../widgets/address/address_form_section.dart';
+import '../../widgets/schedule/operating_schedule_field.dart';
 
 class TailorApplicationScreen extends StatefulWidget {
   const TailorApplicationScreen({super.key});
@@ -23,38 +28,18 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   final _businessNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
-  final _workshopAddressLine1Controller = TextEditingController();
-
-  final _workshopAddressLine2Controller = TextEditingController();
-
-  final _workshopLocalityController = TextEditingController();
-
-  final _workshopCityController = TextEditingController();
-
-  final _workshopStateController = TextEditingController();
-
-  final _workshopPincodeController = TextEditingController();
-
   final _serviceAreaPincodesController = TextEditingController();
-
-  final _openingTimeController = TextEditingController();
-
-  final _closingTimeController = TextEditingController();
-
   final _teamSizeController = TextEditingController();
-
   final _normalDailyCapacityController = TextEditingController();
-
   final _peakDailyCapacityController = TextEditingController();
-
   final _machineCodesController = TextEditingController();
-
   final _workshopNotesController = TextEditingController();
 
   String? _workshopTypeCode;
 
-  final Set<String> _selectedOperatingDays = {};
+  AddressDetails _businessAddress = const AddressDetails();
 
+  OperatingSchedule _operatingSchedule = const OperatingSchedule();
   bool _pickupAvailable = false;
   bool _deliveryAvailable = false;
   bool _homeVisitAvailable = false;
@@ -76,15 +61,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     'other': 'Other',
   };
 
-  static const Map<String, String> _operatingDayLabels = {
-    'monday': 'Mon',
-    'tuesday': 'Tue',
-    'wednesday': 'Wed',
-    'thursday': 'Thu',
-    'friday': 'Fri',
-    'saturday': 'Sat',
-    'sunday': 'Sun',
-  };
   bool get _isEditable {
     final status = _application?.status;
 
@@ -182,16 +158,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     _businessNameController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
-
-    _workshopAddressLine1Controller.dispose();
-    _workshopAddressLine2Controller.dispose();
-    _workshopLocalityController.dispose();
-    _workshopCityController.dispose();
-    _workshopStateController.dispose();
-    _workshopPincodeController.dispose();
     _serviceAreaPincodesController.dispose();
-    _openingTimeController.dispose();
-    _closingTimeController.dispose();
     _teamSizeController.dispose();
     _normalDailyCapacityController.dispose();
     _peakDailyCapacityController.dispose();
@@ -307,24 +274,27 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   void _loadWorkshopDetails(PartnerWorkshopDetails? details) {
     _workshopTypeCode = details?.workshopTypeCode;
 
-    _workshopAddressLine1Controller.text = details?.addressLine1 ?? '';
+    _businessAddress = AddressDetails(
+      addressLine1: details?.addressLine1,
+      addressLine2: details?.addressLine2,
+      locality: details?.locality,
+      cityName: details?.city,
+      stateName: details?.state,
+      pincode: details?.pincode,
+      countryCode: 'IN',
+      placeId: details?.placeId,
+      latitude: details?.latitude,
+      longitude: details?.longitude,
+    );
 
-    _workshopAddressLine2Controller.text = details?.addressLine2 ?? '';
-
-    _workshopLocalityController.text = details?.locality ?? '';
-
-    _workshopCityController.text = details?.city ?? '';
-
-    _workshopStateController.text = details?.state ?? '';
-
-    _workshopPincodeController.text = details?.pincode ?? '';
+    _operatingSchedule = OperatingSchedule(
+      operatingDays: details?.operatingDays ?? const <String>[],
+      openingTime: details?.openingTime,
+      closingTime: details?.closingTime,
+    );
 
     _serviceAreaPincodesController.text =
         details?.serviceAreaPincodes.join(', ') ?? '';
-
-    _openingTimeController.text = details?.openingTime ?? '';
-
-    _closingTimeController.text = details?.closingTime ?? '';
 
     _teamSizeController.text = details?.teamSize?.toString() ?? '';
 
@@ -337,10 +307,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     _machineCodesController.text = details?.machineCodes.join(', ') ?? '';
 
     _workshopNotesController.text = details?.additionalNotes ?? '';
-
-    _selectedOperatingDays
-      ..clear()
-      ..addAll(details?.operatingDays ?? const []);
 
     _pickupAvailable = details?.pickupAvailable ?? false;
 
@@ -407,9 +373,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text(
-            'Partner application draft saved successfully',
-          ),
+          content: Text('Partner application draft saved successfully'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -460,38 +424,34 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
     return PartnerWorkshopDetails(
       workshopTypeCode: _workshopTypeCode,
-      addressLine1: _workshopAddressLine1Controller.text.trim(),
-      addressLine2: _workshopAddressLine2Controller.text.trim(),
-      locality: _workshopLocalityController.text.trim(),
-      city: _workshopCityController.text.trim(),
-      state: _workshopStateController.text.trim(),
-      pincode: _workshopPincodeController.text.trim(),
+      addressLine1: _businessAddress.addressLine1,
+      addressLine2: _businessAddress.addressLine2,
+      locality: _businessAddress.locality,
+      city: _businessAddress.cityName,
+      state: _businessAddress.stateName,
+      pincode: _businessAddress.pincode,
 
-      // Map-derived values remain unchanged until the map picker is added.
-      placeId: existingDetails?.placeId,
-      latitude: existingDetails?.latitude,
-      longitude: existingDetails?.longitude,
+      // Preserve shared map-derived values until the map picker is added.
+      placeId: _businessAddress.placeId ?? existingDetails?.placeId,
+      latitude: _businessAddress.latitude ?? existingDetails?.latitude,
+      longitude: _businessAddress.longitude ?? existingDetails?.longitude,
 
       serviceAreaPincodes: _commaSeparatedValues(
         _serviceAreaPincodesController.text,
       ),
-      operatingDays: _selectedOperatingDays.toList(
-        growable: false,
+      operatingDays: _operatingSchedule.normalizedOperatingDays,
+      openingTime: OperatingSchedule.normalizedTimeOrNull(
+        _operatingSchedule.openingTime,
       ),
-      openingTime: _openingTimeController.text.trim(),
-      closingTime: _closingTimeController.text.trim(),
-      teamSize: _positiveIntOrNull(
-        _teamSizeController.text,
+      closingTime: OperatingSchedule.normalizedTimeOrNull(
+        _operatingSchedule.closingTime,
       ),
+      teamSize: _positiveIntOrNull(_teamSizeController.text),
       normalDailyCapacity: _positiveIntOrNull(
         _normalDailyCapacityController.text,
       ),
-      peakDailyCapacity: _positiveIntOrNull(
-        _peakDailyCapacityController.text,
-      ),
-      machineCodes: _commaSeparatedValues(
-        _machineCodesController.text,
-      ),
+      peakDailyCapacity: _positiveIntOrNull(_peakDailyCapacityController.text),
+      machineCodes: _commaSeparatedValues(_machineCodesController.text),
       pickupAvailable: _pickupAvailable,
       deliveryAvailable: _deliveryAvailable,
       homeVisitAvailable: _homeVisitAvailable,
@@ -824,86 +784,35 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           ),
           const SizedBox(height: 14),
 
-          TextFormField(
-            controller: _workshopAddressLine1Controller,
-            readOnly: !_isEditable,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Workshop address',
-              hintText: 'House, building, road or landmark',
-              prefixIcon: Icon(Icons.location_on_outlined),
-              border: OutlineInputBorder(),
+          AddressFormSection(
+            key: ValueKey(
+              'partner-business-address-'
+              '${_businessAddress.stateCode ?? _businessAddress.stateName ?? 'none'}-'
+              '${_businessAddress.cityCode ?? _businessAddress.cityName ?? 'none'}',
             ),
-          ),
-          const SizedBox(height: 14),
-
-          TextFormField(
-            controller: _workshopAddressLine2Controller,
-            readOnly: !_isEditable,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Address line 2',
-              hintText: 'Optional',
-              prefixIcon: Icon(Icons.location_city_outlined),
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          TextFormField(
-            controller: _workshopLocalityController,
-            readOnly: !_isEditable,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Locality or area',
-              hintText: 'Optional',
-              prefixIcon: Icon(Icons.map_outlined),
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 14),
-
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _workshopCityController,
-                  readOnly: !_isEditable,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'City',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextFormField(
-                  controller: _workshopStateController,
-                  readOnly: !_isEditable,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'State',
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          TextFormField(
-            controller: _workshopPincodeController,
-            readOnly: !_isEditable,
-            keyboardType: TextInputType.number,
-            maxLength: 6,
-            decoration: const InputDecoration(
-              labelText: 'Pincode',
-              hintText: 'Six-digit pincode',
-              prefixIcon: Icon(Icons.pin_drop_outlined),
-              border: OutlineInputBorder(),
-              counterText: '',
-            ),
+            metadataProvider: IndiaAddressMetadata.instance,
+            initialValue: _businessAddress,
+            enabled: _isEditable,
+            sectionTitle: 'Business Location',
+            addressLine1Label: 'Business address',
+            addressLine2Label: 'Address line 2',
+            localityLabel: 'Locality or area',
+            stateLabel: 'State',
+            cityLabel: 'City',
+            pincodeLabel: 'Pincode',
+            addressLine1Required: true,
+            addressLine2Required: false,
+            localityRequired: false,
+            landmarkRequired: false,
+            stateRequired: true,
+            cityRequired: true,
+            pincodeRequired: true,
+            showAddressLine2: true,
+            showLocality: true,
+            showLandmark: false,
+            onChanged: (address) {
+              _businessAddress = address;
+            },
           ),
           const SizedBox(height: 14),
 
@@ -921,66 +830,26 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           ),
           const SizedBox(height: 18),
 
-          Text(
-            'Operating days',
-            style: AppTextStyles.titleMedium.copyWith(
-              fontWeight: FontWeight.w700,
+          OperatingScheduleField(
+            key: ValueKey(
+              'partner-operating-schedule-'
+              '${_operatingSchedule.normalizedOperatingDays.join('-')}-'
+              '${_operatingSchedule.openingTime ?? 'none'}-'
+              '${_operatingSchedule.closingTime ?? 'none'}',
             ),
-          ),
-          const SizedBox(height: 8),
-
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              for (final entry in _operatingDayLabels.entries)
-                FilterChip(
-                  label: Text(entry.value),
-                  selected: _selectedOperatingDays.contains(entry.key),
-                  onSelected: _isEditable
-                      ? (selected) {
-                          setState(() {
-                            if (selected) {
-                              _selectedOperatingDays.add(entry.key);
-                            } else {
-                              _selectedOperatingDays.remove(entry.key);
-                            }
-                          });
-                        }
-                      : null,
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          Row(
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: _openingTimeController,
-                  readOnly: !_isEditable,
-                  decoration: const InputDecoration(
-                    labelText: 'Opening time',
-                    hintText: '10:00',
-                    prefixIcon: Icon(Icons.schedule_outlined),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextFormField(
-                  controller: _closingTimeController,
-                  readOnly: !_isEditable,
-                  decoration: const InputDecoration(
-                    labelText: 'Closing time',
-                    hintText: '20:00',
-                    prefixIcon: Icon(Icons.schedule_outlined),
-                    border: OutlineInputBorder(),
-                  ),
-                ),
-              ),
-            ],
+            initialValue: _operatingSchedule,
+            enabled: _isEditable,
+            operatingDaysRequired: true,
+            openingTimeRequired: true,
+            closingTimeRequired: true,
+            requireClosingAfterOpening: true,
+            sectionTitle: 'Operating Schedule',
+            operatingDaysLabel: 'Operating days',
+            openingTimeLabel: 'Opening time',
+            closingTimeLabel: 'Closing time',
+            onChanged: (schedule) {
+              _operatingSchedule = schedule;
+            },
           ),
           const SizedBox(height: 14),
 
@@ -1108,9 +977,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             const SizedBox(height: 10),
             Text(
               _isUnderAdminReview
-                  ? 'Workshop Details are read-only while '
+                  ? 'Business & Operations is read-only while '
                         'the application is under Admin review.'
-                  : 'Workshop Details are not editable in '
+                  : 'Business & Operations is not editable in '
                         'the current application status.',
               style: AppTextStyles.bodySmall.copyWith(
                 color: AppColors.textSecondary,
