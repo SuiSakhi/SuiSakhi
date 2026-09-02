@@ -515,6 +515,162 @@ service cloud.firestore {
                 'updatedAt'
               ])
           )
+                    ||
+          (
+            resource.data.status == 'draft'
+            && request.resource.data.status == 'draft'
+            && request.resource.data.partnerType == 'tailor'
+            && request.resource.data.onboardingData is map
+            && request.resource.data.onboardingSections is map
+            && request.resource.data.onboardingUpdatedByUid
+                == request.auth.uid
+            && request.resource.data.onboardingUpdatedAt != null
+            && request.resource.data
+                .onboardingSections
+                .servicesAndSpecialization
+                in ['inProgress', 'completed']
+
+            // Only the top-level extensions map may change.
+            && request.resource.data.onboardingData
+              .diff(
+                resource.data.get('onboardingData', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'extensions'
+              ])
+
+            // Inside extensions, only the Tailor extension may change.
+            && request.resource.data
+                .onboardingData
+                .extensions is map
+            && request.resource.data
+                .onboardingData
+                .extensions
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'tailor'
+              ])
+
+            // Inside Tailor, only capabilities may change.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor is map
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+                  .get('tailor', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'capabilities'
+              ])
+
+            // Capabilities must contain only approved applicant fields.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities is map
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .keys()
+                .hasOnly([
+                  'declaredCapabilityCodes',
+                  'additionalCapabilityDescriptions'
+                ])
+
+            // Both capability values must be lists.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .declaredCapabilityCodes is list
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .additionalCapabilityDescriptions is list
+
+            // Keep applicant-entered lists within reasonable limits.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .declaredCapabilityCodes
+                .size() <= 50
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .additionalCapabilityDescriptions
+                .size() <= 10
+
+            // Declared capability codes must come from governed metadata.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .declaredCapabilityCodes
+                .hasOnly([
+                  'tailor.blouseStitching',
+                  'tailor.kurtiSuit',
+                  'tailor.dressStitching',
+                  'tailor.lehenga',
+                  'tailor.bridalWear',
+                  'tailor.designerWear',
+                  'tailor.designerReplication',
+                  'tailor.girlsWear',
+                  'tailor.alteration',
+                  'tailor.sareePicoFall',
+                  'tailor.embroidery',
+                  'tailor.aari',
+                  'tailor.zardozi',
+                  'tailor.schoolUniform',
+                  'tailor.weddingOrders',
+                  'tailor.urgentOrders'
+                ])
+
+            // Only the capability-section status may change.
+            && request.resource.data.onboardingSections
+              .diff(
+                resource.data.get('onboardingSections', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'servicesAndSpecialization'
+              ])
+
+            // No unrelated top-level application field may change.
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'onboardingData',
+                'onboardingSections',
+                'onboardingUpdatedByUid',
+                'onboardingUpdatedAt',
+                'updatedAt'
+              ])
+          )
           ||
           (
           resource.data.status == 'changesRequested'
@@ -743,6 +899,158 @@ service cloud.firestore {
               .affectedKeys()
               .hasOnly([
                 'workshopDetails'
+              ])
+
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'onboardingData',
+                'onboardingSections',
+                'onboardingUpdatedByUid',
+                'onboardingUpdatedAt',
+                'updatedAt'
+              ])
+          )
+                    ||
+          (
+            resource.data.status == 'changesRequested'
+            && request.resource.data.status == 'changesRequested'
+            && request.resource.data.partnerType == 'tailor'
+            && request.resource.data.onboardingData is map
+            && request.resource.data.onboardingSections is map
+            && request.resource.data.onboardingUpdatedByUid
+                == request.auth.uid
+            && request.resource.data.onboardingUpdatedAt != null
+            && request.resource.data
+                .onboardingSections
+                .servicesAndSpecialization
+                in ['inProgress', 'completed']
+
+            // Only the top-level extensions map may change.
+            && request.resource.data.onboardingData
+              .diff(
+                resource.data.get('onboardingData', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'extensions'
+              ])
+
+            // Inside extensions, only the Tailor extension may change.
+            && request.resource.data
+                .onboardingData
+                .extensions is map
+            && request.resource.data
+                .onboardingData
+                .extensions
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'tailor'
+              ])
+
+            // Inside Tailor, only capabilities may change.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor is map
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+              .diff(
+                resource.data
+                  .get('onboardingData', {})
+                  .get('extensions', {})
+                  .get('tailor', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'capabilities'
+              ])
+
+            // Capabilities must contain only approved applicant fields.
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities is map
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .keys()
+                .hasOnly([
+                  'declaredCapabilityCodes',
+                  'additionalCapabilityDescriptions'
+                ])
+
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .declaredCapabilityCodes is list
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .additionalCapabilityDescriptions is list
+
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .declaredCapabilityCodes
+                .size() <= 50
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .additionalCapabilityDescriptions
+                .size() <= 10
+
+            && request.resource.data
+                .onboardingData
+                .extensions
+                .tailor
+                .capabilities
+                .declaredCapabilityCodes
+                .hasOnly([
+                  'tailor.blouseStitching',
+                  'tailor.kurtiSuit',
+                  'tailor.dressStitching',
+                  'tailor.lehenga',
+                  'tailor.bridalWear',
+                  'tailor.designerWear',
+                  'tailor.designerReplication',
+                  'tailor.girlsWear',
+                  'tailor.alteration',
+                  'tailor.sareePicoFall',
+                  'tailor.embroidery',
+                  'tailor.aari',
+                  'tailor.zardozi',
+                  'tailor.schoolUniform',
+                  'tailor.weddingOrders',
+                  'tailor.urgentOrders'
+                ])
+
+            // Only the capability-section status may change.
+            && request.resource.data.onboardingSections
+              .diff(
+                resource.data.get('onboardingSections', {})
+              )
+              .affectedKeys()
+              .hasOnly([
+                'servicesAndSpecialization'
               ])
 
             && request.resource.data.diff(resource.data)
