@@ -67,6 +67,8 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         const SizedBox(height: 18),
         _buildApplicantDetails(application),
         const SizedBox(height: 18),
+        _buildBusinessOperations(application),
+        const SizedBox(height: 18),
         _buildOnboardingProgress(context, application),
         const SizedBox(height: 18),
         _buildKycCard(context, application),
@@ -186,6 +188,207 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
+  Widget _buildBusinessOperations(PartnerApplication application) {
+    final details = application.workshopDetails;
+
+    if (details == null) {
+      return _ReviewSection(
+        title: 'Business & Operations',
+        icon: Icons.storefront_outlined,
+        children: [
+          _ReviewDetail(label: 'Structured information', value: 'Not provided'),
+          const SizedBox(height: 8),
+          Text(
+            'This application may have been reviewed before '
+            'structured Business & Operations information was introduced. '
+            'The required details must be completed before final approval.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _ReviewSection(
+      title: 'Business & Operations',
+      icon: Icons.storefront_outlined,
+      children: [
+        _ReviewDetail(
+          label: 'Business type',
+          value: _workshopTypeLabel(details.workshopTypeCode),
+        ),
+        _ReviewDetail(
+          label: 'Address',
+          value: _formattedBusinessAddress(details),
+        ),
+        _ReviewDetail(
+          label: 'Locality',
+          value: _displayValue(details.locality),
+        ),
+        _ReviewDetail(label: 'City', value: _displayValue(details.city)),
+        _ReviewDetail(label: 'State', value: _displayValue(details.state)),
+        _ReviewDetail(label: 'Pincode', value: _displayValue(details.pincode)),
+        _ReviewDetail(
+          label: 'Service-area pincodes',
+          value: _displayList(details.serviceAreaPincodes),
+        ),
+        _ReviewDetail(
+          label: 'Operating days',
+          value: _operatingDaysLabel(details.operatingDays),
+        ),
+        _ReviewDetail(
+          label: 'Opening time',
+          value: _displayValue(details.openingTime),
+        ),
+        _ReviewDetail(
+          label: 'Closing time',
+          value: _displayValue(details.closingTime),
+        ),
+        _ReviewDetail(
+          label: 'Team size',
+          value: _displayNumber(details.teamSize),
+        ),
+        _ReviewDetail(
+          label: 'Normal daily capacity',
+          value: _displayNumber(details.normalDailyCapacity),
+        ),
+        _ReviewDetail(
+          label: 'Peak daily capacity',
+          value: _displayNumber(details.peakDailyCapacity),
+        ),
+        _ReviewDetail(
+          label: 'Machines and equipment',
+          value: _displayList(details.machineCodes),
+        ),
+        _ReviewDetail(
+          label: 'Pickup available',
+          value: _yesNoLabel(details.pickupAvailable),
+        ),
+        _ReviewDetail(
+          label: 'Delivery available',
+          value: _yesNoLabel(details.deliveryAvailable),
+        ),
+        _ReviewDetail(
+          label: 'Home visit available',
+          value: _yesNoLabel(details.homeVisitAvailable),
+        ),
+        _ReviewDetail(
+          label: 'Additional notes',
+          value: _displayValue(details.additionalNotes),
+        ),
+        if (details.placeId?.trim().isNotEmpty == true)
+          _ReviewDetail(
+            label: 'Map place reference',
+            value: details.placeId!.trim(),
+          ),
+        if (details.latitude != null && details.longitude != null)
+          _ReviewDetail(
+            label: 'Map coordinates',
+            value: '${details.latitude}, ${details.longitude}',
+          ),
+      ],
+    );
+  }
+
+  String _displayValue(String? value) {
+    final normalizedValue = value?.trim() ?? '';
+
+    if (normalizedValue.isEmpty) {
+      return 'Not provided';
+    }
+
+    return normalizedValue;
+  }
+
+  String _displayNumber(int? value) {
+    if (value == null || value <= 0) {
+      return 'Not provided';
+    }
+
+    return value.toString();
+  }
+
+  String _displayList(List<String> values) {
+    final normalizedValues = values
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+
+    if (normalizedValues.isEmpty) {
+      return 'Not provided';
+    }
+
+    return normalizedValues.join(', ');
+  }
+
+  String _yesNoLabel(bool value) {
+    return value ? 'Yes' : 'No';
+  }
+
+  String _formattedBusinessAddress(PartnerWorkshopDetails details) {
+    final addressParts = [details.addressLine1, details.addressLine2]
+        .map((value) => value?.trim() ?? '')
+        .where((value) => value.isNotEmpty)
+        .toList(growable: false);
+
+    if (addressParts.isEmpty) {
+      return 'Not provided';
+    }
+
+    return addressParts.join(', ');
+  }
+
+  String _workshopTypeLabel(String? code) {
+    switch (code?.trim()) {
+      case 'homeBased':
+        return 'Home-based';
+
+      case 'commercialWorkshop':
+        return 'Commercial establishment';
+
+      case 'boutique':
+        return 'Boutique';
+
+      case 'sharedWorkspace':
+        return 'Shared workspace';
+
+      case 'other':
+        return 'Other';
+
+      default:
+        return 'Not provided';
+    }
+  }
+
+  String _operatingDaysLabel(List<String> days) {
+    if (days.isEmpty) {
+      return 'Not provided';
+    }
+
+    const dayLabels = {
+      'monday': 'Monday',
+      'tuesday': 'Tuesday',
+      'wednesday': 'Wednesday',
+      'thursday': 'Thursday',
+      'friday': 'Friday',
+      'saturday': 'Saturday',
+      'sunday': 'Sunday',
+    };
+
+    final labels = days
+        .map((day) => dayLabels[day.trim()] ?? day.trim())
+        .where((day) => day.isNotEmpty)
+        .toList(growable: false);
+
+    if (labels.isEmpty) {
+      return 'Not provided';
+    }
+
+    return labels.join(', ');
+  }
+
   Future<void> _updateWorkshopStatus(
     BuildContext context,
     PartnerApplication application,
@@ -206,7 +409,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         return AlertDialog(
           title: Text(_workshopActionLabel(currentStatus)),
           content: Text(
-            'Workshop Details will move from '
+            'Business & Operations will move from '
             '${_onboardingStatusLabel(currentStatus)} to '
             '${_onboardingStatusLabel(targetStatus)}.\n\n'
             'This action does not approve or activate the '
@@ -248,7 +451,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Workshop Details marked as '
+            'Business & Operations marked as '
             '${_onboardingStatusLabel(targetStatus)}',
           ),
           backgroundColor: AppColors.success,
@@ -261,7 +464,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to update Workshop Details.\n$error'),
+          content: Text('Unable to update Business & Operations.\n$error'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -282,9 +485,13 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
       PartnerOnboardingSection.workshopDetails,
     );
 
+    final workshopDetails = application.workshopDetails;
+
     final canUpdateWorkshop =
         application.status == PartnerApplicationStatus.underReview &&
-        workshopStatus != PartnerOnboardingSectionStatus.verified;
+        workshopStatus != PartnerOnboardingSectionStatus.verified &&
+        workshopDetails != null &&
+        workshopDetails.hasMinimumRequiredData;
 
     return _ReviewSection(
       title: 'Onboarding Progress',
@@ -315,6 +522,31 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
             label: _onboardingSectionLabel(section),
             status: application.onboardingStatusFor(section),
           ),
+        if (application.workshopDetails == null ||
+            !application.workshopDetails!.hasMinimumRequiredData) ...[
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFF9800).withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: const Color(0xFFFF9800).withValues(alpha: 0.30),
+              ),
+            ),
+            child: Text(
+              'Structured Business & Operations information is '
+              'incomplete. This section cannot progress until the '
+              'required business data is available.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: const Color(0xFFE65100),
+                height: 1.4,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
         const SizedBox(height: 8),
         SizedBox(
           width: double.infinity,
@@ -334,9 +566,10 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         ),
         const SizedBox(height: 8),
         Text(
-          'Workshop Details is the first enabled onboarding '
-          'section. The remaining sections will be enabled '
-          'after this reusable workflow is validated.',
+          'Business & Operations is the first structured '
+          'onboarding section. Additional Partner-specific '
+          'sections will be enabled through the common '
+          'Partner foundation.',
           style: AppTextStyles.bodySmall.copyWith(
             color: AppColors.textSecondary,
             height: 1.4,
