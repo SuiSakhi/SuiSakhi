@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/partner_application.dart';
+import '../models/partner_capability_selection.dart';
 
 class PartnerService {
   PartnerService._();
@@ -274,6 +275,112 @@ class PartnerService {
           );
 
       updatedOnboardingSections[PartnerOnboardingSection.workshopDetails] =
+          targetStatus;
+
+      transaction.set(document, {
+        'onboardingData': updatedOnboardingData,
+        'onboardingSections': {
+          for (final entry in updatedOnboardingSections.entries)
+            entry.key.name: entry.value.name,
+        },
+        'onboardingUpdatedByUid': user.uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    });
+  }
+
+  /// Saves the Tailor's declared Skills and Expertise.
+  ///
+  /// The applicant may update this section only while the application is
+  /// Draft or Changes Requested.
+  ///
+  /// At least one governed capability code marks the section Completed.
+  /// Additional free-text expertise alone does not complete the section.
+  ///
+  /// This method records Partner-declared capabilities only. It does not
+  /// verify a capability, grant certification, approve the application,
+  /// or make the Partner eligible for assignments.
+  static Future<void> updateTailorCapabilities({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required PartnerCapabilitySelection selection,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in user is required to update '
+        'Skills and Expertise.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      _validateCustomerOwnership(
+        application: application,
+        uid: user.uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!application.canEdit) {
+        throw StateError(
+          'Skills and Expertise can be edited only '
+          'while the application is Draft or '
+          'Changes Requested.',
+        );
+      }
+
+      if (application.partnerType != PartnerType.tailor) {
+        throw StateError(
+          'This capability workflow is currently '
+          'supported only for Tailor applications.',
+        );
+      }
+
+      final normalizedSelection = PartnerCapabilitySelection(
+        declaredCapabilityCodes: selection.normalizedCapabilityCodes,
+        additionalCapabilityDescriptions:
+            selection.normalizedAdditionalDescriptions,
+      );
+
+      final targetStatus = normalizedSelection.hasDeclaredCapabilities
+          ? PartnerOnboardingSectionStatus.completed
+          : PartnerOnboardingSectionStatus.inProgress;
+
+      final updatedOnboardingData = _withTailorCapabilities(
+        application.onboardingData,
+        normalizedSelection,
+      );
+
+      final updatedOnboardingSections =
+          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
+            application.onboardingSections,
+          );
+
+      updatedOnboardingSections[PartnerOnboardingSection
+              .servicesAndSpecialization] =
           targetStatus;
 
       transaction.set(document, {
@@ -813,6 +920,32 @@ class PartnerService {
         : <String, dynamic>{};
 
     tailor['workshopDetails'] = workshopDetails.toMap();
+
+    extensions['tailor'] = tailor;
+    onboardingData['extensions'] = extensions;
+
+    return onboardingData;
+  }
+
+  static Map<String, dynamic> _withTailorCapabilities(
+    Map<String, dynamic> existingOnboardingData,
+    PartnerCapabilitySelection selection,
+  ) {
+    final onboardingData = Map<String, dynamic>.from(existingOnboardingData);
+
+    final existingExtensions = onboardingData['extensions'];
+
+    final extensions = existingExtensions is Map
+        ? Map<String, dynamic>.from(existingExtensions)
+        : <String, dynamic>{};
+
+    final existingTailor = extensions['tailor'];
+
+    final tailor = existingTailor is Map
+        ? Map<String, dynamic>.from(existingTailor)
+        : <String, dynamic>{};
+
+    tailor['capabilities'] = selection.toMap();
 
     extensions['tailor'] = tailor;
     onboardingData['extensions'] = extensions;

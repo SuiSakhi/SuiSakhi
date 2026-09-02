@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'partner_capability_selection.dart';
 
 enum PartnerType {
   tailor,
@@ -379,6 +380,42 @@ class PartnerApplication {
     }
 
     return PartnerWorkshopDetails.fromMap(Map<String, dynamic>.from(workshop));
+  }
+
+  PartnerCapabilitySelection? get tailorCapabilitySelection {
+    if (partnerType != PartnerType.tailor) {
+      return null;
+    }
+
+    final extensionsValue = onboardingData['extensions'];
+
+    if (extensionsValue is! Map) {
+      return null;
+    }
+
+    final extensions = Map<String, dynamic>.from(extensionsValue);
+
+    final tailorValue = extensions['tailor'];
+
+    if (tailorValue is! Map) {
+      return null;
+    }
+
+    final tailor = Map<String, dynamic>.from(tailorValue);
+
+    final capabilitiesValue = tailor['capabilities'];
+
+    if (capabilitiesValue is! Map) {
+      return null;
+    }
+
+    return PartnerCapabilitySelection.fromMap(
+      Map<String, dynamic>.from(capabilitiesValue),
+    );
+  }
+
+  PartnerCapabilitySelection get effectiveTailorCapabilitySelection {
+    return tailorCapabilitySelection ?? const PartnerCapabilitySelection();
   }
 
   int get completedOnboardingSectionCount {
