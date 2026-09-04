@@ -1,25 +1,83 @@
+// ============================================================================
+// SuiSakhi Firestore Security Rules
+// COMMENT MARKER POLICY:
+// - RULE-ID values uniquely identify repeated authorization branches.
+// - Comments describe intent only and must never replace emulator regression tests.
+// - Any logic change must be reviewed separately from comment-only maintenance.
+//
+// =====================================================
+// RULE ID INDEX
+// =====================================================
+//
+// FN-*   = Helper Functions
+// COLL-* = Collection Entry Points
+// PA-*   = Partner Application Lifecycle
+//
+// PA-APPLICANT-* = Applicant Actions
+// PA-ADMIN-*     = Admin Actions
+// PA-TAILOR-*    = Tailor Onboarding Sections
+//
+// KYC-*  = KYC Lifecycle Rules
+// ORD-*  = Order Lifecycle Rules
+// SUB-*  = Submission Lifecycle Rules
+//
+// * means "all Rule IDs starting with the prefix".
+//
+// Example:
+// FN-AUTH-SIGNED-IN      belongs to FN-*
+// PA-TAILOR-CAPABILITY-DRAFT belongs to PA-*
+//
+// ============================================================================
 rules_version = '2';
 // Deploy: firebase deploy --only firestore:rules --project YOUR_PROJECT_ID
 // Or: Firebase Console → Firestore Database → Rules → Publish
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // =====================================================
+    // RULE-ID: FN-AUTH-SIGNED-IN
+    // ACTOR: Rules engine
+    // RESOURCE: Authentication context
+    // OPERATION: Check authentication
+    // PURPOSE: Returns true only when Firebase Authentication context exists.
+    // =====================================================
     function signedIn() {
       return request.auth != null;
     }
 
+    // =====================================================
+    // RULE-ID: FN-AUTH-PHONE
+    // ACTOR: Rules engine
+    // RESOURCE: Authentication token
+    // OPERATION: Validate phone claim
+    // PURPOSE: Requires a signed-in user with a non-empty verified phone_number claim.
+    // =====================================================
     function hasAuthenticatedPhone() {
       return signedIn()
         && request.auth.token.phone_number is string
         && request.auth.token.phone_number.size() > 0;
     }
 
+    // =====================================================
+    // RULE-ID: FN-ACCOUNT-OWNERSHIP
+    // ACTOR: Rules engine
+    // RESOURCE: Account
+    // OPERATION: Verify account ownership
+    // PURPOSE: Matches the account mobile number to the authenticated phone claim.
+    // =====================================================
     function ownsExistingAccount(accountId) {
       return hasAuthenticatedPhone()
         && get(
           /databases/$(database)/documents/accounts/$(accountId)
         ).data.mobileE164 == request.auth.token.phone_number;
     }
+    // =====================================================
+    // RULE-ID: FN-CUSTOMER-PROFILE-OWNERSHIP
+    // ACTOR: Rules engine
+    // RESOURCE: Customer profile
+    // OPERATION: Verify active profile ownership
+    // PURPOSE: Requires an owned account and an active Customer profile.
+    // =====================================================
     function ownsActiveCustomerProfile(accountId, profileId) {
       return ownsExistingAccount(accountId)
         && get(
@@ -31,6 +89,13 @@ service cloud.firestore {
             /profiles/$(profileId)
         ).data.status == 'active';
     }
+    // =====================================================
+    // RULE-ID: FN-ADMIN-AUTHORIZATION
+    // ACTOR: Rules engine
+    // RESOURCE: Admin configuration
+    // OPERATION: Verify configured Admin
+    // PURPOSE: Authorizes only UIDs listed in config/admin.adminUids.
+    // =====================================================
     function isConfiguredAdmin() {
       return signedIn()
         && 'adminUids' in get(
@@ -45,12 +110,26 @@ service cloud.firestore {
     }
 
     // Profile + phone lookup field (used after first successful save)
+    // =====================================================
+    // RULE-ID: COLL-USERS
+    // ACTOR: Authenticated user
+    // RESOURCE: User lookup document
+    // OPERATION: Read and write own UID document
+    // PURPOSE: Protects each user document by Firebase UID.
+    // =====================================================
     match /users/{userId} {
       allow read, write: if signedIn() && request.auth.uid == userId;
     }
 
     // One doc per mobile (digits-only id). Anyone can read a single doc to show
     // "already registered as …" before OTP. Only the signed-in user may write their row.
+    // =====================================================
+    // RULE-ID: COLL-PHONE-REGISTRY
+    // ACTOR: Applicant
+    // RESOURCE: Phone registry
+    // OPERATION: Read registration state and maintain own row
+    // PURPOSE: Supports pre-OTP single-document lookup and authenticated ownership writes.
+    // =====================================================
     match /phoneRegistry/{digits} {
       allow get: if true;
       allow list: if false;
@@ -71,6 +150,13 @@ service cloud.firestore {
     //
     // A signed-in user may read the lookup required to restore the
     // generated SuiSakhi account and selected customer profile.
+    // =====================================================
+    // RULE-ID: COLL-MOBILE-ACCOUNTS
+    // ACTOR: Authenticated user
+    // RESOURCE: Mobile-account mapping
+    // OPERATION: Restore or establish account mapping
+    // PURPOSE: Maps a normalized mobile identifier to a generated SuiSakhi account.
+    // =====================================================
     match /mobile_accounts/{mobileAccountId} {
       allow read: if signedIn();
 
@@ -86,6 +172,13 @@ service cloud.firestore {
     //
     // Account ownership is verified against the phone number supplied by
     // Firebase Phone Authentication.
+    // =====================================================
+    // RULE-ID: COLL-ACCOUNTS
+    // ACTOR: Account owner
+    // RESOURCE: Account
+    // OPERATION: Create, read, or update owned account
+    // PURPOSE: Uses the authenticated phone claim as the account ownership boundary.
+    // =====================================================
     match /accounts/{accountId} {
       allow create: if hasAuthenticatedPhone()
         && request.resource.data.accountId == accountId
@@ -99,6 +192,13 @@ service cloud.firestore {
       allow delete: if false;
 
       // Customer and partner profiles belonging to this account.
+      // =====================================================
+      // RULE-ID: COLL-ACCOUNT-PROFILES
+      // ACTOR: Account owner
+      // RESOURCE: Account profile
+      // OPERATION: Read, create, or update profile
+      // PURPOSE: Keeps Customer and Partner profiles under the owning account.
+      // =====================================================
       match /profiles/{profileId} {
         allow read, create, update: if ownsExistingAccount(accountId);
         allow delete: if false;
@@ -106,6 +206,13 @@ service cloud.firestore {
         // Family members belong to the owning Customer profile.
         // Archived members remain available for historical records but
         // are excluded by application queries for new orders.
+        // =====================================================
+        // RULE-ID: COLL-FAMILY-MEMBERS
+        // ACTOR: Account owner
+        // RESOURCE: Family member
+        // OPERATION: Read, create, or archive/update family member
+        // PURPOSE: Preserves family-member records for historical references; physical delete is denied.
+        // =====================================================
         match /family_members/{familyMemberId} {
           allow read, create, update: if ownsExistingAccount(accountId);
           allow delete: if false;
@@ -113,12 +220,26 @@ service cloud.firestore {
       }
 
       // Addresses belonging to this account.
+      // =====================================================
+      // RULE-ID: COLL-ACCOUNT-ADDRESSES
+      // ACTOR: Account owner
+      // RESOURCE: Address
+      // OPERATION: Manage account addresses
+      // PURPOSE: Scopes addresses to the authenticated account owner.
+      // =====================================================
       match /addresses/{addressId} {
         allow read, create, update: if ownsExistingAccount(accountId);
         allow delete: if ownsExistingAccount(accountId);
       }
     }
     // Measurements owned by an account.
+    // =====================================================
+    // RULE-ID: COLL-MEASUREMENTS
+    // ACTOR: Account owner
+    // RESOURCE: Measurement
+    // OPERATION: Create, read, or update measurement
+    // PURPOSE: Scopes measurement access to the owning account; physical delete is denied.
+    // =====================================================
     match /measurements/{measurementId} {
 
       allow read: if signedIn()
@@ -131,7 +252,7 @@ service cloud.firestore {
             request.resource.data.accountId
           );
 
-      allow update: if signedIn()
+      //allow update: if signedIn()
       allow update: if signedIn()
         && resource.data.accountId is string
         && request.resource.data.accountId == resource.data.accountId
@@ -144,7 +265,22 @@ service cloud.firestore {
     // Creating or submitting an application does not create an active
     // Partner profile. Only a future Admin approval workflow may approve
     // an application and populate approvedPartnerProfileId.
+    // =====================================================
+    // RULE-ID: COLL-PARTNER-APPLICATIONS
+    // ACTOR: Applicant and configured Admin
+    // RESOURCE: Partner application
+    // OPERATION: Manage applicant and Admin lifecycle operations
+    // PURPOSE: Separates applicant-owned onboarding edits from Admin review, KYC, and decision actions.
+    // =====================================================
     match /partner_applications/{applicationId} {
+      // =====================================================
+      // RULE-ID: PA-APPLICANT-CREATE-DRAFT
+      // ACTOR: Applicant
+      // RESOURCE: Partner application
+      // OPERATION: Create draft application
+      // STATUS: new -> draft
+      // PURPOSE: Creates an applicant-owned Draft without activating a Partner profile.
+      // =====================================================
       allow create: if signedIn()
         && request.resource.data.applicationId == applicationId
         && request.resource.data.createdByUid == request.auth.uid
@@ -177,6 +313,13 @@ service cloud.firestore {
         && request.resource.data.rejectionReason == null
         && request.resource.data.approvedPartnerProfileId == null;
 
+      // =====================================================
+      // RULE-ID: PA-READ
+      // ACTOR: Applicant or configured Admin
+      // RESOURCE: Partner application
+      // OPERATION: Read application
+      // PURPOSE: Allows Admin review access or applicant access to an owned active Customer profile application.
+      // =====================================================
       allow read: if isConfiguredAdmin()
         || (
           signedIn()
@@ -196,6 +339,15 @@ service cloud.firestore {
   // inProgress -> completed
   // completed -> verified
   // changesRequired -> inProgress
+  // =====================================================
+  // RULE-ID: PA-ADMIN-WORKSHOP-STATUS
+  // ACTOR: Configured Admin
+  // RESOURCE: Partner application
+  // OPERATION: Update Workshop Details section status
+  // STATUS: underReview -> underReview
+  // SECTION: Workshop Details
+  // PURPOSE: Maintains the governed Workshop Details section-status lifecycle while the application remains under review.
+  // =====================================================
   allow update: if isConfiguredAdmin()
     && resource.data.status == 'underReview'
     && request.resource.data.status
@@ -283,6 +435,15 @@ service cloud.firestore {
       // Configured Admin may start KYC verification while an application
       // Configured Admin may mark KYC as verified while an application
   // is under review and KYC is under verification.
+  // =====================================================
+  // RULE-ID: PA-ADMIN-KYC-VERIFY
+  // ACTOR: Configured Admin
+  // RESOURCE: Partner application
+  // OPERATION: Mark KYC verified
+  // STATUS: underReview -> underReview
+  // KYC: underVerification -> verified
+  // PURPOSE: Completes KYC verification while preserving application ownership and Partner linkage.
+  // =====================================================
   allow update: if isConfiguredAdmin()
     && resource.data.status == 'underReview'
     && request.resource.data.status
@@ -318,6 +479,15 @@ service cloud.firestore {
       ]);
       // Configured Admin may mark KYC as failed with a customer-visible
       // reason while an application is under review.
+      // =====================================================
+      // RULE-ID: PA-ADMIN-KYC-FAIL
+      // ACTOR: Configured Admin
+      // RESOURCE: Partner application
+      // OPERATION: Mark KYC failed
+      // STATUS: underReview -> underReview
+      // KYC: underVerification -> failed
+      // PURPOSE: Records a customer-visible KYC failure reason without changing application ownership.
+      // =====================================================
       allow update: if isConfiguredAdmin()
         && resource.data.status == 'underReview'
         && request.resource.data.status
@@ -352,6 +522,15 @@ service cloud.firestore {
             'updatedAt'
           ]);
       // is under review.
+      // =====================================================
+      // RULE-ID: PA-ADMIN-KYC-START
+      // ACTOR: Configured Admin
+      // RESOURCE: Partner application
+      // OPERATION: Start KYC verification
+      // STATUS: underReview -> underReview
+      // KYC: notStarted -> underVerification
+      // PURPOSE: Moves KYC from absent or notStarted to underVerification.
+      // =====================================================
       allow update: if isConfiguredAdmin()
         && resource.data.status == 'underReview'
         && request.resource.data.status
@@ -386,6 +565,14 @@ service cloud.firestore {
           ]);
       // Rejection preserves application ownership and history and requires
       // a customer-visible reason.
+      // =====================================================
+      // RULE-ID: PA-ADMIN-REJECT
+      // ACTOR: Configured Admin
+      // RESOURCE: Partner application
+      // OPERATION: Reject application
+      // STATUS: underReview -> rejected
+      // PURPOSE: Rejects an under-review application with required audit fields and customer-visible reason.
+      // =====================================================
       allow update: if isConfiguredAdmin()
         && resource.data.status == 'underReview'
         && request.resource.data.status == 'rejected'
@@ -424,6 +611,14 @@ service cloud.firestore {
       //
       // This operation cannot modify application ownership, Partner type,
       // applicant-entered information, or approved Partner profile linkage.
+      // =====================================================
+      // RULE-ID: PA-ADMIN-START-REVIEW
+      // ACTOR: Configured Admin
+      // RESOURCE: Partner application
+      // OPERATION: Start application review
+      // STATUS: submitted -> underReview
+      // PURPOSE: Moves a submitted application into Admin review without changing applicant data.
+      // =====================================================
       allow update: if isConfiguredAdmin()
         && resource.data.status == 'submitted'
         && request.resource.data.status == 'underReview'
@@ -452,6 +647,14 @@ service cloud.firestore {
           ]);
       // Configured Admin may request corrections while an application
       // is under review.
+      // =====================================================
+      // RULE-ID: PA-ADMIN-REQUEST-CHANGES
+      // ACTOR: Configured Admin
+      // RESOURCE: Partner application
+      // OPERATION: Request applicant corrections
+      // STATUS: underReview -> changesRequested
+      // PURPOSE: Returns an under-review application to the applicant with required correction instructions.
+      // =====================================================
       allow update: if isConfiguredAdmin()
         && resource.data.status == 'underReview'
         && request.resource.data.status == 'changesRequested'
@@ -483,6 +686,13 @@ service cloud.firestore {
             'rejectionReason',
             'updatedAt'
           ]);
+      // =====================================================
+      // RULE-ID: PA-APPLICANT-UPDATE-GATE
+      // ACTOR: Applicant
+      // RESOURCE: Partner application
+      // OPERATION: Enter controlled applicant update branches
+      // PURPOSE: Applies shared authentication, immutable ownership, active Customer profile, and Partner linkage checks before branch-specific edits.
+      // =====================================================
       allow update: if signedIn()
         && resource.data.createdByUid == request.auth.uid
         && request.resource.data.createdByUid
@@ -502,6 +712,15 @@ service cloud.firestore {
         && request.resource.data.approvedPartnerProfileId
             == resource.data.approvedPartnerProfileId
         && (
+          // =====================================================
+          // RULE-ID: PA-APPLICANT-CONTACT-DRAFT
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Update applicant contact and business summary
+          // STATUS: draft -> draft
+          // SECTION: Basic Details
+          // PURPOSE: Allows only businessName, contactName, mobileE164, email, and updatedAt while Draft.
+          // =====================================================
           (
             resource.data.status == 'draft'
             && request.resource.data.status == 'draft'
@@ -516,6 +735,16 @@ service cloud.firestore {
               ])
           )
                     ||
+          // =====================================================
+          // RULE-ID: PA-TAILOR-CAPABILITY-DRAFT
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Save Tailor capabilities
+          // STATUS: draft -> draft
+          // SECTION: Services and Specialization
+          // DATA NODE: onboardingData.extensions.tailor.capabilities
+          // PURPOSE: Allows governed Services and Specialization data while the application remains Draft.
+          // =====================================================
           (
             resource.data.status == 'draft'
             && request.resource.data.status == 'draft'
@@ -672,6 +901,15 @@ service cloud.firestore {
               ])
           )
           ||
+          // =====================================================
+          // RULE-ID: PA-APPLICANT-CONTACT-CHANGES-REQUESTED
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Correct applicant contact and business summary
+          // STATUS: changesRequested -> changesRequested
+          // SECTION: Basic Details
+          // PURPOSE: Allows only basic applicant fields after an Admin change request.
+          // =====================================================
           (
           resource.data.status == 'changesRequested'
           && request.resource.data.status == 'changesRequested'
@@ -686,6 +924,16 @@ service cloud.firestore {
               ])
           )
                     ||
+          // =====================================================
+          // RULE-ID: PA-TAILOR-WORKSHOP-DRAFT
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Save Tailor Workshop Details
+          // STATUS: draft -> draft
+          // SECTION: Workshop Details
+          // DATA NODE: onboardingData.extensions.tailor.workshopDetails
+          // PURPOSE: Allows governed Workshop Details data while the application remains Draft.
+          // =====================================================
           (
             resource.data.status == 'draft'
             && request.resource.data.status == 'draft'
@@ -799,6 +1047,16 @@ service cloud.firestore {
               ])
           )
           ||
+          // =====================================================
+          // RULE-ID: PA-TAILOR-WORKSHOP-CHANGES-REQUESTED
+          // ACTOR: Applicant
+          // RESOURCE: Partner Application
+          // STATUS: changesRequested -> changesRequested
+          // SECTION: Workshop Details
+          // DATA NODE: onboardingData.extensions.tailor.workshopDetails
+          // SECTION NODE: onboardingSections.workshopDetails
+          // PURPOSE: Applicant corrects Workshop Details after Admin change request.
+          // =====================================================
           (
             resource.data.status == 'changesRequested'
             && request.resource.data.status == 'changesRequested'
@@ -911,7 +1169,17 @@ service cloud.firestore {
                 'updatedAt'
               ])
           )
-                    ||
+          ||
+          // =====================================================
+          // RULE-ID: PA-TAILOR-CAPABILITY-CHANGES-REQUESTED
+          // ACTOR: Applicant
+          // RESOURCE: Partner Application
+          // STATUS: changesRequested -> changesRequested
+          // SECTION: Services and Specialization
+          // DATA NODE: onboardingData.extensions.tailor.capabilities
+          // SECTION NODE: onboardingSections.servicesAndSpecialization
+          // PURPOSE: Applicant corrects capabilities after Admin change request.
+          // =====================================================
           (
             resource.data.status == 'changesRequested'
             && request.resource.data.status == 'changesRequested'
@@ -1053,7 +1321,10 @@ service cloud.firestore {
                 'servicesAndSpecialization'
               ])
 
-            && request.resource.data.diff(resource.data)
+            // No unrelated top-level application field may change.
+            // Flutter diagnostics remain enabled in PartnerService.
+            && request.resource.data
+              .diff(resource.data)
               .affectedKeys()
               .hasOnly([
                 'onboardingData',
@@ -1064,6 +1335,14 @@ service cloud.firestore {
               ])
           )
           ||
+          // =====================================================
+          // RULE-ID: PA-APPLICANT-SUBMIT-DRAFT
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Submit Draft for Admin review
+          // STATUS: draft -> submitted
+          // PURPOSE: Moves a Draft application to submitted and resets review-result fields.
+          // =====================================================
           (
             resource.data.status == 'draft'
             && request.resource.data.status == 'submitted'
@@ -1085,6 +1364,14 @@ service cloud.firestore {
               ])
           )
           ||
+          // =====================================================
+          // RULE-ID: PA-APPLICANT-RESUBMIT-CHANGES
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Resubmit corrected application
+          // STATUS: changesRequested -> submitted
+          // PURPOSE: Moves a corrected changesRequested application back to submitted and resets review-result fields.
+          // =====================================================
           (
             resource.data.status == 'changesRequested'
             && request.resource.data.status == 'submitted'
@@ -1112,17 +1399,38 @@ service cloud.firestore {
 
     // Role lists (owner/tailor/delivery). Any signed-in user may read for routing.
     // Tighten writes in production (e.g. only owner UIDs via custom claims).
+    // =====================================================
+    // RULE-ID: COLL-CONFIG
+    // ACTOR: Authenticated reader; configured Admin writer
+    // RESOURCE: Configuration
+    // OPERATION: Read governed configuration or perform Admin write
+    // PURPOSE: Centralizes governed configuration and Admin authorization data.
+    // =====================================================
     match /config/{document=**} {
       allow read: if signedIn();
       allow write: if isConfiguredAdmin();
     }
 
     // Rate card — customers need read; owner dashboard writes.
+    // =====================================================
+    // RULE-ID: COLL-RATES
+    // ACTOR: Authenticated user
+    // RESOURCE: Rate card
+    // OPERATION: Read or write rate data
+    // PURPOSE: Current broad authenticated access is retained and should be tightened before production.
+    // =====================================================
     match /rates/{docId} {
       allow read: if signedIn();
       allow write: if signedIn();
     }
 
+    // =====================================================
+    // RULE-ID: COLL-ORDERS
+    // ACTOR: Authenticated user
+    // RESOURCE: Order
+    // OPERATION: Create, read, update, or delete order
+    // PURPOSE: Retains current order authorization behavior; customer creates require matching customerId.
+    // =====================================================
     match /orders/{orderId} {
       allow read: if signedIn();
       allow create: if signedIn()
@@ -1130,6 +1438,13 @@ service cloud.firestore {
       allow update, delete: if signedIn();
     }
 
+    // =====================================================
+    // RULE-ID: COLL-DESIGN-TEMPLATES
+    // ACTOR: Authenticated user
+    // RESOURCE: Design template
+    // OPERATION: Read, create, or owner-maintain design template
+    // PURPOSE: Restricts update and delete to the template creator.
+    // =====================================================
     match /designTemplates/{docId} {
       allow read: if signedIn();
       allow create: if signedIn();
@@ -1138,6 +1453,13 @@ service cloud.firestore {
     }
 
     // Private, profile-owned customer design references.
+    // =====================================================
+    // RULE-ID: COLL-CUSTOMER-DESIGNS
+    // ACTOR: Design owner
+    // RESOURCE: Private customer design
+    // OPERATION: Create, read, or update owned design reference
+    // PURPOSE: Protects profile-owned private design records and immutable ownership linkage.
+    // =====================================================
     match /customer_designs/{designId} {
       allow create: if signedIn()
           && request.resource.data.createdByUid == request.auth.uid
@@ -1165,6 +1487,13 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // =====================================================
+    // RULE-ID: COLL-SUBSCRIPTIONS
+    // ACTOR: Authenticated user
+    // RESOURCE: Subscription
+    // OPERATION: Read or write subscription
+    // PURPOSE: Retains current authenticated access pending plan-specific hardening.
+    // =====================================================
     match /subscriptions/{docId} {
       allow read, write: if signedIn();
     }

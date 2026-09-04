@@ -1407,7 +1407,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       deliveryAddress: addr,
       fabricDescription: (_fabricChoice != null || _selectedTemplate != null)
           ? [
-              if (_fabricChoice != null) _fabricChoice!,
+              ?_fabricChoice,
               if (_selectedTemplate != null)
                 'Design: ${_selectedTemplate!.title}',
               'Accent: ${_colorHexRgb(_accentColor)}',

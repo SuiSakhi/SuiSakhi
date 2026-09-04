@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../models/partner_application.dart';
 import '../models/partner_capability_selection.dart';
@@ -335,8 +336,51 @@ class PartnerService {
         throw StateError('Partner application could not be found.');
       }
 
+      final rawData = snapshot.data() ?? <String, dynamic>{};
+
+      debugPrint(
+        '[CAPABILITY_RAW_TOP_LEVEL_KEYS] '
+        '${rawData.keys.toList()..sort()}',
+      );
+
+      debugPrint(
+        '[CAPABILITY_RAW_ONBOARDING_DATA] '
+        '${rawData['onboardingData']}',
+      );
+
+      debugPrint(
+        '[CAPABILITY_RAW_ONBOARDING_SECTIONS] '
+        '${rawData['onboardingSections']}',
+      );
+
+      debugPrint(
+        '[CAPABILITY_RAW_APPROVED_PROFILE] '
+        'containsKey='
+        '${rawData.containsKey('approvedPartnerProfileId')}, '
+        'value=${rawData['approvedPartnerProfileId']}',
+      );
+
       final application = PartnerApplication.fromDoc(snapshot);
 
+      debugPrint(
+        '[CAPABILITY_BEFORE_DATA] '
+        '${application.onboardingData}',
+      );
+
+      debugPrint(
+        '[CAPABILITY_BEFORE_STATUS] '
+        '${application.onboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
+      );
+
+      debugPrint(
+        '[CAPABILITY_OWNERSHIP] '
+        'uid=${user.uid}, '
+        'createdByUid=${application.createdByUid}, '
+        'accountId=${application.accountId}, '
+        'customerProfileId=${application.customerProfileId}, '
+        'status=${application.status.name}, '
+        'partnerType=${application.partnerType.name}',
+      );
       _validateCustomerOwnership(
         application: application,
         uid: user.uid,
@@ -382,8 +426,13 @@ class PartnerService {
       updatedOnboardingSections[PartnerOnboardingSection
               .servicesAndSpecialization] =
           targetStatus;
-
-      transaction.set(document, {
+      //SUD debug
+      debugPrint('[CAPABILITY_DATA] $updatedOnboardingData');
+      debugPrint(
+        '[CAPABILITY_STATUS] '
+        '${updatedOnboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
+      );
+      final payload = <String, dynamic>{
         'onboardingData': updatedOnboardingData,
         'onboardingSections': {
           for (final entry in updatedOnboardingSections.entries)
@@ -392,7 +441,24 @@ class PartnerService {
         'onboardingUpdatedByUid': user.uid,
         'onboardingUpdatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      debugPrint(
+        '[CAPABILITY_PAYLOAD_KEYS] '
+        '${payload.keys.toList()..sort()}',
+      );
+
+      debugPrint('[CAPABILITY_PAYLOAD] $payload');
+      debugPrint(
+        '[CAPABILITY_APPLICATION_STATUS] '
+        '${application.status.name}',
+      );
+
+      debugPrint(
+        '[CAPABILITY_CAN_EDIT] '
+        '${application.canEdit}',
+      );
+      transaction.set(document, payload, SetOptions(merge: true));
     });
   }
 
@@ -946,7 +1012,6 @@ class PartnerService {
         : <String, dynamic>{};
 
     tailor['capabilities'] = selection.toMap();
-
     extensions['tailor'] = tailor;
     onboardingData['extensions'] = extensions;
 

@@ -20,9 +20,9 @@ class _BulkOrdersScreenState extends State<BulkOrdersScreen> {
   final _eventType = TextEditingController();
   int _dressCount = 5;
   String _category = 'Bride';
+  final _consult = 'home_visit';
   DateTime _eventDate = DateTime.now().add(const Duration(days: 60));
   final _location = TextEditingController();
-  String _consult = 'home_visit';
   final _notes = TextEditingController();
   bool _submitting = false;
 
@@ -178,20 +178,14 @@ class _BulkOrdersScreenState extends State<BulkOrdersScreen> {
           Text('Consultation', style: AppTextStyles.headlineSmall),
           RadioListTile<String>(
             value: 'home_visit',
-            groupValue: _consult,
-            onChanged: (v) => setState(() => _consult = v ?? _consult),
             title: const Text('Home visit'),
           ),
           RadioListTile<String>(
             value: 'video',
-            groupValue: _consult,
-            onChanged: (v) => setState(() => _consult = v ?? _consult),
             title: const Text('Video consultation'),
           ),
           RadioListTile<String>(
             value: 'call',
-            groupValue: _consult,
-            onChanged: (v) => setState(() => _consult = v ?? _consult),
             title: const Text('Call me to schedule'),
           ),
           const SizedBox(height: 12),

@@ -20,7 +20,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
   final _notes = TextEditingController();
   final _address = TextEditingController();
   final _landmark = TextEditingController();
-  String _slot = 'Next day — 10am–2pm';
+  final _slot = 'Next day — 10am–2pm';
   bool _express = false;
   bool _submitting = false;
 
@@ -156,8 +156,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
             return RadioListTile<String>(
               dense: true,
               value: s,
-              groupValue: _slot,
-              onChanged: (v) => setState(() => _slot = v ?? _slot),
+              // onChanged: (v) => setState(() => _slot = v ?? _slot),
               title: Text(s, style: AppTextStyles.bodyMedium),
             );
           }),
