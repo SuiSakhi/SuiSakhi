@@ -6,11 +6,14 @@ import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/metadata/india_address_metadata.dart';
+import '../../core/metadata/partner_capability_metadata.dart';
 import '../../models/address_details.dart';
 import '../../models/operating_schedule.dart';
 import '../../models/partner_application.dart';
+import '../../models/partner_capability_selection.dart';
 import '../../services/partner_service.dart';
 import '../../widgets/address/address_form_section.dart';
+import '../../widgets/capability/capability_multi_selector.dart';
 import '../../widgets/schedule/operating_schedule_field.dart';
 
 class TailorApplicationScreen extends StatefulWidget {
@@ -40,6 +43,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   AddressDetails _businessAddress = const AddressDetails();
 
   OperatingSchedule _operatingSchedule = const OperatingSchedule();
+  PartnerCapabilitySelection _capabilitySelection =
+      const PartnerCapabilitySelection();
+
   bool _pickupAvailable = false;
   bool _deliveryAvailable = false;
   bool _homeVisitAvailable = false;
@@ -255,6 +261,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       _loadWorkshopDetails(application.workshopDetails);
 
+      _capabilitySelection = application.effectiveTailorCapabilitySelection;
+
       setState(() {
         _loading = false;
         _loadError = null;
@@ -332,7 +340,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Application context is unavailable. Please reopen the form.',
+            'Application context is unavailable. '
+            'Please reopen the form.',
           ),
         ),
       );
@@ -343,7 +352,11 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       _saving = true;
     });
 
+    var saveStage = 'basic details';
+
     try {
+      saveStage = 'basic details';
+
       await PartnerService.updateDraft(
         applicationId: application.id,
         accountId: accountId,
@@ -354,6 +367,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         email: _emailController.text,
       );
 
+      saveStage = 'business and operations';
+
       final workshopDetails = _buildWorkshopDetails();
 
       await PartnerService.updateWorkshopDetails(
@@ -362,6 +377,17 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         customerProfileId: customerProfileId,
         workshopDetails: workshopDetails,
       );
+
+      saveStage = 'services and specialization';
+
+      await PartnerService.updateTailorCapabilities(
+        applicationId: application.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+        selection: _capabilitySelection,
+      );
+
+      saveStage = 'completed';
 
       if (!mounted) {
         return;
@@ -377,7 +403,11 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-    } catch (error) {
+    } catch (error, stackTrace) {
+      debugPrint('[TailorSave] failedStage=$saveStage');
+      debugPrint('[TailorSave] error=$error');
+      debugPrintStack(label: '[TailorSave] stackTrace', stackTrace: stackTrace);
+
       if (!mounted) {
         return;
       }
@@ -388,7 +418,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Unable to save the application.\n$error'),
+          content: Text('Unable to save $saveStage.\n$error'),
           backgroundColor: AppColors.error,
         ),
       );
@@ -496,6 +526,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           _buildBasicDetailsCard(),
           const SizedBox(height: 20),
           _buildWorkshopDetailsCard(),
+          const SizedBox(height: 20),
+          _buildCapabilitiesCard(),
           const SizedBox(height: 20),
           _buildNextStepsCard(),
           const SizedBox(height: 20),
@@ -991,6 +1023,104 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     );
   }
 
+  Widget _buildCapabilitiesCard() {
+    final capabilityStatus =
+        _application?.onboardingStatusFor(
+          PartnerOnboardingSection.servicesAndSpecialization,
+        ) ??
+        PartnerOnboardingSectionStatus.notStarted;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Services & Specialization',
+                  style: AppTextStyles.headlineMedium,
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  _workshopStatusLabel(capabilityStatus),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Select the services and specialized work that '
+            'the Tailor can currently provide. Some premium '
+            'capabilities require Admin verification or '
+            'certification before assignment.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 18),
+          CapabilityMultiSelector(
+            key: ValueKey(
+              'tailor-capabilities-'
+              '${_capabilitySelection.normalizedCapabilityCodes.join('-')}-'
+              '${_capabilitySelection.normalizedAdditionalDescriptions.join('-')}',
+            ),
+            metadataProvider: PartnerCapabilityMetadata.instance,
+            partnerCategoryCode: PartnerCapabilityMetadata.tailorCategoryCode,
+            initialValue: _capabilitySelection,
+            enabled: _isEditable,
+            minimumSelectionCount: 1,
+            sectionTitle: 'Skills & Expertise',
+            sectionDescription:
+                'Select all applicable capabilities. '
+                'Verification indicators do not mean that '
+                'the capability is already approved.',
+            showOtherExpertise: true,
+            otherExpertiseLabel: 'Other Expertise',
+            otherExpertiseHint: 'Example: custom tassel work, hand finishing',
+            onChanged: (selection) {
+              _capabilitySelection = selection;
+            },
+          ),
+          if (!_isEditable) ...[
+            const SizedBox(height: 14),
+            Text(
+              _isUnderAdminReview
+                  ? 'Services & Specialization is read-only '
+                        'while the application is under Admin review.'
+                  : 'Services & Specialization is not editable '
+                        'in the current application status.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildNextStepsCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1008,10 +1138,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             ),
           ),
           const SizedBox(height: 10),
-          _buildNextStep(
-            Icons.checklist_rounded,
-            'Services and specialization',
-          ),
           _buildNextStep(Icons.speed_rounded, 'Capacity and availability'),
           _buildNextStep(Icons.straighten_rounded, 'Measurement preferences'),
           _buildNextStep(Icons.verified_outlined, 'Quality and verification'),
@@ -1110,6 +1236,13 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         accountId: accountId,
         customerProfileId: customerProfileId,
         workshopDetails: workshopDetails,
+      );
+
+      await PartnerService.updateTailorCapabilities(
+        applicationId: application.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+        selection: _capabilitySelection,
       );
 
       await PartnerService.submitApplication(
