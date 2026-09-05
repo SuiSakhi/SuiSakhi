@@ -383,8 +383,27 @@ class PartnerApplication {
     return PartnerWorkshopDetails.fromMap(Map<String, dynamic>.from(workshop));
   }
 
-  PartnerCapabilitySelection? get tailorCapabilitySelection {
-    if (partnerType != PartnerType.tailor) {
+  // ==========================================================================
+  // COMMON PARTNER FOUNDATION: CAPABILITY READING
+  // ==========================================================================
+  //
+  // Each Partner application stores category-extension information under:
+  //
+  // onboardingData.extensions.<partnerCategoryCode>
+  //
+  // Examples:
+  //
+  // onboardingData.extensions.tailor.capabilities
+  // onboardingData.extensions.measurementPartner.capabilities
+  //
+  // Do not duplicate this map-parsing logic for every Partner category.
+  // ==========================================================================
+  PartnerCapabilitySelection? capabilitySelectionForCategory(
+    String partnerCategoryCode,
+  ) {
+    final normalizedCategoryCode = partnerCategoryCode.trim();
+
+    if (normalizedCategoryCode.isEmpty) {
       return null;
     }
 
@@ -395,16 +414,15 @@ class PartnerApplication {
     }
 
     final extensions = Map<String, dynamic>.from(extensionsValue);
+    final categoryExtensionValue = extensions[normalizedCategoryCode];
 
-    final tailorValue = extensions['tailor'];
-
-    if (tailorValue is! Map) {
+    if (categoryExtensionValue is! Map) {
       return null;
     }
 
-    final tailor = Map<String, dynamic>.from(tailorValue);
+    final categoryExtension = Map<String, dynamic>.from(categoryExtensionValue);
 
-    final capabilitiesValue = tailor['capabilities'];
+    final capabilitiesValue = categoryExtension['capabilities'];
 
     if (capabilitiesValue is! Map) {
       return null;
@@ -415,8 +433,40 @@ class PartnerApplication {
     );
   }
 
+  // ==========================================================================
+  // TAILOR-SPECIFIC COMPATIBILITY GETTER
+  // ==========================================================================
+  //
+  // Keep this getter because the working Tailor module already uses it.
+  // Delegate to the common category-extension reader to avoid duplicate logic.
+  // ==========================================================================
+  PartnerCapabilitySelection? get tailorCapabilitySelection {
+    if (partnerType != PartnerType.tailor) {
+      return null;
+    }
+
+    return capabilitySelectionForCategory(PartnerType.tailor.name);
+  }
+
   PartnerCapabilitySelection get effectiveTailorCapabilitySelection {
     return tailorCapabilitySelection ?? const PartnerCapabilitySelection();
+  }
+
+  // ==========================================================================
+  // MEASUREMENT PARTNER EXTENSION
+  // ==========================================================================
+  PartnerCapabilitySelection? get measurementPartnerCapabilitySelection {
+    if (partnerType != PartnerType.measurementPartner) {
+      return null;
+    }
+
+    return capabilitySelectionForCategory(PartnerType.measurementPartner.name);
+  }
+
+  PartnerCapabilitySelection
+  get effectiveMeasurementPartnerCapabilitySelection {
+    return measurementPartnerCapabilitySelection ??
+        const PartnerCapabilitySelection();
   }
 
   int get completedOnboardingSectionCount {

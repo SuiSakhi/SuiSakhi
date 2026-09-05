@@ -14,6 +14,7 @@ import '../../models/partner_capability_selection.dart';
 import '../../services/partner_service.dart';
 import '../../widgets/address/address_form_section.dart';
 import '../../widgets/capability/capability_multi_selector.dart';
+import '../../widgets/partner/partner_basic_details_section.dart';
 import '../../widgets/schedule/operating_schedule_field.dart';
 
 class TailorApplicationScreen extends StatefulWidget {
@@ -643,97 +644,30 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     );
   }
 
+  // ==========================================================================
+  // COMMON PARTNER FOUNDATION: BASIC DETAILS
+  // ==========================================================================
+  //
+  // Controller ownership and persistence remain in this screen.
+  // The reusable widget contains presentation and common validation only.
+  // ==========================================================================
   Widget _buildBasicDetailsCard() {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Basic Details', style: AppTextStyles.headlineMedium),
-          const SizedBox(height: 6),
-          Text(
-            'These details will be used for the Tailor application.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-            ),
-          ),
-          const SizedBox(height: 18),
-          TextFormField(
-            controller: _contactNameController,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Contact name',
-              hintText: 'Full name',
-              prefixIcon: Icon(Icons.person_outline_rounded),
-              border: OutlineInputBorder(),
-            ),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Contact name is required';
-              }
+    return PartnerBasicDetailsSection(
+      contactNameController: _contactNameController,
+      businessNameController: _businessNameController,
+      mobileController: _mobileController,
+      emailController: _emailController,
+      editable: _isEditable,
+      description: 'These details will be used for the Tailor application.',
+      businessNameLabel: 'Business or workshop name',
+      businessNameHint: 'Optional at draft stage',
+      onChanged: () {
+        if (!mounted) {
+          return;
+        }
 
-              return null;
-            },
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            controller: _businessNameController,
-            onChanged: (_) {
-              setState(() {});
-            },
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Business or workshop name',
-              hintText: 'Optional at draft stage',
-              prefixIcon: Icon(Icons.storefront_outlined),
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            controller: _mobileController,
-            readOnly: true,
-            keyboardType: TextInputType.phone,
-            decoration: const InputDecoration(
-              labelText: 'Authenticated mobile number',
-              prefixIcon: Icon(Icons.phone_outlined),
-              border: OutlineInputBorder(),
-              filled: true,
-              helperText:
-                  'This mobile number is linked to your SuiSakhi account.',
-            ),
-          ),
-          const SizedBox(height: 14),
-          TextFormField(
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            decoration: const InputDecoration(
-              labelText: 'Email address',
-              hintText: 'Optional',
-              prefixIcon: Icon(Icons.email_outlined),
-              border: OutlineInputBorder(),
-            ),
-            validator: (value) {
-              final email = value?.trim() ?? '';
-
-              if (email.isEmpty) {
-                return null;
-              }
-
-              if (!email.contains('@') || email.length < 5) {
-                return 'Enter a valid email or leave blank';
-              }
-
-              return null;
-            },
-          ),
-        ],
-      ),
+        setState(() {});
+      },
     );
   }
 
@@ -1089,7 +1023,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             partnerCategoryCode: PartnerCapabilityMetadata.tailorCategoryCode,
             initialValue: _capabilitySelection,
             enabled: _isEditable,
-            minimumSelectionCount: 1,
+            // Phase-1 simplification:
+            // Capability selection is optional. Admin may assist with completion.
+            minimumSelectionCount: 0,
             sectionTitle: 'Skills & Expertise',
             sectionDescription:
                 'Select all applicable capabilities. '

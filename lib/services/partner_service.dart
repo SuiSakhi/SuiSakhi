@@ -240,6 +240,20 @@ class PartnerService {
 
       final application = PartnerApplication.fromDoc(snapshot);
 
+      debugPrint(
+        '[WORKSHOP_STATUS] '
+        '${application.status.name}',
+      );
+
+      debugPrint(
+        '[WORKSHOP_BEFORE_DATA] '
+        '${application.onboardingData}',
+      );
+
+      debugPrint(
+        '[WORKSHOP_BEFORE_SECTIONS] '
+        '${application.onboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
+      );
       _validateCustomerOwnership(
         application: application,
         uid: user.uid,
@@ -270,6 +284,11 @@ class PartnerService {
         workshopDetails,
       );
 
+      debugPrint(
+        '[WORKSHOP_DATA] '
+        '$updatedOnboardingData',
+      );
+
       final updatedOnboardingSections =
           Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
             application.onboardingSections,
@@ -278,7 +297,12 @@ class PartnerService {
       updatedOnboardingSections[PartnerOnboardingSection.workshopDetails] =
           targetStatus;
 
-      transaction.set(document, {
+      debugPrint(
+        '[WORKSHOP_SECTIONS] '
+        '${updatedOnboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
+      );
+
+      final payload = <String, dynamic>{
         'onboardingData': updatedOnboardingData,
         'onboardingSections': {
           for (final entry in updatedOnboardingSections.entries)
@@ -287,7 +311,19 @@ class PartnerService {
         'onboardingUpdatedByUid': user.uid,
         'onboardingUpdatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      debugPrint(
+        '[WORKSHOP_PAYLOAD_KEYS] '
+        '${payload.keys.toList()..sort()}',
+      );
+
+      debugPrint(
+        '[WORKSHOP_PAYLOAD] '
+        '$payload',
+      );
+
+      transaction.set(document, payload, SetOptions(merge: true));
     });
   }
 
@@ -993,10 +1029,37 @@ class PartnerService {
     return onboardingData;
   }
 
-  static Map<String, dynamic> _withTailorCapabilities(
-    Map<String, dynamic> existingOnboardingData,
-    PartnerCapabilitySelection selection,
-  ) {
+  // ==========================================================================
+  // COMMON PARTNER FOUNDATION: CAPABILITY PERSISTENCE
+  // ==========================================================================
+  //
+  // Stores Partner-declared capabilities under the primary category extension:
+  //
+  // onboardingData.extensions.<partnerCategoryCode>.capabilities
+  //
+  // Examples:
+  //
+  // extensions.tailor.capabilities
+  // extensions.measurementPartner.capabilities
+  //
+  // This helper changes only the requested category extension and preserves
+  // every other Partner-category extension already stored in onboardingData.
+  // ==========================================================================
+  static Map<String, dynamic> _withPartnerCapabilities({
+    required Map<String, dynamic> existingOnboardingData,
+    required String partnerCategoryCode,
+    required PartnerCapabilitySelection selection,
+  }) {
+    final normalizedCategoryCode = partnerCategoryCode.trim();
+
+    if (normalizedCategoryCode.isEmpty) {
+      throw ArgumentError.value(
+        partnerCategoryCode,
+        'partnerCategoryCode',
+        'Partner category code is required.',
+      );
+    }
+
     final onboardingData = Map<String, dynamic>.from(existingOnboardingData);
 
     final existingExtensions = onboardingData['extensions'];
@@ -1005,17 +1068,35 @@ class PartnerService {
         ? Map<String, dynamic>.from(existingExtensions)
         : <String, dynamic>{};
 
-    final existingTailor = extensions['tailor'];
+    final existingCategoryExtension = extensions[normalizedCategoryCode];
 
-    final tailor = existingTailor is Map
-        ? Map<String, dynamic>.from(existingTailor)
+    final categoryExtension = existingCategoryExtension is Map
+        ? Map<String, dynamic>.from(existingCategoryExtension)
         : <String, dynamic>{};
 
-    tailor['capabilities'] = selection.toMap();
-    extensions['tailor'] = tailor;
+    categoryExtension['capabilities'] = selection.toMap();
+    extensions[normalizedCategoryCode] = categoryExtension;
     onboardingData['extensions'] = extensions;
 
     return onboardingData;
+  }
+
+  // ==========================================================================
+  // TAILOR-SPECIFIC COMPATIBILITY WRAPPER
+  // ==========================================================================
+  //
+  // Keep the existing method name while the working Tailor module is frozen.
+  // Delegate to the reusable capability persistence helper.
+  // ==========================================================================
+  static Map<String, dynamic> _withTailorCapabilities(
+    Map<String, dynamic> existingOnboardingData,
+    PartnerCapabilitySelection selection,
+  ) {
+    return _withPartnerCapabilities(
+      existingOnboardingData: existingOnboardingData,
+      partnerCategoryCode: PartnerType.tailor.name,
+      selection: selection,
+    );
   }
 
   static int _applicationResumeScore(PartnerApplication application) {
