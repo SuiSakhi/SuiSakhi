@@ -1331,6 +1331,13 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     switch (type) {
       case PartnerType.tailor:
         return 'Tailor';
+
+      // MEASUREMENT PARTNER EXTENSION
+      // Keep an explicit case so newly added Partner types remain
+      // protected by Dart's exhaustive-switch analyzer validation.
+      case PartnerType.measurementPartner:
+        return 'Measurement Partner';
+
       case PartnerType.boutique:
         return 'Boutique';
       case PartnerType.designer:

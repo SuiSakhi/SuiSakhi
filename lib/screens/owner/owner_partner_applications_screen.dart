@@ -395,6 +395,13 @@ class _PartnerApplicationCard extends StatelessWidget {
     switch (type) {
       case PartnerType.tailor:
         return 'Tailor';
+
+      // MEASUREMENT PARTNER EXTENSION
+      // Keep this explicit case so Dart detects any future Partner category
+      // that has not yet been intentionally added to the Admin interface.
+      case PartnerType.measurementPartner:
+        return 'Measurement Partner';
+
       case PartnerType.boutique:
         return 'Boutique';
       case PartnerType.designer:
