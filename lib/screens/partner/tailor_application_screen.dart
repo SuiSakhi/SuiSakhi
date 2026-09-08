@@ -325,9 +325,13 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   }
 
   Future<void> _saveDraft() async {
-    if (_saving) {
-      return;
-    }
+    debugPrint(
+      '[TAILOR_SAVE_TAP] '
+      'applicationId=${_application?.id}, '
+      'status=${_application?.status.name}, '
+      'editable=$_isEditable, '
+      'saving=$_saving',
+    );
 
     if (!_formKey.currentState!.validate()) {
       return;
@@ -358,6 +362,23 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     try {
       saveStage = 'basic details';
 
+      // TEMP-DIAG-TAILOR-SAVE-001:
+      // Remove after changesRequested regression testing.
+      final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+      debugPrint(
+        '[TailorSaveContext] '
+        'applicationId=${application.id}, '
+        'applicationStatus=${application.status.name}, '
+        'applicationPartnerType=${application.partnerType.name}, '
+        'applicationAccountMatches=${application.accountId == accountId}, '
+        'applicationCustomerProfileMatches='
+        '${application.customerProfileId == customerProfileId}, '
+        'applicationCreatorMatches='
+        '${application.createdByUid == authenticatedUid}, '
+        'hasAuthenticatedUser=${authenticatedUid != null}, '
+        'hasApprovedProfile='
+        '${application.approvedPartnerProfileId?.trim().isNotEmpty == true}',
+      );
       await PartnerService.updateDraft(
         applicationId: application.id,
         accountId: accountId,
@@ -1023,8 +1044,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             partnerCategoryCode: PartnerCapabilityMetadata.tailorCategoryCode,
             initialValue: _capabilitySelection,
             enabled: _isEditable,
-            // Phase-1 simplification:
-            // Capability selection is optional. Admin may assist with completion.
+            // RULE-ID: TAILOR-CAPABILITY-DRAFT-PARTIAL-ALLOWED
+            // Save Draft must allow Other Expertise to remain temporarily blank.
+            // Submit for Review performs the final completeness validation.
             minimumSelectionCount: 0,
             sectionTitle: 'Skills & Expertise',
             sectionDescription:
@@ -1032,6 +1054,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
                 'Verification indicators do not mean that '
                 'the capability is already approved.',
             showOtherExpertise: true,
+            requireOtherExpertiseDescription: false,
             otherExpertiseLabel: 'Other Expertise',
             otherExpertiseHint: 'Example: custom tassel work, hand finishing',
             onChanged: (selection) {
@@ -1155,6 +1178,24 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
     try {
       // Persist the latest form values before changing application status.
+      // TEMP-DIAG-TAILOR-SAVE-001:
+      // Remove after changesRequested regression testing.
+      final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
+
+      debugPrint(
+        '[TailorSaveContext] '
+        'applicationId=${application.id}, '
+        'applicationStatus=${application.status.name}, '
+        'applicationPartnerType=${application.partnerType.name}, '
+        'applicationAccountMatches=${application.accountId == accountId}, '
+        'applicationCustomerProfileMatches='
+        '${application.customerProfileId == customerProfileId}, '
+        'applicationCreatorMatches='
+        '${application.createdByUid == authenticatedUid}, '
+        'hasAuthenticatedUser=${authenticatedUid != null}, '
+        'hasApprovedProfile='
+        '${application.approvedPartnerProfileId?.trim().isNotEmpty == true}',
+      );
       await PartnerService.updateDraft(
         applicationId: application.id,
         accountId: accountId,
@@ -1290,6 +1331,123 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     return const SizedBox.shrink();
   }
 
+  Future<void> _applyAgain() async {
+    final rejectedApplication = _application;
+    final accountId = _accountId;
+    final customerProfileId = _customerProfileId;
+
+    if (rejectedApplication == null ||
+        rejectedApplication.status != PartnerApplicationStatus.rejected) {
+      return;
+    }
+
+    if (accountId == null ||
+        accountId.trim().isEmpty ||
+        customerProfileId == null ||
+        customerProfileId.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'The account or Customer profile could not be resolved.',
+          ),
+        ),
+      );
+
+      return;
+    }
+
+    final shouldCreate =
+        await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              title: const Text('Apply Again?'),
+              content: const Text(
+                'A new Tailor Partner application will be created '
+                'using the information from the rejected application.\n\n'
+                'You can review and modify the copied information, '
+                'save the application as a draft, or submit it for '
+                'Admin review.\n\n'
+                'The rejected application will remain unchanged for '
+                'audit history.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(false);
+                  },
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: () {
+                    Navigator.of(dialogContext).pop(true);
+                  },
+                  child: const Text('Create New Application'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!shouldCreate || !mounted) {
+      return;
+    }
+
+    setState(() {
+      _saving = true;
+    });
+
+    try {
+      final newApplication = await PartnerService.reapplyFromRejected(
+        rejectedApplicationId: rejectedApplication.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      _application = newApplication;
+
+      _contactNameController.text = newApplication.contactName ?? '';
+      _businessNameController.text = newApplication.businessName ?? '';
+      _mobileController.text = newApplication.mobileE164 ?? '';
+      _emailController.text = newApplication.email ?? '';
+
+      _loadWorkshopDetails(newApplication.workshopDetails);
+
+      _capabilitySelection = newApplication.effectiveTailorCapabilitySelection;
+
+      setState(() {
+        _saving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A new Tailor application has been created. '
+            'Previous information was copied. Please review it '
+            'before submitting.',
+          ),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _saving = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Unable to create a new application: $error')),
+      );
+    }
+  }
+
   Widget _buildStatusNotice({
     required IconData icon,
     required String title,
@@ -1360,13 +1518,37 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     }
 
     if (_application?.status == PartnerApplicationStatus.rejected) {
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _continueLater,
-          icon: const Icon(Icons.support_agent_outlined),
-          label: const Text('Back to Partner Opportunities'),
-        ),
+      return Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _saving ? null : _applyAgain,
+              icon: _saving
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Icon(Icons.refresh_rounded),
+              label: Text(
+                _saving ? 'Creating New Application...' : 'Apply Again',
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: _saving ? null : _continueLater,
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Back to Partner Opportunities'),
+            ),
+          ),
+        ],
       );
     }
 
@@ -1390,6 +1572,27 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           ),
         ),
         const SizedBox(height: 10),
+        // TEMP-DIAG-TAILOR-SUBMIT-001:
+        // Remove after Tailor submit-button regression is resolved.
+        Builder(
+          builder: (context) {
+            debugPrint(
+              '[TAILOR_SUBMIT_GATE] '
+              'status=${_application?.status.name}, '
+              'isEditable=$_isEditable, '
+              'canSubmit=$_canSubmit, '
+              'saving=$_saving, '
+              'contactPresent='
+              '${_contactNameController.text.trim().isNotEmpty}, '
+              'businessPresent='
+              '${_businessNameController.text.trim().isNotEmpty}, '
+              'mobilePresent='
+              '${_mobileController.text.trim().isNotEmpty}',
+            );
+
+            return const SizedBox.shrink();
+          },
+        ),
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(

@@ -200,7 +200,111 @@ service cloud.firestore {
       // PURPOSE: Keeps Customer and Partner profiles under the owning account.
       // =====================================================
       match /profiles/{profileId} {
-        allow read, create, update: if ownsExistingAccount(accountId);
+        // =====================================================
+        // RULE-ID: AP-READ-OWNED-OR-ADMIN
+        // ACTOR: Account owner or configured Admin
+        // RESOURCE: Account profile
+        // OPERATION: Read profile
+        // PURPOSE: Allows profile selection for the account owner and
+        //          governed profile review for configured Admin.
+        // =====================================================
+        allow read: if ownsExistingAccount(accountId)
+          || isConfiguredAdmin();
+
+        // =====================================================
+        // RULE-ID: AP-CUSTOMER-PROFILE-CREATE
+        // ACTOR: Account owner
+        // RESOURCE: Customer profile
+        // OPERATION: Create profile
+        // PURPOSE: Preserves Customer-first profile creation while
+        //          preventing an account owner from self-activating
+        //          a Partner Business Profile.
+        // =====================================================
+        allow create: if ownsExistingAccount(accountId)
+          && request.resource.data.accountId == accountId
+          && request.resource.data.profileId == profileId
+          && request.resource.data.role == 'customer'
+          && request.resource.data.profileType == 'customer'
+          && request.resource.data.status == 'active'
+          && request.resource.data.isDefaultProfile == true;
+
+        // =====================================================
+        // RULE-ID: AP-PARTNER-PROFILE-ACTIVATE
+        // ACTOR: Configured Admin
+        // RESOURCE: Partner Business Profile
+        // OPERATION: Create active profile after KYC and approval
+        // PURPOSE: Creates an independent Partner Business Profile.
+        //
+        // The paired Partner Application approval rule validates the
+        // application, account, category, and profile linkage in the
+        // same atomic transaction.
+        // =====================================================
+        allow create: if isConfiguredAdmin()
+          && request.resource.data.accountId == accountId
+          && request.resource.data.profileId == profileId
+          && request.resource.data.role == 'partner'
+          && request.resource.data.profileType == 'partner'
+          && request.resource.data.partnerType is string
+          && request.resource.data.partnerType.size() > 0
+          && request.resource.data.status == 'active'
+          && request.resource.data.operationalStatus == 'active'
+          && request.resource.data.activationStatus == 'active'
+          && request.resource.data.approvalStatus == 'approved'
+          && request.resource.data.kycStatus == 'verified'
+          && request.resource.data.isDefaultProfile == false
+          && request.resource.data.sourceApplicationId is string
+          && request.resource.data.sourceApplicationId.size() > 0
+          && request.resource.data.approvedByUid
+              == request.auth.uid
+          && request.resource.data.approvedAt != null;
+
+        // =====================================================
+        // RULE-ID: AP-CUSTOMER-PROFILE-UPDATE
+        // ACTOR: Account owner
+        // RESOURCE: Existing Customer profile
+        // OPERATION: Update Customer profile
+        // PURPOSE: Preserves existing Customer profile management.
+        // =====================================================
+        allow update: if ownsExistingAccount(accountId)
+          && resource.data.role == 'customer'
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.accountId == resource.data.accountId
+          && request.resource.data.profileId == resource.data.profileId;
+
+        // =====================================================
+        // RULE-ID: AP-PARTNER-SELECTION-AUDIT
+        // ACTOR: Account owner
+        // RESOURCE: Active Partner Business Profile
+        // OPERATION: Record profile selection
+        // PURPOSE: Allows profile selection without permitting the
+        //          account owner to alter KYC, approval, or activation.
+        // =====================================================
+        allow update: if ownsExistingAccount(accountId)
+          && resource.data.role == 'partner'
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.accountId == resource.data.accountId
+          && request.resource.data.profileId == resource.data.profileId
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'lastSelectedAt',
+              'updatedAt'
+            ]);
+
+        // =====================================================
+        // RULE-ID: AP-PARTNER-ADMIN-UPDATE
+        // ACTOR: Configured Admin
+        // RESOURCE: Partner Business Profile
+        // OPERATION: Govern lifecycle information
+        // PURPOSE: Reserves Partner activation and governance changes
+        //          for configured Admin.
+        // =====================================================
+        allow update: if isConfiguredAdmin()
+          && resource.data.role == 'partner'
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.accountId == resource.data.accountId
+          && request.resource.data.profileId == resource.data.profileId;
+
         allow delete: if false;
 
         // Family members belong to the owning Customer profile.
@@ -294,6 +398,7 @@ service cloud.firestore {
         )
         && request.resource.data.partnerType in [
           'tailor',
+          'measurementPartner',
           'boutique',
           'designer',
           'fabricSupplier',
@@ -686,6 +791,142 @@ service cloud.firestore {
             'rejectionReason',
             'updatedAt'
           ]);
+
+      // =====================================================
+      // RULE-ID: PA-ADMIN-APPROVE-ACTIVATE
+      // ACTOR: Configured Admin
+      // RESOURCE: Partner Application
+      // OPERATION: Approve and link Partner Business Profile
+      // STATUS: underReview -> approved
+      // KYC: verified -> verified
+      // PURPOSE: Atomically approves the application and links the
+      //          independently activated Partner Business Profile.
+      // =====================================================
+      allow update: if isConfiguredAdmin()
+        && resource.data.status == 'underReview'
+        && request.resource.data.status == 'approved'
+        && resource.data.kycStatus == 'verified'
+        && request.resource.data.kycStatus == 'verified'
+        && request.resource.data.applicationId
+            == resource.data.applicationId
+        && request.resource.data.createdByUid
+            == resource.data.createdByUid
+        && request.resource.data.accountId
+            == resource.data.accountId
+        && request.resource.data.customerProfileId
+            == resource.data.customerProfileId
+        && request.resource.data.partnerType
+            == resource.data.partnerType
+        && (
+          resource.data.approvedPartnerProfileId == null
+          || resource.data.approvedPartnerProfileId
+              == request.resource.data.approvedPartnerProfileId
+        )
+        && request.resource.data.approvedPartnerProfileId is string
+        && request.resource.data.approvedPartnerProfileId.size() > 0
+        && request.resource.data.reviewedByUid == request.auth.uid
+        && request.resource.data.reviewedAt != null
+
+        // Validate the Partner Business Profile created by the same
+        // atomic transaction.
+        && getAfter(
+          /databases/$(database)/documents/accounts/$(
+            resource.data.accountId
+          )/profiles/$(
+            request.resource.data.approvedPartnerProfileId
+          )
+        ).data.role == 'partner'
+        && getAfter(
+          /databases/$(database)/documents/accounts/$(
+            resource.data.accountId
+          )/profiles/$(
+            request.resource.data.approvedPartnerProfileId
+          )
+        ).data.accountId == resource.data.accountId
+        && getAfter(
+          /databases/$(database)/documents/accounts/$(
+            resource.data.accountId
+          )/profiles/$(
+            request.resource.data.approvedPartnerProfileId
+          )
+        ).data.sourceApplicationId == applicationId
+        && getAfter(
+          /databases/$(database)/documents/accounts/$(
+            resource.data.accountId
+          )/profiles/$(
+            request.resource.data.approvedPartnerProfileId
+          )
+        ).data.partnerType == resource.data.partnerType
+        && getAfter(
+          /databases/$(database)/documents/accounts/$(
+            resource.data.accountId
+          )/profiles/$(
+            request.resource.data.approvedPartnerProfileId
+          )
+        ).data.kycStatus == 'verified'
+        && getAfter(
+          /databases/$(database)/documents/accounts/$(
+            resource.data.accountId
+          )/profiles/$(
+            request.resource.data.approvedPartnerProfileId
+          )
+        ).data.approvalStatus == 'approved'
+        && request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly([
+            'status',
+            'approvedPartnerProfileId',
+            'reviewedByUid',
+            'reviewedAt',
+            'updatedAt'
+          ]);
+          // =====================================================
+          // RULE-ID: PA-APPLICANT-BASIC-DETAILS-STANDALONE
+          // ACTOR: Applicant
+          // RESOURCE: Partner application
+          // OPERATION: Update common Basic Details
+          // STATUS: draft or changesRequested, with no transition
+          // PURPOSE: Provides an independent authorization path for
+          //          common Partner-application Basic Details.
+          // PROTECTS: Ownership, application identity, Customer profile,
+          //           Partner type, lifecycle status, and Partner linkage.
+          // =====================================================
+          allow update: if signedIn()
+            && resource.data.createdByUid == request.auth.uid
+            && request.resource.data.createdByUid
+                == resource.data.createdByUid
+            && request.resource.data.applicationId
+                == resource.data.applicationId
+            && request.resource.data.accountId
+                == resource.data.accountId
+            && request.resource.data.customerProfileId
+                == resource.data.customerProfileId
+            && request.resource.data.partnerType
+                == resource.data.partnerType
+            && request.resource.data.status
+                == resource.data.status
+            && resource.data.status in [
+              'draft',
+              'changesRequested'
+            ]
+            && request.resource.data.get(
+                  'approvedPartnerProfileId',
+                  null
+                )
+                == resource.data.get(
+                  'approvedPartnerProfileId',
+                  null
+                )
+            && request.resource.data.diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'businessName',
+                'contactName',
+                'mobileE164',
+                'email',
+                'updatedAt'
+              ]);
+              
       // =====================================================
       // RULE-ID: PA-APPLICANT-UPDATE-GATE
       // ACTOR: Applicant
@@ -709,21 +950,78 @@ service cloud.firestore {
           resource.data.accountId,
           resource.data.customerProfileId
         )
-        && request.resource.data.approvedPartnerProfileId
-            == resource.data.approvedPartnerProfileId
-        && (
+          // RULE-ID: PA-APPLICANT-PARTNER-LINKAGE-IMMUTABLE
+          // Keep approved Partner-profile linkage immutable while safely
+          // supporting legacy and pre-approval applications where the
+          // approvedPartnerProfileId field does not yet exist.
+          && request.resource.data.get(
+                'approvedPartnerProfileId',
+                null
+              )
+              == resource.data.get(
+                'approvedPartnerProfileId',
+                null
+              )
+          && (
           // =====================================================
-          // RULE-ID: PA-APPLICANT-CONTACT-DRAFT
+          // RULE-ID: PA-APPLICANT-OPERATIONAL-EDITABLE
+          // ACTOR: Applicant
+          // RESOURCE: Partner Application
+          // OPERATION: Save operational onboarding information
+          // STATUS: draft or changesRequested, with no transition
+          // DATA NODE: onboardingData
+          // PURPOSE: Phase-1 simplified Save Draft path.
+          //          Section completion is informational and does
+          //          not control authorization.
+          // PROTECTS: Ownership, application lifecycle, KYC,
+          //           Admin review, approval, and profile linkage.
+          // =====================================================
+          (
+            resource.data.status in [
+              'draft',
+              'changesRequested'
+            ]
+            && request.resource.data.status
+                == resource.data.status
+            && request.resource.data.onboardingData is map
+            && request.resource.data.onboardingUpdatedByUid
+                == request.auth.uid
+            && request.resource.data.onboardingUpdatedAt != null
+
+            // Only operational onboarding and its audit metadata
+            // may change through this simplified Phase-1 path.
+            && request.resource.data
+              .diff(resource.data)
+              .affectedKeys()
+              .hasOnly([
+                'onboardingData',
+                'onboardingSections',
+                'onboardingUpdatedByUid',
+                'onboardingUpdatedAt',
+                'updatedAt'
+              ])
+          )
+          ||
+          // =====================================================
+          // // =====================================================
+          // RULE-ID: PA-APPLICANT-CONTACT-EDITABLE
           // ACTOR: Applicant
           // RESOURCE: Partner application
           // OPERATION: Update applicant contact and business summary
-          // STATUS: draft -> draft
+          // STATUS: draft or changesRequested, with no transition
           // SECTION: Basic Details
-          // PURPOSE: Allows only businessName, contactName, mobileE164, email, and updatedAt while Draft.
+          // PURPOSE: Allows Basic Details corrections in every
+          //          applicant-editable lifecycle status.
+          // PROTECTS: Application status, ownership, Partner type,
+          //           KYC, Admin review, approval, and Partner linkage.
           // =====================================================
           (
-            resource.data.status == 'draft'
-            && request.resource.data.status == 'draft'
+            resource.data.status in [
+              'draft',
+              'changesRequested'
+            ]
+            && request.resource.data.status
+                == resource.data.status
             && request.resource.data.diff(resource.data)
               .affectedKeys()
               .hasOnly([
@@ -734,20 +1032,24 @@ service cloud.firestore {
                 'updatedAt'
               ])
           )
-                    ||
+          ||
           // =====================================================
-          // RULE-ID: PA-TAILOR-CAPABILITY-DRAFT
+          // RULE-ID: PA-TAILOR-CAPABILITY-EDITABLE
           // ACTOR: Applicant
-          // RESOURCE: Partner application
+          // RESOURCE: Partner Application
           // OPERATION: Save Tailor capabilities
-          // STATUS: draft -> draft
+          // STATUS: draft or changesRequested, with no status transition
           // SECTION: Services and Specialization
           // DATA NODE: onboardingData.extensions.tailor.capabilities
-          // PURPOSE: Allows governed Services and Specialization data while the application remains Draft.
+          // PURPOSE: Uses one governed validation path for every applicant-editable status.
           // =====================================================
           (
-            resource.data.status == 'draft'
-            && request.resource.data.status == 'draft'
+            resource.data.status in [
+              'draft',
+              'changesRequested'
+            ]
+            && request.resource.data.status
+                == resource.data.status
             && request.resource.data.partnerType == 'tailor'
             && request.resource.data.onboardingData is map
             && request.resource.data.onboardingSections is map
@@ -902,164 +1204,23 @@ service cloud.firestore {
           )
           ||
           // =====================================================
-          // RULE-ID: PA-APPLICANT-CONTACT-CHANGES-REQUESTED
-          // ACTOR: Applicant
-          // RESOURCE: Partner application
-          // OPERATION: Correct applicant contact and business summary
-          // STATUS: changesRequested -> changesRequested
-          // SECTION: Basic Details
-          // PURPOSE: Allows only basic applicant fields after an Admin change request.
-          // =====================================================
-          (
-          resource.data.status == 'changesRequested'
-          && request.resource.data.status == 'changesRequested'
-            && request.resource.data.diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'businessName',
-                'contactName',
-                'mobileE164',
-                'email',
-                'updatedAt'
-              ])
-          )
-                    ||
-          // =====================================================
-          // RULE-ID: PA-TAILOR-WORKSHOP-DRAFT
-          // ACTOR: Applicant
-          // RESOURCE: Partner application
-          // OPERATION: Save Tailor Workshop Details
-          // STATUS: draft -> draft
-          // SECTION: Workshop Details
-          // DATA NODE: onboardingData.extensions.tailor.workshopDetails
-          // PURPOSE: Allows governed Workshop Details data while the application remains Draft.
-          // =====================================================
-          (
-            resource.data.status == 'draft'
-            && request.resource.data.status == 'draft'
-            && request.resource.data.partnerType == 'tailor'
-            && request.resource.data.onboardingData is map
-            && request.resource.data.onboardingSections is map
-            && request.resource.data.onboardingUpdatedByUid
-                == request.auth.uid
-            && request.resource.data.onboardingUpdatedAt != null
-            && request.resource.data.onboardingSections.workshopDetails
-                in ['inProgress', 'completed']
-
-            // Only the top-level extensions map may change.
-            && request.resource.data.onboardingData
-              .diff(
-                resource.data.get('onboardingData', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'extensions'
-              ])
-
-            // Inside extensions, only the Tailor extension may change.
-            && request.resource.data.onboardingData.extensions is map
-            && request.resource.data.onboardingData.extensions
-              .diff(
-                resource.data
-                  .get('onboardingData', {})
-                  .get('extensions', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'tailor'
-              ])
-
-            // Inside Tailor, only Workshop Details may change.
-            && request.resource.data
-              .onboardingData
-              .extensions
-              .tailor is map
-            && request.resource.data
-              .onboardingData
-              .extensions
-              .tailor
-              .diff(
-                resource.data
-                  .get('onboardingData', {})
-                  .get('extensions', {})
-                  .get('tailor', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'workshopDetails'
-              ])
-
-            // Workshop Details must contain only approved fields.
-            && request.resource.data
-              .onboardingData
-              .extensions
-              .tailor
-              .workshopDetails is map
-            && request.resource.data
-              .onboardingData
-              .extensions
-              .tailor
-              .workshopDetails
-              .keys()
-              .hasOnly([
-                'workshopTypeCode',
-                'addressLine1',
-                'addressLine2',
-                'locality',
-                'city',
-                'state',
-                'pincode',
-                'placeId',
-                'latitude',
-                'longitude',
-                'serviceAreaPincodes',
-                'operatingDays',
-                'openingTime',
-                'closingTime',
-                'teamSize',
-                'normalDailyCapacity',
-                'peakDailyCapacity',
-                'machineCodes',
-                'pickupAvailable',
-                'deliveryAvailable',
-                'homeVisitAvailable',
-                'additionalNotes'
-              ])
-
-            // No other onboarding-section status may change.
-            && request.resource.data.onboardingSections
-              .diff(
-                resource.data.get('onboardingSections', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'workshopDetails'
-              ])
-
-            && request.resource.data.diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'onboardingData',
-                'onboardingSections',
-                'onboardingUpdatedByUid',
-                'onboardingUpdatedAt',
-                'updatedAt'
-              ])
-          )
-          ||
-          // =====================================================
-          // RULE-ID: PA-TAILOR-WORKSHOP-CHANGES-REQUESTED
+          // RULE-ID: PA-TAILOR-WORKSHOP-EDITABLE
           // ACTOR: Applicant
           // RESOURCE: Partner Application
-          // STATUS: changesRequested -> changesRequested
-          // SECTION: Workshop Details
+          // OPERATION: Save Tailor Workshop Details
+          // STATUS: draft or changesRequested, with no status transition
+          // SECTION: Business and Operations
           // DATA NODE: onboardingData.extensions.tailor.workshopDetails
           // SECTION NODE: onboardingSections.workshopDetails
-          // PURPOSE: Applicant corrects Workshop Details after Admin change request.
+          // PURPOSE: Uses one governed Workshop validation path for every applicant-editable status.
           // =====================================================
           (
-            resource.data.status == 'changesRequested'
-            && request.resource.data.status == 'changesRequested'
+            resource.data.status in [
+              'draft',
+              'changesRequested'
+            ]
+            && request.resource.data.status
+                == resource.data.status
             && request.resource.data.partnerType == 'tailor'
             && request.resource.data.onboardingData is map
             && request.resource.data.onboardingSections is map
@@ -1160,171 +1321,6 @@ service cloud.firestore {
               ])
 
             && request.resource.data.diff(resource.data)
-              .affectedKeys()
-              .hasOnly([
-                'onboardingData',
-                'onboardingSections',
-                'onboardingUpdatedByUid',
-                'onboardingUpdatedAt',
-                'updatedAt'
-              ])
-          )
-          ||
-          // =====================================================
-          // RULE-ID: PA-TAILOR-CAPABILITY-CHANGES-REQUESTED
-          // ACTOR: Applicant
-          // RESOURCE: Partner Application
-          // STATUS: changesRequested -> changesRequested
-          // SECTION: Services and Specialization
-          // DATA NODE: onboardingData.extensions.tailor.capabilities
-          // SECTION NODE: onboardingSections.servicesAndSpecialization
-          // PURPOSE: Applicant corrects capabilities after Admin change request.
-          // =====================================================
-          (
-            resource.data.status == 'changesRequested'
-            && request.resource.data.status == 'changesRequested'
-            && request.resource.data.partnerType == 'tailor'
-            && request.resource.data.onboardingData is map
-            && request.resource.data.onboardingSections is map
-            && request.resource.data.onboardingUpdatedByUid
-                == request.auth.uid
-            && request.resource.data.onboardingUpdatedAt != null
-            && request.resource.data
-                .onboardingSections
-                .servicesAndSpecialization
-                in ['inProgress', 'completed']
-
-            // Only the top-level extensions map may change.
-            && request.resource.data.onboardingData
-              .diff(
-                resource.data.get('onboardingData', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'extensions'
-              ])
-
-            // Inside extensions, only the Tailor extension may change.
-            && request.resource.data
-                .onboardingData
-                .extensions is map
-            && request.resource.data
-                .onboardingData
-                .extensions
-              .diff(
-                resource.data
-                  .get('onboardingData', {})
-                  .get('extensions', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'tailor'
-              ])
-
-            // Inside Tailor, only capabilities may change.
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor is map
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-              .diff(
-                resource.data
-                  .get('onboardingData', {})
-                  .get('extensions', {})
-                  .get('tailor', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'capabilities'
-              ])
-
-            // Capabilities must contain only approved applicant fields.
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities is map
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities
-                .keys()
-                .hasOnly([
-                  'declaredCapabilityCodes',
-                  'additionalCapabilityDescriptions'
-                ])
-
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities
-                .declaredCapabilityCodes is list
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities
-                .additionalCapabilityDescriptions is list
-
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities
-                .declaredCapabilityCodes
-                .size() <= 50
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities
-                .additionalCapabilityDescriptions
-                .size() <= 10
-
-            && request.resource.data
-                .onboardingData
-                .extensions
-                .tailor
-                .capabilities
-                .declaredCapabilityCodes
-                .hasOnly([
-                  'tailor.blouseStitching',
-                  'tailor.kurtiSuit',
-                  'tailor.dressStitching',
-                  'tailor.lehenga',
-                  'tailor.bridalWear',
-                  'tailor.designerWear',
-                  'tailor.designerReplication',
-                  'tailor.girlsWear',
-                  'tailor.alteration',
-                  'tailor.sareePicoFall',
-                  'tailor.embroidery',
-                  'tailor.aari',
-                  'tailor.zardozi',
-                  'tailor.schoolUniform',
-                  'tailor.weddingOrders',
-                  'tailor.urgentOrders'
-                ])
-
-            // Only the capability-section status may change.
-            && request.resource.data.onboardingSections
-              .diff(
-                resource.data.get('onboardingSections', {})
-              )
-              .affectedKeys()
-              .hasOnly([
-                'servicesAndSpecialization'
-              ])
-
-            // No unrelated top-level application field may change.
-            // Flutter diagnostics remain enabled in PartnerService.
-            && request.resource.data
-              .diff(resource.data)
               .affectedKeys()
               .hasOnly([
                 'onboardingData',

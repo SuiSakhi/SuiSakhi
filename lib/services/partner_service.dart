@@ -112,6 +112,157 @@ class PartnerService {
     return application;
   }
 
+  /// Creates a new Draft application using applicant-entered information
+  /// from a previously rejected application.
+  ///
+  /// The rejected application remains immutable. Review, rejection, KYC,
+  /// approval, and Partner-profile linkage fields are not carried forward.
+  static Future<PartnerApplication> reapplyFromRejected({
+    required String rejectedApplicationId,
+    required String accountId,
+    required String customerProfileId,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError('A signed-in user is required to apply again.');
+    }
+
+    final normalizedRejectedApplicationId = rejectedApplicationId.trim();
+    final normalizedAccountId = accountId.trim();
+    final normalizedCustomerProfileId = customerProfileId.trim();
+
+    if (normalizedRejectedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        rejectedApplicationId,
+        'rejectedApplicationId',
+        'Rejected application ID is required.',
+      );
+    }
+
+    if (normalizedAccountId.isEmpty) {
+      throw ArgumentError.value(
+        accountId,
+        'accountId',
+        'Account ID is required.',
+      );
+    }
+
+    if (normalizedCustomerProfileId.isEmpty) {
+      throw ArgumentError.value(
+        customerProfileId,
+        'customerProfileId',
+        'Customer profile ID is required.',
+      );
+    }
+
+    final rejectedDocument = _applicationsCollection.doc(
+      normalizedRejectedApplicationId,
+    );
+
+    final rejectedSnapshot = await rejectedDocument.get();
+
+    if (!rejectedSnapshot.exists) {
+      throw StateError('The rejected Partner application could not be found.');
+    }
+
+    final rejectedApplication = PartnerApplication.fromDoc(rejectedSnapshot);
+
+    _validateCustomerOwnership(
+      application: rejectedApplication,
+      uid: user.uid,
+      accountId: normalizedAccountId,
+      customerProfileId: normalizedCustomerProfileId,
+    );
+
+    if (rejectedApplication.status != PartnerApplicationStatus.rejected) {
+      throw StateError(
+        'Apply Again is available only for a rejected application.',
+      );
+    }
+
+    // Prevent a second active application for the same Customer profile
+    // and Partner category.
+    final existingSnapshot = await _applicationsCollection
+        .where('createdByUid', isEqualTo: user.uid)
+        .where('accountId', isEqualTo: normalizedAccountId)
+        .where('customerProfileId', isEqualTo: normalizedCustomerProfileId)
+        .where('partnerType', isEqualTo: rejectedApplication.partnerType.name)
+        .get();
+
+    final otherApplications = existingSnapshot.docs
+        .where((document) => document.id != normalizedRejectedApplicationId)
+        .map(PartnerApplication.fromDoc)
+        .toList();
+
+    // APPLY-AGAIN-IDEMPOTENCY:
+    // If Apply Again already created a Draft during an earlier attempt,
+    // return that Draft instead of creating another application.
+    final existingDrafts = otherApplications
+        .where(
+          (application) => application.status == PartnerApplicationStatus.draft,
+        )
+        .toList();
+
+    if (existingDrafts.isNotEmpty) {
+      existingDrafts.sort(
+        (left, right) => right.updatedAt.compareTo(left.updatedAt),
+      );
+
+      return existingDrafts.first;
+    }
+
+    // A currently progressing application must complete its existing
+    // review flow before another application may be created.
+    final hasApplicationInProgress = otherApplications.any(
+      (application) =>
+          application.status == PartnerApplicationStatus.submitted ||
+          application.status == PartnerApplicationStatus.underReview ||
+          application.status == PartnerApplicationStatus.changesRequested,
+    );
+
+    if (hasApplicationInProgress) {
+      throw StateError(
+        'Another application is currently under review or '
+        'awaiting corrections for this Partner category.',
+      );
+    }
+
+    final newDocument = _applicationsCollection.doc();
+    final now = DateTime.now();
+
+    final newApplication = PartnerApplication(
+      id: newDocument.id,
+      accountId: normalizedAccountId,
+      customerProfileId: normalizedCustomerProfileId,
+      createdByUid: user.uid,
+      partnerType: rejectedApplication.partnerType,
+      status: PartnerApplicationStatus.draft,
+
+      // Carry forward only applicant-entered information.
+      businessName: rejectedApplication.businessName,
+      contactName: rejectedApplication.contactName,
+      mobileE164: rejectedApplication.mobileE164,
+      email: rejectedApplication.email,
+      onboardingData: Map<String, dynamic>.from(
+        rejectedApplication.onboardingData,
+      ),
+      onboardingSections:
+          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
+            rejectedApplication.onboardingSections,
+          ),
+
+      // Start a completely new application lifecycle.
+      createdAt: now,
+      updatedAt: now,
+      kycStatus: PartnerKycStatus.notStarted,
+    );
+
+    await newDocument.set(newApplication.toMap());
+
+    return newApplication;
+  }
+
   /// Streams every application created by the signed-in account user.
   static Stream<List<PartnerApplication>> watchMyApplications({
     required String accountId,
@@ -148,7 +299,7 @@ class PartnerService {
         });
   }
 
-  /// Updates editable fields of an existing draft or rejected application.
+  /// Updates editable fields of an existing draft or changes-requested application.
   static Future<void> updateDraft({
     required String applicationId,
     required String accountId,
@@ -186,13 +337,37 @@ class PartnerService {
       throw StateError('This partner application can no longer be edited.');
     }
 
-    await document.set({
+    final payload = <String, dynamic>{
       'businessName': _normalizedOptionalText(businessName),
       'contactName': _normalizedOptionalText(contactName),
       'mobileE164': _normalizedOptionalText(mobileE164),
       'email': _normalizedOptionalText(email),
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+    };
+
+    // TEMP-DIAG-BASIC-DETAILS-001:
+    // Remove after the Basic Details permission regression is resolved.
+    final existingData = snapshot.data() ?? <String, dynamic>{};
+
+    debugPrint('[BASIC_DETAILS_PAYLOAD_KEYS] ${payload.keys.toList()}');
+
+    debugPrint(
+      '[BASIC_DETAILS_EXISTING] '
+      'businessName=${existingData['businessName']}, '
+      'contactName=${existingData['contactName']}, '
+      'mobileE164=${existingData['mobileE164']}, '
+      'email=${existingData['email']}',
+    );
+
+    debugPrint(
+      '[BASIC_DETAILS_REQUESTED] '
+      'businessName=${payload['businessName']}, '
+      'contactName=${payload['contactName']}, '
+      'mobileE164=${payload['mobileE164']}, '
+      'email=${payload['email']}',
+    );
+
+    await document.set(payload, SetOptions(merge: true));
   }
 
   /// Saves structured Tailor Workshop Details in the existing application.
