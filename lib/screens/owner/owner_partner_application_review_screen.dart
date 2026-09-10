@@ -3,8 +3,11 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../models/designer_partner_details.dart';
+import '../../models/measurement_partner_details.dart';
 import '../../models/partner_application.dart';
 import '../../services/partner_service.dart';
+import '../../services/partner_profile_activation_service.dart';
 
 class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
   const OwnerPartnerApplicationReviewScreen({
@@ -65,14 +68,34 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
       children: [
         _buildStatusCard(application),
         const SizedBox(height: 18),
+
         _buildApplicantDetails(application),
         const SizedBox(height: 18),
+
+        // ================================================================
+        // CATEGORY-AWARE PARTNER OPERATIONS REVIEW
+        // ================================================================
+        //
+        // Measurement Partner uses the Measurement Partner extension.
+        // Tailor continues using the legacy Workshop Details adapter.
+        // ================================================================
         _buildBusinessOperations(application),
         const SizedBox(height: 18),
-        _buildOnboardingProgress(context, application),
-        const SizedBox(height: 18),
+
+        // ================================================================
+        // LEGACY TAILOR ONBOARDING PROGRESS
+        // ================================================================
+        //
+        // ARCH-PP-004:
+        // Section progress does not control submission, KYC, approval,
+        // activation, or authorization.
+        //
+        // Hide the legacy progress workflow for Measurement Partner.
+        // Keep it temporarily for Tailor until consolidated cleanup.
+        // ================================================================
         _buildKycCard(context, application),
         const SizedBox(height: 18),
+
         _buildReviewActions(context, application),
         const SizedBox(height: 28),
       ],
@@ -96,9 +119,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
             radius: 26,
             backgroundColor: statusColor.withValues(alpha: 0.14),
             child: Icon(
-              application.partnerType == PartnerType.tailor
-                  ? Icons.content_cut_rounded
-                  : Icons.handshake_outlined,
+              _partnerTypeIcon(application.partnerType),
               color: statusColor,
             ),
           ),
@@ -149,7 +170,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
           value: application.contactName ?? 'Not provided',
         ),
         _ReviewDetail(
-          label: 'Business or workshop',
+          label: 'Business or service',
           value: application.businessName ?? 'Not provided',
         ),
         _ReviewDetail(
@@ -188,7 +209,213 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
+  // ==========================================================================
+  // MEASUREMENT PARTNER REVIEW: OPERATIONAL DETAILS
+  // ==========================================================================
+  //
+  // Reads only:
+  //
+  // onboardingData.extensions.measurementPartner
+  //
+  // This method does not use Tailor Workshop Details and does not modify any
+  // application data.
+  // ==========================================================================
+  Widget _buildMeasurementPartnerOperations(PartnerApplication application) {
+    final details = MeasurementPartnerDetails.fromOnboardingData(
+      application.onboardingData,
+    );
+
+    final schedule = details.operatingSchedule;
+    final address = details.serviceAddress;
+
+    return _ReviewSection(
+      title: 'Measurement Services & Operations',
+      icon: Icons.straighten_rounded,
+      children: [
+        _ReviewDetail(
+          label: 'Service address',
+          value: _displayValue(address.formattedAddress),
+        ),
+
+        _ReviewDetail(
+          label: 'Service-area pincodes',
+          value: _displayList(details.normalizedServiceAreaPincodes),
+        ),
+
+        _ReviewDetail(
+          label: 'Maximum travel distance',
+          value: details.maximumTravelDistanceKm == null
+              ? 'Not provided'
+              : '${details.maximumTravelDistanceKm} km',
+        ),
+
+        _ReviewDetail(
+          label: 'Available days',
+          value: schedule.operatingDaysDisplay,
+        ),
+
+        _ReviewDetail(
+          label: 'Available from',
+          value: _displayValue(schedule.openingTime),
+        ),
+
+        _ReviewDetail(
+          label: 'Available until',
+          value: _displayValue(schedule.closingTime),
+        ),
+
+        _ReviewDetail(
+          label: 'Measurement services',
+          value: _displayList(
+            details.capabilitySelection.normalizedCapabilityCodes
+                .map(_measurementCapabilityLabel)
+                .toList(growable: false),
+          ),
+        ),
+
+        if (details
+            .capabilitySelection
+            .normalizedAdditionalDescriptions
+            .isNotEmpty)
+          _ReviewDetail(
+            label: 'Other services',
+            value: _displayList(
+              details.capabilitySelection.normalizedAdditionalDescriptions,
+            ),
+          ),
+
+        _ReviewDetail(
+          label: 'Measurements per day',
+          value: _displayNonNegativeNumber(details.measurementsPerDay),
+        ),
+
+        _ReviewDetail(
+          label: 'Home visits per day',
+          value: _displayNonNegativeNumber(details.homeVisitsPerDay),
+        ),
+
+        _ReviewDetail(
+          label: 'Video sessions per day',
+          value: _displayNonNegativeNumber(details.videoSessionsPerDay),
+        ),
+
+        _ReviewDetail(
+          label: 'Service notes',
+          value: _displayValue(details.serviceNotes),
+        ),
+
+        const SizedBox(height: 8),
+
+        Text(
+          'Measurement information collected by this Partner remains '
+          'subject to final confirmation through the assigned Tailor '
+          'workflow before production begins.',
+          style: AppTextStyles.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ==========================================================================
+  // DESIGNER PARTNER REVIEW: PROFESSIONAL & DESIGN OPERATIONS
+  // ==========================================================================
+  //
+  // Reads only:
+  //
+  // onboardingData.extensions.designer
+  //
+  // Designer-specific onboarding information is displayed here for Admin
+  // review. Common application lifecycle, KYC, approval, and activation remain
+  // handled by the existing Partner foundation.
+  // ==========================================================================
+  Widget _buildDesignerPartnerOperations(PartnerApplication application) {
+    final details = DesignerPartnerDetails.fromOnboardingData(
+      application.onboardingData,
+    );
+
+    final capabilities = details.capabilitySelection.normalizedCapabilityCodes;
+
+    return _ReviewSection(
+      title: 'Designer Services & Professional Details',
+      icon: Icons.design_services_outlined,
+      children: [
+        _ReviewDetail(
+          label: 'Professional type',
+          value: _displayValue(details.professionalType),
+        ),
+        _ReviewDetail(
+          label: 'Experience',
+          value: details.experienceYears == null
+              ? 'Not provided'
+              : '${details.experienceYears} years',
+        ),
+        _ReviewDetail(
+          label: 'Specialization',
+          value: _displayValue(details.specialization),
+        ),
+        _ReviewDetail(
+          label: 'Designer capabilities',
+          value: _displayList(capabilities),
+        ),
+        _ReviewDetail(
+          label: 'Accepts custom design',
+          value: details.acceptsCustomDesign ? 'Yes' : 'No',
+        ),
+        _ReviewDetail(
+          label: 'Accepts bulk orders',
+          value: details.acceptsBulkOrders ? 'Yes' : 'No',
+        ),
+        _ReviewDetail(
+          label: 'Accepts wedding orders',
+          value: details.acceptsWeddingOrders ? 'Yes' : 'No',
+        ),
+        _ReviewDetail(
+          label: 'Consultation available',
+          value: details.consultationAvailable ? 'Yes' : 'No',
+        ),
+        _ReviewDetail(
+          label: 'Portfolio summary',
+          value: _displayValue(details.portfolioSummary),
+        ),
+        _ReviewDetail(
+          label: 'Original work declaration',
+          value: details.originalWorkDeclaration
+              ? 'Confirmed'
+              : 'Not confirmed',
+        ),
+        _ReviewDetail(
+          label: 'Additional notes',
+          value: _displayValue(details.additionalNotes),
+        ),
+      ],
+    );
+  }
+
   Widget _buildBusinessOperations(PartnerApplication application) {
+    // =========================================================================
+    // MEASUREMENT PARTNER REVIEW
+    // =========================================================================
+    if (application.partnerType == PartnerType.measurementPartner) {
+      return _buildMeasurementPartnerOperations(application);
+    }
+
+    // =========================================================================
+    // DESIGNER PARTNER REVIEW
+    // =========================================================================
+    if (application.partnerType == PartnerType.designer) {
+      return _buildDesignerPartnerOperations(application);
+    }
+
+    // =========================================================================
+    // TAILOR-SPECIFIC REVIEW
+    // =========================================================================
+    //
+    // Retain the existing Workshop Details renderer until the consolidated
+    // Partner review foundation is completed.
+    // =========================================================================
     final details = application.workshopDetails;
 
     if (details == null) {
@@ -310,6 +537,15 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     return value.toString();
   }
 
+  // Measurement capacity may legitimately be zero.
+  String _displayNonNegativeNumber(int? value) {
+    if (value == null || value < 0) {
+      return 'Not provided';
+    }
+
+    return value.toString();
+  }
+
   String _displayList(List<String> values) {
     final normalizedValues = values
         .map((value) => value.trim())
@@ -321,6 +557,37 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
 
     return normalizedValues.join(', ');
+  }
+
+  // ==========================================================================
+  // MEASUREMENT PARTNER REVIEW: CAPABILITY LABELS
+  // ==========================================================================
+  String _measurementCapabilityLabel(String code) {
+    switch (code.trim()) {
+      case 'measurement.measurementOnly':
+        return 'Measurement Only';
+
+      case 'measurement.homeVisit':
+        return 'Home Measurement Visit';
+
+      case 'measurement.videoAssisted':
+        return 'Video-Assisted Measurement';
+
+      case 'measurement.referenceGarment':
+        return 'Reference Garment Measurement';
+
+      case 'measurement.referenceGarmentPickup':
+        return 'Reference Garment Pickup';
+
+      case 'measurement.measurementAndPickup':
+        return 'Measurement and Pickup';
+
+      case 'measurement.pickupAndDrop':
+        return 'Pickup and Drop';
+
+      default:
+        return code.trim().isEmpty ? 'Not provided' : code.trim();
+    }
   }
 
   String _yesNoLabel(bool value) {
@@ -471,6 +738,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
   }
 
+  @pragma('vm:entry-point')
   Widget _buildOnboardingProgress(
     BuildContext context,
     PartnerApplication application,
@@ -592,7 +860,6 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
           label: 'KYC status',
           value: _kycStatusLabel(application.kycStatus),
         ),
-        const _ReviewDetail(label: 'Documents', value: 'Not uploaded'),
         _ReviewDetail(
           label: 'Verified by',
           value: application.kycVerifiedByUid?.trim().isNotEmpty == true
@@ -1205,6 +1472,39 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
   }
 
+  Future<void> _approveApplication(
+    BuildContext context,
+    PartnerApplication application,
+  ) async {
+    try {
+      await PartnerProfileActivationService.approveAndActivate(
+        applicationId: application.id,
+      );
+
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Partner application approved and profile activated'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Unable to approve application.\n$error'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
+
   Widget _buildReviewActions(
     BuildContext context,
     PartnerApplication application,
@@ -1274,7 +1574,13 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         SizedBox(
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: null,
+            onPressed:
+                application.status == PartnerApplicationStatus.underReview &&
+                    application.kycStatus == PartnerKycStatus.verified
+                ? () {
+                    _approveApplication(context, application);
+                  }
+                : null,
             icon: const Icon(Icons.verified_outlined),
             label: const Text('Approve Application'),
           ),
@@ -1325,6 +1631,52 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     final minute = value.minute.toString().padLeft(2, '0');
 
     return '$day/$month/$year $hour:$minute';
+  }
+
+  // ==========================================================================
+  // COMMON PARTNER FOUNDATION: CATEGORY ICON
+  // ==========================================================================
+  static IconData _partnerTypeIcon(PartnerType type) {
+    switch (type) {
+      case PartnerType.tailor:
+        return Icons.content_cut_rounded;
+
+      case PartnerType.measurementPartner:
+        return Icons.straighten_rounded;
+
+      case PartnerType.boutique:
+        return Icons.storefront_outlined;
+
+      case PartnerType.designer:
+        return Icons.design_services_outlined;
+
+      case PartnerType.fabricSupplier:
+        return Icons.local_mall_outlined;
+
+      case PartnerType.printing:
+        return Icons.print_outlined;
+
+      case PartnerType.embroidery:
+        return Icons.auto_awesome_outlined;
+
+      case PartnerType.rental:
+        return Icons.checkroom_outlined;
+
+      case PartnerType.accessories:
+        return Icons.watch_outlined;
+
+      case PartnerType.brand:
+        return Icons.business_outlined;
+
+      case PartnerType.deliveryPartner:
+        return Icons.delivery_dining_outlined;
+
+      case PartnerType.doorstepServices:
+        return Icons.home_repair_service_outlined;
+
+      case PartnerType.other:
+        return Icons.handshake_outlined;
+    }
   }
 
   static String _partnerTypeLabel(PartnerType type) {

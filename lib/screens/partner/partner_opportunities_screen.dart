@@ -26,8 +26,8 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
           Text('Choose a Partner Type', style: AppTextStyles.headlineMedium),
           const SizedBox(height: 6),
           Text(
-            'Start with the service that best matches your business. '
-            'Additional capabilities can be reviewed later.',
+            'Choose the primary category that best matches your business. '
+            'One Partner profile may provide multiple governed services.',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textSecondary,
               height: 1.4,
@@ -44,6 +44,21 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
             statusLabel: 'Applications opening first',
             onTap: () => context.push('/partner/apply/tailor'),
           ),
+          // MEASUREMENT PARTNER EXTENSION
+          //
+          // Measurement Partner is an independent primary category.
+          // Tailors and other eligible Partner categories may also offer
+          // measurement services through governed service capabilities.
+          _PartnerTypeCard(
+            icon: Icons.straighten_rounded,
+            title: 'Measurement Partner',
+            subtitle:
+                'Measurement-only, home visits, video assistance, '
+                'reference garments and measurement with pickup',
+            color: const Color(0xFF00897B),
+            statusLabel: 'Applications open',
+            onTap: () => context.push('/partner/apply/measurement'),
+          ),
           _PartnerTypeCard(
             icon: Icons.storefront_outlined,
             title: 'Boutique',
@@ -59,8 +74,8 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
             subtitle:
                 'Free, paid and premium designs, templates and consultations',
             color: const Color(0xFF9C27B0),
-            statusLabel: 'Planned',
-            onTap: null,
+            statusLabel: 'Applications open',
+            onTap: () => context.push('/partner/apply/designer'),
           ),
           _PartnerTypeCard(
             icon: Icons.local_mall_outlined,
@@ -236,54 +251,60 @@ class _PartnerTypeCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = onTap != null;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
         color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: enabled ? color.withValues(alpha: 0.35) : AppColors.divider,
-        ),
-      ),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        leading: CircleAvatar(
-          backgroundColor: color.withValues(alpha: 0.12),
-          child: Icon(icon, color: color),
-        ),
-        title: Text(
-          title,
-          style: AppTextStyles.titleMedium.copyWith(
-            fontWeight: FontWeight.w700,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: BorderSide(
+            color: enabled ? color.withValues(alpha: 0.35) : AppColors.divider,
           ),
         ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                subtitle,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                statusLabel,
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: enabled ? color : AppColors.textHint,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+        clipBehavior: Clip.antiAlias,
+        child: ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 8,
           ),
+          leading: CircleAvatar(
+            backgroundColor: color.withValues(alpha: 0.12),
+            child: Icon(icon, color: color),
+          ),
+          title: Text(
+            title,
+            style: AppTextStyles.titleMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  subtitle,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  statusLabel,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: enabled ? color : AppColors.textHint,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          trailing: Icon(
+            enabled ? Icons.chevron_right_rounded : Icons.schedule_outlined,
+            color: enabled ? color : AppColors.textHint,
+          ),
+          onTap: onTap,
         ),
-        trailing: Icon(
-          enabled ? Icons.chevron_right_rounded : Icons.schedule_outlined,
-          color: enabled ? color : AppColors.textHint,
-        ),
-        onTap: onTap,
       ),
     );
   }

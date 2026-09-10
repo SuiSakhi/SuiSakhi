@@ -37,7 +37,10 @@ import 'screens/tailor/tailor_dashboard_screen.dart';
 import 'screens/profile/tailor_account_center_screen.dart' as tailor_account;
 import 'screens/partner/partner_opportunities_screen.dart';
 import 'screens/partner/tailor_application_screen.dart';
+import 'screens/partner/measurement_partner_application_screen.dart';
+import 'screens/partner/designer_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
+import 'screens/partner/partner_profile_landing_screen.dart';
 
 class StitchSmartApp extends StatelessWidget {
   const StitchSmartApp({super.key});
@@ -108,12 +111,24 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerAccountCenterScreen(),
     ),
     GoRoute(
+      path: '/partner/landing',
+      builder: (ctx, state) => const PartnerProfileLandingScreen(),
+    ),
+    GoRoute(
       path: '/partner/opportunities',
       builder: (ctx, state) => const PartnerOpportunitiesScreen(),
     ),
     GoRoute(
       path: '/partner/apply/tailor',
       builder: (ctx, state) => const TailorApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/measurement',
+      builder: (ctx, state) => const MeasurementPartnerApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/designer',
+      builder: (ctx, state) => const DesignerApplicationScreen(),
     ),
     GoRoute(
       path: '/customer-profile',

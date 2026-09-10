@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 
 import '../models/partner_application.dart';
 import '../models/partner_capability_selection.dart';
+import '../models/designer_partner_details.dart';
 
 class PartnerService {
   PartnerService._();
@@ -344,29 +344,6 @@ class PartnerService {
       'email': _normalizedOptionalText(email),
       'updatedAt': FieldValue.serverTimestamp(),
     };
-
-    // TEMP-DIAG-BASIC-DETAILS-001:
-    // Remove after the Basic Details permission regression is resolved.
-    final existingData = snapshot.data() ?? <String, dynamic>{};
-
-    debugPrint('[BASIC_DETAILS_PAYLOAD_KEYS] ${payload.keys.toList()}');
-
-    debugPrint(
-      '[BASIC_DETAILS_EXISTING] '
-      'businessName=${existingData['businessName']}, '
-      'contactName=${existingData['contactName']}, '
-      'mobileE164=${existingData['mobileE164']}, '
-      'email=${existingData['email']}',
-    );
-
-    debugPrint(
-      '[BASIC_DETAILS_REQUESTED] '
-      'businessName=${payload['businessName']}, '
-      'contactName=${payload['contactName']}, '
-      'mobileE164=${payload['mobileE164']}, '
-      'email=${payload['email']}',
-    );
-
     await document.set(payload, SetOptions(merge: true));
   }
 
@@ -414,21 +391,6 @@ class PartnerService {
       }
 
       final application = PartnerApplication.fromDoc(snapshot);
-
-      debugPrint(
-        '[WORKSHOP_STATUS] '
-        '${application.status.name}',
-      );
-
-      debugPrint(
-        '[WORKSHOP_BEFORE_DATA] '
-        '${application.onboardingData}',
-      );
-
-      debugPrint(
-        '[WORKSHOP_BEFORE_SECTIONS] '
-        '${application.onboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
-      );
       _validateCustomerOwnership(
         application: application,
         uid: user.uid,
@@ -459,11 +421,6 @@ class PartnerService {
         workshopDetails,
       );
 
-      debugPrint(
-        '[WORKSHOP_DATA] '
-        '$updatedOnboardingData',
-      );
-
       final updatedOnboardingSections =
           Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
             application.onboardingSections,
@@ -471,11 +428,6 @@ class PartnerService {
 
       updatedOnboardingSections[PartnerOnboardingSection.workshopDetails] =
           targetStatus;
-
-      debugPrint(
-        '[WORKSHOP_SECTIONS] '
-        '${updatedOnboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
-      );
 
       final payload = <String, dynamic>{
         'onboardingData': updatedOnboardingData,
@@ -487,17 +439,6 @@ class PartnerService {
         'onboardingUpdatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       };
-
-      debugPrint(
-        '[WORKSHOP_PAYLOAD_KEYS] '
-        '${payload.keys.toList()..sort()}',
-      );
-
-      debugPrint(
-        '[WORKSHOP_PAYLOAD] '
-        '$payload',
-      );
-
       transaction.set(document, payload, SetOptions(merge: true));
     });
   }
@@ -547,51 +488,7 @@ class PartnerService {
         throw StateError('Partner application could not be found.');
       }
 
-      final rawData = snapshot.data() ?? <String, dynamic>{};
-
-      debugPrint(
-        '[CAPABILITY_RAW_TOP_LEVEL_KEYS] '
-        '${rawData.keys.toList()..sort()}',
-      );
-
-      debugPrint(
-        '[CAPABILITY_RAW_ONBOARDING_DATA] '
-        '${rawData['onboardingData']}',
-      );
-
-      debugPrint(
-        '[CAPABILITY_RAW_ONBOARDING_SECTIONS] '
-        '${rawData['onboardingSections']}',
-      );
-
-      debugPrint(
-        '[CAPABILITY_RAW_APPROVED_PROFILE] '
-        'containsKey='
-        '${rawData.containsKey('approvedPartnerProfileId')}, '
-        'value=${rawData['approvedPartnerProfileId']}',
-      );
-
       final application = PartnerApplication.fromDoc(snapshot);
-
-      debugPrint(
-        '[CAPABILITY_BEFORE_DATA] '
-        '${application.onboardingData}',
-      );
-
-      debugPrint(
-        '[CAPABILITY_BEFORE_STATUS] '
-        '${application.onboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
-      );
-
-      debugPrint(
-        '[CAPABILITY_OWNERSHIP] '
-        'uid=${user.uid}, '
-        'createdByUid=${application.createdByUid}, '
-        'accountId=${application.accountId}, '
-        'customerProfileId=${application.customerProfileId}, '
-        'status=${application.status.name}, '
-        'partnerType=${application.partnerType.name}',
-      );
       _validateCustomerOwnership(
         application: application,
         uid: user.uid,
@@ -637,12 +534,138 @@ class PartnerService {
       updatedOnboardingSections[PartnerOnboardingSection
               .servicesAndSpecialization] =
           targetStatus;
-      //SUD debug
-      debugPrint('[CAPABILITY_DATA] $updatedOnboardingData');
-      debugPrint(
-        '[CAPABILITY_STATUS] '
-        '${updatedOnboardingSections.map((key, value) => MapEntry(key.name, value.name))}',
+
+      final payload = <String, dynamic>{
+        'onboardingData': updatedOnboardingData,
+        'onboardingSections': {
+          for (final entry in updatedOnboardingSections.entries)
+            entry.key.name: entry.value.name,
+        },
+        'onboardingUpdatedByUid': user.uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+      transaction.set(document, payload, SetOptions(merge: true));
+    });
+  }
+
+  // ==========================================================================
+  // DESIGNER PARTNER: ONBOARDING DETAILS
+  // ==========================================================================
+  //
+  // Saves Designer-specific onboarding information under:
+  //
+  // onboardingData.extensions.designer
+  //
+  // The common Partner Application lifecycle remains unchanged.
+  // This method only updates the Designer extension while the application
+  // is editable.
+  //
+  // This method does not:
+  // - approve the application
+  // - verify KYC
+  // - activate a Partner profile
+  // - publish catalogue designs
+  //
+  // Those responsibilities remain with the existing Partner foundation
+  // and future Designer catalogue/publishing functionality.
+  // ==========================================================================
+
+  static Future<void> updateDesignerDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required DesignerPartnerDetails designerDetails,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in user is required to update Designer details.',
       );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      _validateCustomerOwnership(
+        application: application,
+        uid: user.uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!application.canEdit) {
+        throw StateError(
+          'Designer details can be edited only while the '
+          'application is Draft or Changes Requested.',
+        );
+      }
+
+      if (application.partnerType != PartnerType.designer) {
+        throw StateError(
+          'Designer details are supported only for Designer applications.',
+        );
+      }
+
+      final normalizedCapabilities = PartnerCapabilitySelection(
+        declaredCapabilityCodes:
+            designerDetails.capabilitySelection.normalizedCapabilityCodes,
+        additionalCapabilityDescriptions: designerDetails
+            .capabilitySelection
+            .normalizedAdditionalDescriptions,
+      );
+
+      final normalizedDesignerDetails = DesignerPartnerDetails(
+        professionalType: designerDetails.professionalType,
+        experienceYears: designerDetails.experienceYears,
+        specialization: designerDetails.specialization,
+        capabilitySelection: normalizedCapabilities,
+        portfolioSummary: designerDetails.portfolioSummary,
+        acceptsCustomDesign: designerDetails.acceptsCustomDesign,
+        acceptsBulkOrders: designerDetails.acceptsBulkOrders,
+        acceptsWeddingOrders: designerDetails.acceptsWeddingOrders,
+        consultationAvailable: designerDetails.consultationAvailable,
+        originalWorkDeclaration: designerDetails.originalWorkDeclaration,
+        additionalNotes: designerDetails.additionalNotes,
+      );
+
+      final updatedOnboardingData = _withDesignerDetails(
+        application.onboardingData,
+        normalizedDesignerDetails,
+      );
+
+      final updatedOnboardingSections =
+          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
+            application.onboardingSections,
+          );
+
+      final targetStatus = normalizedDesignerDetails.hasOperationalInformation
+          ? PartnerOnboardingSectionStatus.completed
+          : PartnerOnboardingSectionStatus.inProgress;
+
+      updatedOnboardingSections[PartnerOnboardingSection
+              .servicesAndSpecialization] =
+          targetStatus;
+
       final payload = <String, dynamic>{
         'onboardingData': updatedOnboardingData,
         'onboardingSections': {
@@ -654,21 +677,6 @@ class PartnerService {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      debugPrint(
-        '[CAPABILITY_PAYLOAD_KEYS] '
-        '${payload.keys.toList()..sort()}',
-      );
-
-      debugPrint('[CAPABILITY_PAYLOAD] $payload');
-      debugPrint(
-        '[CAPABILITY_APPLICATION_STATUS] '
-        '${application.status.name}',
-      );
-
-      debugPrint(
-        '[CAPABILITY_CAN_EDIT] '
-        '${application.canEdit}',
-      );
       transaction.set(document, payload, SetOptions(merge: true));
     });
   }
@@ -1251,6 +1259,36 @@ class PartnerService {
 
     categoryExtension['capabilities'] = selection.toMap();
     extensions[normalizedCategoryCode] = categoryExtension;
+    onboardingData['extensions'] = extensions;
+
+    return onboardingData;
+  }
+
+  // ==========================================================================
+  // DESIGNER PARTNER: EXTENSION PERSISTENCE
+  // ==========================================================================
+  //
+  // Stores the complete Designer-specific onboarding model under:
+  //
+  // onboardingData.extensions.designer
+  //
+  // Existing extensions for other Partner categories are preserved.
+  // ==========================================================================
+
+  static Map<String, dynamic> _withDesignerDetails(
+    Map<String, dynamic> existingOnboardingData,
+    DesignerPartnerDetails designerDetails,
+  ) {
+    final onboardingData = Map<String, dynamic>.from(existingOnboardingData);
+
+    final existingExtensions = onboardingData['extensions'];
+
+    final extensions = existingExtensions is Map
+        ? Map<String, dynamic>.from(existingExtensions)
+        : <String, dynamic>{};
+
+    extensions[PartnerType.designer.name] = designerDetails.toMap();
+
     onboardingData['extensions'] = extensions;
 
     return onboardingData;
