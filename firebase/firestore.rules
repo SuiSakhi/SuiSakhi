@@ -926,7 +926,6 @@ service cloud.firestore {
                 'email',
                 'updatedAt'
               ]);
-              
       // =====================================================
       // RULE-ID: PA-APPLICANT-UPDATE-GATE
       // ACTOR: Applicant

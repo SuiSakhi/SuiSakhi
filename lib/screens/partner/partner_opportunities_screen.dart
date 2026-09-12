@@ -65,8 +65,16 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
             subtitle:
                 'Boutique services, specialized stitching and collections',
             color: const Color(0xFFE91E63),
-            statusLabel: 'Planned',
-            onTap: null,
+            statusLabel: 'Applications open',
+            onTap: () => context.push('/partner/apply/boutique'),
+          ),
+          _PartnerTypeCard(
+            icon: Icons.local_mall_outlined,
+            title: 'Brand',
+            subtitle: 'Fashion brand products, collections, catalogue and fulfilment',
+            color: const Color(0xFF3F51B5),
+            statusLabel: 'Applications open',
+            onTap: () => context.push('/partner/apply/brand'),
           ),
           _PartnerTypeCard(
             icon: Icons.design_services_outlined,

@@ -39,6 +39,8 @@ import 'screens/partner/partner_opportunities_screen.dart';
 import 'screens/partner/tailor_application_screen.dart';
 import 'screens/partner/measurement_partner_application_screen.dart';
 import 'screens/partner/designer_application_screen.dart';
+import 'screens/partner/boutique_application_screen.dart';
+import 'screens/partner/brand_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
 
@@ -129,6 +131,14 @@ final _router = GoRouter(
     GoRoute(
       path: '/partner/apply/designer',
       builder: (ctx, state) => const DesignerApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/boutique',
+      builder: (ctx, state) => const BoutiqueApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/brand',
+      builder: (ctx, state) => const BrandApplicationScreen(),
     ),
     GoRoute(
       path: '/customer-profile',

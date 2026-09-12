@@ -4,6 +4,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/partner_application.dart';
 import '../models/partner_capability_selection.dart';
 import '../models/designer_partner_details.dart';
+import '../models/boutique_partner_details.dart';
+import '../models/brand_partner_details.dart';
 
 class PartnerService {
   PartnerService._();
@@ -1292,6 +1294,253 @@ class PartnerService {
     onboardingData['extensions'] = extensions;
 
     return onboardingData;
+  }
+
+  // ============================================================================
+  // COMMON PARTNER FOUNDATION: BUSINESS LOCATION & OPERATING SCHEDULE
+  // ============================================================================
+  //
+  // Reuses PartnerWorkshopDetails for every Partner category. The data is
+  // stored inside the category extension as workshopDetails so the proven
+  // Tailor structure can be reused without creating separate Address or
+  // OperatingSchedule models for Boutique and Brand.
+  // ============================================================================
+  static Future<void> updatePartnerBusinessDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required PartnerType partnerType,
+    required PartnerWorkshopDetails workshopDetails,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+
+    if (user == null) {
+      throw StateError(
+        'A signed-in user is required to update Business Location and Schedule.',
+      );
+    }
+
+    final normalizedApplicationId = applicationId.trim();
+
+    if (normalizedApplicationId.isEmpty) {
+      throw ArgumentError.value(
+        applicationId,
+        'applicationId',
+        'Application ID is required.',
+      );
+    }
+
+    final document = _applicationsCollection.doc(normalizedApplicationId);
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
+
+      final application = PartnerApplication.fromDoc(snapshot);
+
+      _validateCustomerOwnership(
+        application: application,
+        uid: user.uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!application.canEdit) {
+        throw StateError(
+          'Business Location and Schedule can be edited only while the '
+          'application is Draft or Changes Requested.',
+        );
+      }
+
+      if (application.partnerType != partnerType) {
+        throw StateError(
+          'Business details do not match the selected Partner category.',
+        );
+      }
+
+      final updatedOnboardingData =
+          Map<String, dynamic>.from(application.onboardingData);
+
+      final existingExtensions = updatedOnboardingData['extensions'];
+      final extensions = existingExtensions is Map
+          ? Map<String, dynamic>.from(existingExtensions)
+          : <String, dynamic>{};
+
+      final existingCategory = extensions[partnerType.name];
+      final category = existingCategory is Map
+          ? Map<String, dynamic>.from(existingCategory)
+          : <String, dynamic>{};
+
+      category['workshopDetails'] = workshopDetails.toMap();
+      extensions[partnerType.name] = category;
+      updatedOnboardingData['extensions'] = extensions;
+
+      final scheduleComplete =
+          workshopDetails.operatingDays.isNotEmpty &&
+          workshopDetails.openingTime?.trim().isNotEmpty == true &&
+          workshopDetails.closingTime?.trim().isNotEmpty == true;
+
+      final locationComplete =
+          workshopDetails.addressLine1?.trim().isNotEmpty == true &&
+          workshopDetails.city?.trim().isNotEmpty == true &&
+          workshopDetails.state?.trim().isNotEmpty == true &&
+          workshopDetails.pincode?.trim().isNotEmpty == true;
+
+      final targetStatus = locationComplete && scheduleComplete
+          ? PartnerOnboardingSectionStatus.completed
+          : PartnerOnboardingSectionStatus.inProgress;
+
+      final updatedOnboardingSections =
+          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
+        application.onboardingSections,
+      );
+
+      updatedOnboardingSections[PartnerOnboardingSection.workshopDetails] =
+          targetStatus;
+
+      final payload = <String, dynamic>{
+        'onboardingData': updatedOnboardingData,
+        'onboardingSections': {
+          for (final entry in updatedOnboardingSections.entries)
+            entry.key.name: entry.value.name,
+        },
+        'onboardingUpdatedByUid': user.uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      transaction.set(document, payload, SetOptions(merge: true));
+    });
+  }
+
+  // ============================================================================
+  // BOUTIQUE / BRAND PARTNER EXTENSIONS
+  // ============================================================================
+  //
+  // These methods persist category-specific onboarding data only. The common
+  // Partner lifecycle, review, KYC, approval, and activation remain unchanged.
+  // ============================================================================
+
+  static Future<void> updateBoutiqueDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required BoutiquePartnerDetails boutiqueDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.boutique,
+      categoryCode: PartnerType.boutique.name,
+      onboardingData: boutiqueDetails.toMap(),
+      errorLabel: 'Boutique',
+    );
+  }
+
+  static Future<void> updateBrandDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required BrandPartnerDetails brandDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.brand,
+      categoryCode: PartnerType.brand.name,
+      onboardingData: brandDetails.toMap(),
+      errorLabel: 'Brand',
+    );
+  }
+
+  static Future<void> _updateCategoryDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required PartnerType expectedPartnerType,
+    required String categoryCode,
+    required Map<String, dynamic> onboardingData,
+    required String errorLabel,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw StateError('A signed-in user is required to update $errorLabel details.');
+    }
+
+    final document = _applicationsCollection.doc(applicationId.trim());
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+      if (!snapshot.exists) throw StateError('Partner application could not be found.');
+
+      final application = PartnerApplication.fromDoc(snapshot);
+      _validateCustomerOwnership(
+        application: application,
+        uid: user.uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+
+      if (!application.canEdit) {
+        throw StateError('$errorLabel details can be edited only while the application is Draft or Changes Requested.');
+      }
+      if (application.partnerType != expectedPartnerType) {
+        throw StateError('$errorLabel details are supported only for ${expectedPartnerType.name} applications.');
+      }
+
+      // Preserve other common/category data already stored for this Partner.
+      // In particular, do not overwrite workshopDetails when saving the
+      // category-specific Boutique/Brand section after the common business
+      // address and operating schedule has already been saved.
+      final updatedOnboardingData =
+          Map<String, dynamic>.from(application.onboardingData);
+      final extensionsValue = updatedOnboardingData['extensions'];
+      final extensions = extensionsValue is Map
+          ? Map<String, dynamic>.from(extensionsValue)
+          : <String, dynamic>{};
+      final existingCategory = extensions[categoryCode];
+      final categoryExtension = existingCategory is Map
+          ? Map<String, dynamic>.from(existingCategory)
+          : <String, dynamic>{};
+
+      categoryExtension.addAll(onboardingData);
+      extensions[categoryCode] = categoryExtension;
+      updatedOnboardingData['extensions'] = extensions;
+
+      final updatedOnboardingSections =
+          Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
+        application.onboardingSections,
+      );
+
+      updatedOnboardingSections[
+              PartnerOnboardingSection.servicesAndSpecialization] =
+          PartnerOnboardingSectionStatus.completed;
+
+      updatedOnboardingSections[
+              PartnerOnboardingSection.capacityAndAvailability] =
+          PartnerOnboardingSectionStatus.completed;
+
+      final payload = <String, dynamic>{
+        'onboardingData': updatedOnboardingData,
+        'onboardingSections': {
+          for (final entry in updatedOnboardingSections.entries)
+            entry.key.name: entry.value.name,
+        },
+        'onboardingUpdatedByUid': user.uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      transaction.set(
+        document,
+        payload,
+        SetOptions(merge: true),
+      );
+    });
   }
 
   // ==========================================================================

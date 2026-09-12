@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/designer_partner_details.dart';
+import '../../models/boutique_partner_details.dart';
+import '../../models/brand_partner_details.dart';
 import '../../models/measurement_partner_details.dart';
 import '../../models/partner_application.dart';
 import '../../services/partner_service.dart';
@@ -394,6 +396,60 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     );
   }
 
+  // ============================================================================
+  // BOUTIQUE PARTNER REVIEW
+  // ============================================================================
+  Widget _buildBoutiquePartnerOperations(PartnerApplication application) {
+    final details = BoutiquePartnerDetails.fromOnboardingData(application.onboardingData);
+    return _ReviewSection(
+      title: 'Boutique Business & Operations',
+      icon: Icons.storefront_outlined,
+      children: [
+        _ReviewDetail(label: 'Specialization', value: _displayValue(details.specialization)),
+        _ReviewDetail(label: 'Experience', value: details.experienceYears == null ? 'Not provided' : '${details.experienceYears} years'),
+        _ReviewDetail(label: 'Capabilities', value: _displayList(details.capabilitySelection.normalizedCapabilityCodes)),
+        _ReviewDetail(label: 'Service area', value: _displayValue(details.serviceArea)),
+        _ReviewDetail(label: 'Team size', value: _displayNumber(details.teamSize)),
+        _ReviewDetail(label: 'Normal daily capacity', value: _displayNumber(details.normalDailyCapacity)),
+        _ReviewDetail(label: 'Peak daily capacity', value: _displayNumber(details.peakDailyCapacity)),
+        _ReviewDetail(label: 'Home visit / consultation', value: details.homeVisitAvailable ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Pickup & Delivery', value: details.pickupAndDeliveryAvailable ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Ready-made inventory', value: details.readyMadeInventory ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Return / exchange', value: details.returnExchangeAvailable ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Portfolio', value: _displayValue(details.portfolioSummary)),
+        _ReviewDetail(label: 'Additional notes', value: _displayValue(details.additionalNotes)),
+      ],
+    );
+  }
+
+  // ============================================================================
+  // BRAND PARTNER REVIEW
+  // ============================================================================
+  Widget _buildBrandPartnerOperations(PartnerApplication application) {
+    final details = BrandPartnerDetails.fromOnboardingData(application.onboardingData);
+    return _ReviewSection(
+      title: 'Brand Business & Operations',
+      icon: Icons.local_mall_outlined,
+      children: [
+        _ReviewDetail(label: 'Brand specialization', value: _displayValue(details.brandSpecialization)),
+        _ReviewDetail(label: 'Experience', value: details.experienceYears == null ? 'Not provided' : '${details.experienceYears} years'),
+        _ReviewDetail(label: 'Product categories', value: _displayValue(details.productCategories)),
+        _ReviewDetail(label: 'Target market', value: _displayValue(details.targetMarket)),
+        _ReviewDetail(label: 'Capabilities', value: _displayList(details.capabilitySelection.normalizedCapabilityCodes)),
+        _ReviewDetail(label: 'Catalogue ready', value: details.catalogueReady ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Inventory managed', value: details.inventoryManaged ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Ready stock', value: details.readyStock ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Pickup & Delivery', value: details.pickupAndDeliveryAvailable ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Return / exchange', value: details.returnExchangeAvailable ? 'Yes' : 'No'),
+        _ReviewDetail(label: 'Service area', value: _displayValue(details.serviceArea)),
+        _ReviewDetail(label: 'Team size', value: _displayNumber(details.teamSize)),
+        _ReviewDetail(label: 'Normal daily capacity', value: _displayNumber(details.normalDailyCapacity)),
+        _ReviewDetail(label: 'Peak daily capacity', value: _displayNumber(details.peakDailyCapacity)),
+        _ReviewDetail(label: 'Additional notes', value: _displayValue(details.additionalNotes)),
+      ],
+    );
+  }
+
   Widget _buildBusinessOperations(PartnerApplication application) {
     // =========================================================================
     // MEASUREMENT PARTNER REVIEW
@@ -407,6 +463,20 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     // =========================================================================
     if (application.partnerType == PartnerType.designer) {
       return _buildDesignerPartnerOperations(application);
+    }
+
+    // =========================================================================
+    // BOUTIQUE PARTNER REVIEW
+    // =========================================================================
+    if (application.partnerType == PartnerType.boutique) {
+      return _buildBoutiquePartnerOperations(application);
+    }
+
+    // =========================================================================
+    // BRAND PARTNER REVIEW
+    // =========================================================================
+    if (application.partnerType == PartnerType.brand) {
+      return _buildBrandPartnerOperations(application);
     }
 
     // =========================================================================
