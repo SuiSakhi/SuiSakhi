@@ -6,6 +6,12 @@ import '../models/partner_capability_selection.dart';
 import '../models/designer_partner_details.dart';
 import '../models/boutique_partner_details.dart';
 import '../models/brand_partner_details.dart';
+import '../models/garment_care_partner_details.dart';
+import '../models/quickcare_partner_details.dart';
+import '../models/delivery_partner_details.dart';
+import '../models/fabric_supplier_partner_details.dart';
+import '../models/printing_partner_details.dart';
+import '../models/rental_partner_details.dart';
 
 class PartnerService {
   PartnerService._();
@@ -1361,8 +1367,9 @@ class PartnerService {
         );
       }
 
-      final updatedOnboardingData =
-          Map<String, dynamic>.from(application.onboardingData);
+      final updatedOnboardingData = Map<String, dynamic>.from(
+        application.onboardingData,
+      );
 
       final existingExtensions = updatedOnboardingData['extensions'];
       final extensions = existingExtensions is Map
@@ -1395,8 +1402,8 @@ class PartnerService {
 
       final updatedOnboardingSections =
           Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
-        application.onboardingSections,
-      );
+            application.onboardingSections,
+          );
 
       updatedOnboardingSections[PartnerOnboardingSection.workshopDetails] =
           targetStatus;
@@ -1416,6 +1423,26 @@ class PartnerService {
     });
   }
 
+  // ============================================================================
+  // QUICK CARE
+  // ============================================================================
+  //
+  static Future<void> updateQuickCareDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required QuickCarePartnerDetails quickCareDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.doorstepServices,
+      categoryCode: PartnerType.doorstepServices.name,
+      onboardingData: quickCareDetails.toMap(),
+      errorLabel: 'QuickCare',
+    );
+  }
   // ============================================================================
   // BOUTIQUE / BRAND PARTNER EXTENSIONS
   // ============================================================================
@@ -1441,6 +1468,79 @@ class PartnerService {
     );
   }
 
+  // Fabric Supplier
+
+  static Future<void> updateFabricSupplierDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required FabricSupplierPartnerDetails fabricSupplierDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.fabricSupplier,
+      categoryCode: PartnerType.fabricSupplier.name,
+      onboardingData: fabricSupplierDetails.toMap(),
+      errorLabel: 'Fabric Supplier',
+    );
+  }
+
+  // Rental Partner
+  static Future<void> updateRentalDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required RentalPartnerDetails rentalDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.rental,
+      categoryCode: PartnerType.rental.name,
+      onboardingData: rentalDetails.toMap(),
+      errorLabel: 'Rental Partner',
+    );
+  }
+
+  // Printing Partner
+  static Future<void> updatePrintingDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required PrintingPartnerDetails printingDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.printing,
+      categoryCode: PartnerType.printing.name,
+      onboardingData: printingDetails.toMap(),
+      errorLabel: 'Printing Partner',
+    );
+  }
+
+  // Delivery Partner
+  static Future<void> updateDeliveryDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required DeliveryPartnerDetails deliveryDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.deliveryPartner,
+      categoryCode: PartnerType.deliveryPartner.name,
+      onboardingData: deliveryDetails.toMap(),
+      errorLabel: 'Delivery Partner',
+    );
+  }
+
   static Future<void> updateBrandDetails({
     required String applicationId,
     required String accountId,
@@ -1458,6 +1558,23 @@ class PartnerService {
     );
   }
 
+  static Future<void> updateGarmentCareDetails({
+    required String applicationId,
+    required String accountId,
+    required String customerProfileId,
+    required GarmentCarePartnerDetails garmentCareDetails,
+  }) async {
+    await _updateCategoryDetails(
+      applicationId: applicationId,
+      accountId: accountId,
+      customerProfileId: customerProfileId,
+      expectedPartnerType: PartnerType.garmentCare,
+      categoryCode: PartnerType.garmentCare.name,
+      onboardingData: garmentCareDetails.toMap(),
+      errorLabel: 'Garment Care',
+    );
+  }
+
   static Future<void> _updateCategoryDetails({
     required String applicationId,
     required String accountId,
@@ -1469,13 +1586,17 @@ class PartnerService {
   }) async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
-      throw StateError('A signed-in user is required to update $errorLabel details.');
+      throw StateError(
+        'A signed-in user is required to update $errorLabel details.',
+      );
     }
 
     final document = _applicationsCollection.doc(applicationId.trim());
     await _db.runTransaction((transaction) async {
       final snapshot = await transaction.get(document);
-      if (!snapshot.exists) throw StateError('Partner application could not be found.');
+      if (!snapshot.exists) {
+        throw StateError('Partner application could not be found.');
+      }
 
       final application = PartnerApplication.fromDoc(snapshot);
       _validateCustomerOwnership(
@@ -1486,18 +1607,23 @@ class PartnerService {
       );
 
       if (!application.canEdit) {
-        throw StateError('$errorLabel details can be edited only while the application is Draft or Changes Requested.');
+        throw StateError(
+          '$errorLabel details can be edited only while the application is Draft or Changes Requested.',
+        );
       }
       if (application.partnerType != expectedPartnerType) {
-        throw StateError('$errorLabel details are supported only for ${expectedPartnerType.name} applications.');
+        throw StateError(
+          '$errorLabel details are supported only for ${expectedPartnerType.name} applications.',
+        );
       }
 
       // Preserve other common/category data already stored for this Partner.
       // In particular, do not overwrite workshopDetails when saving the
       // category-specific Boutique/Brand section after the common business
       // address and operating schedule has already been saved.
-      final updatedOnboardingData =
-          Map<String, dynamic>.from(application.onboardingData);
+      final updatedOnboardingData = Map<String, dynamic>.from(
+        application.onboardingData,
+      );
       final extensionsValue = updatedOnboardingData['extensions'];
       final extensions = extensionsValue is Map
           ? Map<String, dynamic>.from(extensionsValue)
@@ -1513,15 +1639,15 @@ class PartnerService {
 
       final updatedOnboardingSections =
           Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>.from(
-        application.onboardingSections,
-      );
+            application.onboardingSections,
+          );
 
-      updatedOnboardingSections[
-              PartnerOnboardingSection.servicesAndSpecialization] =
+      updatedOnboardingSections[PartnerOnboardingSection
+              .servicesAndSpecialization] =
           PartnerOnboardingSectionStatus.completed;
 
-      updatedOnboardingSections[
-              PartnerOnboardingSection.capacityAndAvailability] =
+      updatedOnboardingSections[PartnerOnboardingSection
+              .capacityAndAvailability] =
           PartnerOnboardingSectionStatus.completed;
 
       final payload = <String, dynamic>{
@@ -1535,11 +1661,7 @@ class PartnerService {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      transaction.set(
-        document,
-        payload,
-        SetOptions(merge: true),
-      );
+      transaction.set(document, payload, SetOptions(merge: true));
     });
   }
 

@@ -399,6 +399,7 @@ service cloud.firestore {
         && request.resource.data.partnerType in [
           'tailor',
           'measurementPartner',
+          'garmentCare',
           'boutique',
           'designer',
           'fabricSupplier',

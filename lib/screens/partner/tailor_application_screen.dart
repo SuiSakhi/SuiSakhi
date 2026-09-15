@@ -15,6 +15,8 @@ import '../../services/partner_service.dart';
 import '../../widgets/address/address_form_section.dart';
 import '../../widgets/capability/capability_multi_selector.dart';
 import '../../widgets/partner/partner_basic_details_section.dart';
+import '../../widgets/partner/partner_application_lifecycle_section.dart';
+import '../../widgets/partner/partner_reapply_dialog.dart';
 import '../../widgets/schedule/operating_schedule_field.dart';
 
 class TailorApplicationScreen extends StatefulWidget {
@@ -50,6 +52,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   bool _pickupAvailable = false;
   bool _deliveryAvailable = false;
   bool _homeVisitAvailable = false;
+  bool get _pickupAndDeliveryAvailable {
+    return _pickupAvailable && _deliveryAvailable;
+  }
 
   PartnerApplication? _application;
 
@@ -82,75 +87,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         status == PartnerApplicationStatus.underReview;
   }
 
-  String get _applicationStatusLabel {
-    switch (_application?.status) {
-      case PartnerApplicationStatus.draft:
-        return 'Draft';
-
-      case PartnerApplicationStatus.submitted:
-        return 'Submitted';
-
-      case PartnerApplicationStatus.underReview:
-        return 'Under Review';
-
-      case PartnerApplicationStatus.changesRequested:
-        return 'Changes Requested';
-
-      case PartnerApplicationStatus.approved:
-        return 'Approved';
-
-      case PartnerApplicationStatus.rejected:
-        return 'Requires Attention';
-
-      case PartnerApplicationStatus.suspended:
-        return 'Suspended';
-
-      case PartnerApplicationStatus.inactive:
-        return 'Inactive';
-
-      case null:
-        return 'Loading';
-    }
-  }
-
-  String get _applicationHeaderMessage {
-    switch (_application?.status) {
-      case PartnerApplicationStatus.changesRequested:
-        return 'SuiSakhi Admin has requested additional information. '
-            'Review the instructions below, update the required details, '
-            'and submit the application again.';
-
-      case PartnerApplicationStatus.submitted:
-        return 'Your application has been submitted and is waiting '
-            'for SuiSakhi Admin review.';
-
-      case PartnerApplicationStatus.underReview:
-        return 'Your application is currently being reviewed by '
-            'SuiSakhi Admin. Editing is temporarily unavailable.';
-
-      case PartnerApplicationStatus.approved:
-        return 'Your Partner application has been approved. '
-            'Partner profile activation will follow.';
-
-      case PartnerApplicationStatus.rejected:
-        return 'This application was not approved. Review the reason '
-            'provided by SuiSakhi Admin.';
-
-      case PartnerApplicationStatus.draft:
-      case PartnerApplicationStatus.suspended:
-      case PartnerApplicationStatus.inactive:
-      case null:
-        return 'Saving this form does not activate a Tailor profile. '
-            'The application will be submitted for Admin review only '
-            'after the required information is completed.';
-    }
-  }
-
   bool get _canSubmit {
-    return _isEditable &&
-        _contactNameController.text.trim().isNotEmpty &&
-        _businessNameController.text.trim().isNotEmpty &&
-        _mobileController.text.trim().isNotEmpty;
+    return _isEditable && !_saving;
   }
 
   @override
@@ -325,13 +263,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   }
 
   Future<void> _saveDraft() async {
-    debugPrint(
-      '[TAILOR_SAVE_TAP] '
-      'applicationId=${_application?.id}, '
-      'status=${_application?.status.name}, '
-      'editable=$_isEditable, '
-      'saving=$_saving',
-    );
+    if (_saving) {
+      return;
+    }
 
     if (!_formKey.currentState!.validate()) {
       return;
@@ -361,24 +295,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
     try {
       saveStage = 'basic details';
-
-      // TEMP-DIAG-TAILOR-SAVE-001:
-      // Remove after changesRequested regression testing.
-      final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-      debugPrint(
-        '[TailorSaveContext] '
-        'applicationId=${application.id}, '
-        'applicationStatus=${application.status.name}, '
-        'applicationPartnerType=${application.partnerType.name}, '
-        'applicationAccountMatches=${application.accountId == accountId}, '
-        'applicationCustomerProfileMatches='
-        '${application.customerProfileId == customerProfileId}, '
-        'applicationCreatorMatches='
-        '${application.createdByUid == authenticatedUid}, '
-        'hasAuthenticatedUser=${authenticatedUid != null}, '
-        'hasApprovedProfile='
-        '${application.approvedPartnerProfileId?.trim().isNotEmpty == true}',
-      );
       await PartnerService.updateDraft(
         applicationId: application.id,
         accountId: accountId,
@@ -545,6 +461,11 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         children: [
           _buildApplicationHeader(),
           const SizedBox(height: 20),
+          PartnerApplicationStatusNotice(
+            application: _application!,
+            partnerLabel: 'Tailor Partner',
+          ),
+          const SizedBox(height: 20),
           _buildBasicDetailsCard(),
           const SizedBox(height: 20),
           _buildWorkshopDetailsCard(),
@@ -553,11 +474,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           const SizedBox(height: 20),
           _buildNextStepsCard(),
           const SizedBox(height: 20),
-
-          if (_application?.status != PartnerApplicationStatus.draft) ...[
-            _buildApplicationStatusMessage(),
-            const SizedBox(height: 20),
-          ],
 
           _buildActions(),
           const SizedBox(height: 28),
@@ -623,7 +539,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         ),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const CircleAvatar(
             radius: 26,
@@ -632,32 +547,11 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
           ),
           const SizedBox(width: 14),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Tailor Partner',
-                  style: AppTextStyles.titleLarge.copyWith(
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Application status: $_applicationStatusLabel',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: const Color(0xFF2E7D32),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  _applicationHeaderMessage,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-              ],
+            child: Text(
+              'Tailor Partner',
+              style: AppTextStyles.titleLarge.copyWith(
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -900,30 +794,15 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
           SwitchListTile.adaptive(
             contentPadding: EdgeInsets.zero,
-            title: const Text('Pickup available'),
+            title: const Text('Pickup & Delivery Available'),
             subtitle: const Text(
-              'Workshop can support garment or material pickup.',
+              'The Tailor can handle pickup and delivery for their own products or services.',
             ),
-            value: _pickupAvailable,
+            value: _pickupAndDeliveryAvailable,
             onChanged: _isEditable
                 ? (value) {
                     setState(() {
                       _pickupAvailable = value;
-                    });
-                  }
-                : null,
-          ),
-
-          SwitchListTile.adaptive(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Delivery available'),
-            subtitle: const Text(
-              'Workshop can support completed-order delivery.',
-            ),
-            value: _deliveryAvailable,
-            onChanged: _isEditable
-                ? (value) {
-                    setState(() {
                       _deliveryAvailable = value;
                     });
                   }
@@ -1178,24 +1057,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
     try {
       // Persist the latest form values before changing application status.
-      // TEMP-DIAG-TAILOR-SAVE-001:
-      // Remove after changesRequested regression testing.
-      final authenticatedUid = FirebaseAuth.instance.currentUser?.uid;
-
-      debugPrint(
-        '[TailorSaveContext] '
-        'applicationId=${application.id}, '
-        'applicationStatus=${application.status.name}, '
-        'applicationPartnerType=${application.partnerType.name}, '
-        'applicationAccountMatches=${application.accountId == accountId}, '
-        'applicationCustomerProfileMatches='
-        '${application.customerProfileId == customerProfileId}, '
-        'applicationCreatorMatches='
-        '${application.createdByUid == authenticatedUid}, '
-        'hasAuthenticatedUser=${authenticatedUid != null}, '
-        'hasApprovedProfile='
-        '${application.approvedPartnerProfileId?.trim().isNotEmpty == true}',
-      );
       await PartnerService.updateDraft(
         applicationId: application.id,
         accountId: accountId,
@@ -1262,75 +1123,6 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     }
   }
 
-  Widget _buildApplicationStatusMessage() {
-    final status = _application?.status;
-
-    if (status == PartnerApplicationStatus.submitted) {
-      return _buildStatusNotice(
-        icon: Icons.schedule_send_outlined,
-        title: 'Application Submitted',
-        message:
-            'Your Tailor Partner application has been submitted to '
-            'SuiSakhi Admin. Review has not started yet.',
-        color: const Color(0xFFFF9800),
-      );
-    }
-
-    if (status == PartnerApplicationStatus.underReview) {
-      return _buildStatusNotice(
-        icon: Icons.manage_search_rounded,
-        title: 'Application Under Review',
-        message:
-            'SuiSakhi Admin is reviewing your Tailor Partner application. '
-            'You cannot edit or resubmit it during the review. We will '
-            'notify you if any additional information or corrections are required.',
-        color: const Color(0xFF2196F3),
-      );
-    }
-
-    if (status == PartnerApplicationStatus.changesRequested) {
-      final instructions = _application?.reviewNotes?.trim();
-
-      return _buildStatusNotice(
-        icon: Icons.edit_note_rounded,
-        title: 'Changes Requested',
-        message: instructions == null || instructions.isEmpty
-            ? 'SuiSakhi Admin needs additional information. '
-                  'Please update the application and submit it again.'
-            : 'Admin instructions: $instructions',
-        color: const Color(0xFFFF9800),
-      );
-    }
-
-    if (status == PartnerApplicationStatus.approved) {
-      return _buildStatusNotice(
-        icon: Icons.verified_rounded,
-        title: 'Application Approved',
-        message:
-            'Your Tailor Partner application has been approved. '
-            'Partner profile activation details will appear here.',
-        color: const Color(0xFF4CAF50),
-      );
-    }
-
-    if (status == PartnerApplicationStatus.rejected) {
-      final reason = _application?.rejectionReason?.trim();
-
-      return _buildStatusNotice(
-        icon: Icons.cancel_outlined,
-        title: 'Application Not Approved',
-        message: reason == null || reason.isEmpty
-            ? 'SuiSakhi could not approve this Partner application. '
-                  'Please contact SuiSakhi Helpdesk for clarification.'
-            : 'Reason: $reason\n\n'
-                  'Please contact SuiSakhi Helpdesk if clarification is required.',
-        color: AppColors.error,
-      );
-    }
-
-    return const SizedBox.shrink();
-  }
-
   Future<void> _applyAgain() async {
     final rejectedApplication = _application;
     final accountId = _accountId;
@@ -1356,40 +1148,10 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       return;
     }
 
-    final shouldCreate =
-        await showDialog<bool>(
-          context: context,
-          builder: (dialogContext) {
-            return AlertDialog(
-              title: const Text('Apply Again?'),
-              content: const Text(
-                'A new Tailor Partner application will be created '
-                'using the information from the rejected application.\n\n'
-                'You can review and modify the copied information, '
-                'save the application as a draft, or submit it for '
-                'Admin review.\n\n'
-                'The rejected application will remain unchanged for '
-                'audit history.',
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop(false);
-                  },
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: () {
-                    Navigator.of(dialogContext).pop(true);
-                  },
-                  child: const Text('Create New Application'),
-                ),
-              ],
-            );
-          },
-        ) ??
-        false;
-
+    final shouldCreate = await showPartnerReapplyDialog(
+      context: context,
+      partnerLabel: 'Tailor Partner',
+    );
     if (!shouldCreate || !mounted) {
       return;
     }
@@ -1448,169 +1210,22 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     }
   }
 
-  Widget _buildStatusNotice({
-    required IconData icon,
-    required String title,
-    required String message,
-    required Color color,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: color.withValues(alpha: 0.30)),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: color, size: 26),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: AppTextStyles.titleMedium.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  message,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    height: 1.4,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildActions() {
-    if (_isUnderAdminReview) {
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _saving ? null : _continueLater,
-          icon: const Icon(Icons.arrow_back_rounded),
-          label: const Text('Back to Partner Opportunities'),
-        ),
-      );
+    final application = _application;
+
+    if (application == null) {
+      return const SizedBox.shrink();
     }
 
-    if (_application?.status == PartnerApplicationStatus.approved) {
-      return SizedBox(
-        width: double.infinity,
-        child: OutlinedButton.icon(
-          onPressed: _continueLater,
-          icon: const Icon(Icons.check_circle_outline_rounded),
-          label: const Text('Back to Partner Opportunities'),
-        ),
-      );
-    }
-
-    if (_application?.status == PartnerApplicationStatus.rejected) {
-      return Column(
-        children: [
-          SizedBox(
-            width: double.infinity,
-            child: FilledButton.icon(
-              onPressed: _saving ? null : _applyAgain,
-              icon: _saving
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : const Icon(Icons.refresh_rounded),
-              label: Text(
-                _saving ? 'Creating New Application...' : 'Apply Again',
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: _saving ? null : _continueLater,
-              icon: const Icon(Icons.arrow_back_rounded),
-              label: const Text('Back to Partner Opportunities'),
-            ),
-          ),
-        ],
-      );
-    }
-
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _saving || !_isEditable ? null : _saveDraft,
-            icon: _saving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Icon(Icons.save_outlined),
-            label: Text(_saving ? 'Saving Draft...' : 'Save Draft'),
-          ),
-        ),
-        const SizedBox(height: 10),
-        // TEMP-DIAG-TAILOR-SUBMIT-001:
-        // Remove after Tailor submit-button regression is resolved.
-        Builder(
-          builder: (context) {
-            debugPrint(
-              '[TAILOR_SUBMIT_GATE] '
-              'status=${_application?.status.name}, '
-              'isEditable=$_isEditable, '
-              'canSubmit=$_canSubmit, '
-              'saving=$_saving, '
-              'contactPresent='
-              '${_contactNameController.text.trim().isNotEmpty}, '
-              'businessPresent='
-              '${_businessNameController.text.trim().isNotEmpty}, '
-              'mobilePresent='
-              '${_mobileController.text.trim().isNotEmpty}',
-            );
-
-            return const SizedBox.shrink();
-          },
-        ),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: _canSubmit && !_saving ? _submitForReview : null,
-            icon: const Icon(Icons.send_rounded),
-            label: const Text('Submit For Review'),
-          ),
-        ),
-        const SizedBox(height: 10),
-        SizedBox(
-          width: double.infinity,
-          child: OutlinedButton.icon(
-            onPressed: _saving ? null : _continueLater,
-            icon: const Icon(Icons.schedule_outlined),
-            label: const Text('Continue Later'),
-          ),
-        ),
-      ],
+    return PartnerApplicationLifecycleActions(
+      application: application,
+      saving: _saving,
+      canSaveDraft: _isEditable && !_saving,
+      canSubmit: _canSubmit,
+      onSaveDraft: _saveDraft,
+      onSubmitForReview: _submitForReview,
+      onApplyAgain: _applyAgain,
+      onContinueLater: _continueLater,
     );
   }
 }

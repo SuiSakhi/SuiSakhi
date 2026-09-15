@@ -137,22 +137,35 @@ class BoutiquePartnerCapabilityMetadata implements CapabilityMetadataProvider {
 
   @override
   List<CapabilityGroupDefinition> groupsForPartnerCategory(String code) =>
-      _groups.where((group) => group.active && group.partnerCategoryCode == code).toList()
+      _groups
+          .where((group) => group.active && group.partnerCategoryCode == code)
+          .toList()
         ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
 
   @override
   List<CapabilityDefinition> capabilitiesForPartnerCategory(String code) =>
-      _capabilities.where((capability) => capability.active && capability.partnerCategoryCode == code).toList()
+      _capabilities
+          .where(
+            (capability) =>
+                capability.active && capability.partnerCategoryCode == code,
+          )
+          .toList()
         ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
 
   @override
   List<CapabilityDefinition> capabilitiesForGroup({
     required String partnerCategoryCode,
     required String groupCode,
-  }) => _capabilities
-      .where((capability) => capability.active && capability.partnerCategoryCode == partnerCategoryCode && capability.groupCode == groupCode)
-      .toList()
-    ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+  }) =>
+      _capabilities
+          .where(
+            (capability) =>
+                capability.active &&
+                capability.partnerCategoryCode == partnerCategoryCode &&
+                capability.groupCode == groupCode,
+          )
+          .toList()
+        ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
 
   @override
   CapabilityDefinition? capabilityForCode(String? capabilityCode) {
@@ -170,7 +183,10 @@ class BoutiquePartnerCapabilityMetadata implements CapabilityMetadataProvider {
     required String groupCode,
   }) {
     for (final group in _groups) {
-      if (group.partnerCategoryCode == partnerCategoryCode && group.code == groupCode) return group;
+      if (group.partnerCategoryCode == partnerCategoryCode &&
+          group.code == groupCode) {
+        return group;
+      }
     }
     return null;
   }

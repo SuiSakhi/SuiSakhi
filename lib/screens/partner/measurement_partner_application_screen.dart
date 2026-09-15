@@ -138,11 +138,7 @@ class _MeasurementPartnerApplicationScreenState
   }
 
   bool get _canSubmit {
-    return _isEditable &&
-        !_saving &&
-        _contactNameController.text.trim().isNotEmpty &&
-        _businessNameController.text.trim().isNotEmpty &&
-        _mobileController.text.trim().isNotEmpty;
+    return _isEditable && !_saving;
   }
   // ==========================================================================
   // COMMON PARTNER FOUNDATION: STATUS PRESENTATION
@@ -494,6 +490,8 @@ class _MeasurementPartnerApplicationScreenState
         return 'Tailor';
       case PartnerType.measurementPartner:
         return 'Measurement Partner';
+      case PartnerType.garmentCare:
+        return 'Garment Care';
       case PartnerType.boutique:
         return 'Boutique';
       case PartnerType.designer:

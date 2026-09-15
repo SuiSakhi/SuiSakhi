@@ -15,6 +15,7 @@ class CapabilityMultiSelector extends StatefulWidget {
     this.sectionTitle = 'Skills & Expertise',
     this.sectionDescription,
     this.showOtherExpertise = true,
+    this.requireOtherExpertiseDescription = true,
     this.otherExpertiseLabel = 'Other Expertise',
     this.otherExpertiseHint = 'Describe expertise not listed above',
     this.spacing = 12,
@@ -34,6 +35,14 @@ class CapabilityMultiSelector extends StatefulWidget {
   final String? sectionDescription;
 
   final bool showOtherExpertise;
+
+  /// Whether selecting Other Expertise requires a description.
+  ///
+  /// Keep the default true for compatibility with existing uses.
+  /// Partner Draft screens may set this to false because partial information
+  /// must not block Save Draft.
+  final bool requireOtherExpertiseDescription;
+
   final String otherExpertiseLabel;
   final String otherExpertiseHint;
 
@@ -202,7 +211,7 @@ class _CapabilityMultiSelectorState extends State<CapabilityMultiSelector> {
   }
 
   String? _additionalExpertiseValidator(String? value) {
-    if (!_otherExpertiseSelected) {
+    if (!_otherExpertiseSelected || !widget.requireOtherExpertiseDescription) {
       return null;
     }
 

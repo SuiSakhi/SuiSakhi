@@ -64,11 +64,9 @@ abstract final class PartnerCategoryMetadata {
   /// Partner whose primary business is pickup and delivery.
   static const String deliveryPartner = 'deliveryPartner';
 
-  /// Partner whose primary business is garment laundry services.
-  static const String laundry = 'laundry';
-
-  /// Partner whose primary business is garment pressing services.
-  static const String pressing = 'pressing';
+  /// Partner providing garment care services such as laundry,
+  /// pressing, stain treatment, dry cleaning, and specialized care.
+  static const String garmentCare = 'garmentCare';
 
   // ==========================================================================
   // FASHION, CATALOG, AND COMMERCE PARTNERS
@@ -79,6 +77,10 @@ abstract final class PartnerCategoryMetadata {
 
   /// Partner whose primary business is boutique services or garment sales.
   static const String boutique = 'boutique';
+
+  /// Partner whose primary business is a fashion / garment brand
+  /// offering products through the SuiSakhi ecosystem.
+  static const String brand = 'brand';
 
   /// Partner whose primary business is garment or accessory rental.
   static const String rental = 'rental';
@@ -96,10 +98,10 @@ abstract final class PartnerCategoryMetadata {
     measurementPartner,
     doorstepServices,
     deliveryPartner,
-    laundry,
-    pressing,
+    garmentCare,
     designer,
     boutique,
+    brand,
     rental,
   };
 

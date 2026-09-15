@@ -4,6 +4,7 @@ import 'partner_capability_selection.dart';
 enum PartnerType {
   tailor,
   measurementPartner,
+  garmentCare,
   boutique,
   designer,
   fabricSupplier,

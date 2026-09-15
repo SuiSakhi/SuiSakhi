@@ -37,10 +37,16 @@ import 'screens/tailor/tailor_dashboard_screen.dart';
 import 'screens/profile/tailor_account_center_screen.dart' as tailor_account;
 import 'screens/partner/partner_opportunities_screen.dart';
 import 'screens/partner/tailor_application_screen.dart';
-import 'screens/partner/measurement_partner_application_screen.dart';
-import 'screens/partner/designer_application_screen.dart';
 import 'screens/partner/boutique_application_screen.dart';
 import 'screens/partner/brand_application_screen.dart';
+import 'screens/partner/designer_application_screen.dart';
+import 'screens/partner/fabric_supplier_application_screen.dart';
+import 'screens/partner/garment_care_application_screen.dart';
+import 'screens/partner/rental_application_screen.dart';
+import 'screens/partner/printing_application_screen.dart';
+import 'screens/partner/delivery_partner_application_screen.dart';
+import 'screens/partner/measurement_partner_application_screen.dart';
+import 'screens/partner/quickcare_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
 
@@ -140,6 +146,31 @@ final _router = GoRouter(
       path: '/partner/apply/brand',
       builder: (ctx, state) => const BrandApplicationScreen(),
     ),
+    GoRoute(
+      path: '/partner/apply/garment-care',
+      builder: (ctx, state) => const GarmentCareApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/quickcare',
+      builder: (ctx, state) => const QuickCareApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/fabric-supplier',
+      builder: (context, state) => const FabricSupplierApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/rental',
+      builder: (context, state) => const RentalApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/printing',
+      builder: (context, state) => const PrintingApplicationScreen(),
+    ),
+    GoRoute(
+      path: '/partner/apply/delivery',
+      builder: (context, state) => const DeliveryApplicationScreen(),
+    ),
+
     GoRoute(
       path: '/customer-profile',
       builder: (ctx, state) => const CustomerProfileScreen(),

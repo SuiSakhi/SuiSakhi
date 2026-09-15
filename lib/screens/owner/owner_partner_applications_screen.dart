@@ -401,7 +401,8 @@ class _PartnerApplicationCard extends StatelessWidget {
       // that has not yet been intentionally added to the Admin interface.
       case PartnerType.measurementPartner:
         return 'Measurement Partner';
-
+      case PartnerType.garmentCare:
+        return 'Garment Care';
       case PartnerType.boutique:
         return 'Boutique';
       case PartnerType.designer:

@@ -60,6 +60,15 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
             onTap: () => context.push('/partner/apply/measurement'),
           ),
           _PartnerTypeCard(
+            icon: Icons.home_repair_service_outlined,
+            title: 'SuiSakhi QuickCare',
+            subtitle:
+                'Doorstep garment repair, assistance, measurement and event-readiness services',
+            color: const Color(0xFFE65100),
+            statusLabel: 'Applications open',
+            onTap: () => context.push('/partner/apply/quickcare'),
+          ),
+          _PartnerTypeCard(
             icon: Icons.storefront_outlined,
             title: 'Boutique',
             subtitle:
@@ -71,10 +80,20 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
           _PartnerTypeCard(
             icon: Icons.local_mall_outlined,
             title: 'Brand',
-            subtitle: 'Fashion brand products, collections, catalogue and fulfilment',
+            subtitle:
+                'Fashion brand products, collections, catalogue and fulfilment',
             color: const Color(0xFF3F51B5),
             statusLabel: 'Applications open',
             onTap: () => context.push('/partner/apply/brand'),
+          ),
+          _PartnerTypeCard(
+            icon: Icons.local_laundry_service_outlined,
+            title: 'Garment Care',
+            subtitle:
+                'Laundry, pressing, stain removal, dry cleaning and garment care',
+            color: const Color(0xFF00897B),
+            statusLabel: 'Applications open',
+            onTap: () => context.push('/partner/apply/garment-care'),
           ),
           _PartnerTypeCard(
             icon: Icons.design_services_outlined,
@@ -91,27 +110,43 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
             subtitle:
                 'Fabric supply, availability, material knowledge and sourcing',
             color: const Color(0xFF795548),
-            statusLabel: 'Planned',
-            onTap: null,
+            statusLabel: 'Applications open',
+            onTap: () => context.push(
+              '/partner/apply/fabric-supplier',
+            ),
+          ),
+          _PartnerTypeCard(
+            icon: Icons.checkroom_outlined,
+            title: 'Rental & Occasion Partner',
+            subtitle:
+                'Wedding wear, jewellery, costumes, props and occasion rentals',
+            color: const Color(0xFF7B1FA2),
+            statusLabel: 'Applications open',
+            onTap: () => context.push(
+              '/partner/apply/rental',
+            ),
+          ),
+          _PartnerTypeCard(
+            icon: Icons.checkroom_outlined,
+            title: 'T-Shirt Printing Partner',
+            subtitle:
+                'Printing Partner',
+            color: const Color(0xFF7B1FA2),
+            statusLabel: 'Applications open',
+            onTap: () => context.push(
+              '/partner/apply/printing',
+            ),
           ),
           _PartnerTypeCard(
             icon: Icons.delivery_dining_outlined,
             title: 'Delivery Partner',
             subtitle: 'Pickup, doorstep handover and delivery services',
             color: const Color(0xFF00BCD4),
-            statusLabel: 'Planned',
-            onTap: null,
+            statusLabel: 'Applications open',
+            onTap: () => context.push(
+              '/partner/apply/delivery',
+            ),
           ),
-          _PartnerTypeCard(
-            icon: Icons.handyman_outlined,
-            title: 'Doorstep Services',
-            subtitle:
-                'Rafu, repair, alterations, pico-fall and measurement visits',
-            color: const Color(0xFFFF9800),
-            statusLabel: 'Planned',
-            onTap: null,
-          ),
-
           const SizedBox(height: 20),
           _buildApplicationsCard(),
           const SizedBox(height: 24),

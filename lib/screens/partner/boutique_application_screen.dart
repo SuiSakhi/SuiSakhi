@@ -28,6 +28,8 @@ import '../../services/partner_service.dart';
 import '../../widgets/address/address_form_section.dart';
 import '../../widgets/capability/capability_multi_selector.dart';
 import '../../widgets/partner/partner_basic_details_section.dart';
+import '../../widgets/partner/partner_application_lifecycle_section.dart';
+import '../../widgets/partner/partner_reapply_dialog.dart';
 import '../../widgets/schedule/operating_schedule_field.dart';
 
 // =============================================================================
@@ -71,8 +73,7 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
   final _portfolio = TextEditingController();
   final _notes = TextEditingController();
 
-  PartnerCapabilitySelection _capabilities =
-      const PartnerCapabilitySelection();
+  PartnerCapabilitySelection _capabilities = const PartnerCapabilitySelection();
 
   bool _homeVisit = false;
   bool _pickupAndDelivery = false;
@@ -139,8 +140,9 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
         throw StateError('Your SuiSakhi account could not be resolved.');
       }
 
-      final profiles =
-          await AppState.instance.fetchActiveProfilesForAccount(accountId);
+      final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+        accountId,
+      );
 
       Map<String, dynamic>? customer;
 
@@ -151,8 +153,9 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
         }
       }
 
-      final customerProfileId =
-          (customer?['profileId'] ?? customer?['docId'])?.toString().trim();
+      final customerProfileId = (customer?['profileId'] ?? customer?['docId'])
+          ?.toString()
+          .trim();
 
       if (customerProfileId == null || customerProfileId.isEmpty) {
         throw StateError('Your active Customer profile could not be resolved.');
@@ -162,24 +165,28 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
         accountId: accountId,
         customerProfileId: customerProfileId,
         partnerType: PartnerType.boutique,
-        contactName: customer?['displayName']?.toString() ??
+        contactName:
+            customer?['displayName']?.toString() ??
             AppState.instance.displayName,
         mobileE164: phone,
         email: (customer?['email'] ?? user.email)?.toString(),
       );
 
-      _contact.text = application.contactName ??
+      _contact.text =
+          application.contactName ??
           customer?['displayName']?.toString() ??
           AppState.instance.displayName;
       _business.text = application.businessName ?? '';
       _mobile.text = application.mobileE164 ?? phone;
       _email.text =
-          application.email ?? (customer?['email'] ?? user.email)?.toString() ?? '';
+          application.email ??
+          (customer?['email'] ?? user.email)?.toString() ??
+          '';
 
       _hydrateCommonBusiness(application);
-      _hydrate(BoutiquePartnerDetails.fromOnboardingData(
-        application.onboardingData,
-      ));
+      _hydrate(
+        BoutiquePartnerDetails.fromOnboardingData(application.onboardingData),
+      );
 
       if (!mounted) return;
 
@@ -307,12 +314,15 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
       city: _businessAddress.cityName,
       state: _businessAddress.stateName,
       pincode: _businessAddress.pincode,
-      placeId: _businessAddress.placeId ?? existingWorkshop?['placeId']?.toString(),
-      latitude: _businessAddress.latitude ??
+      placeId:
+          _businessAddress.placeId ?? existingWorkshop?['placeId']?.toString(),
+      latitude:
+          _businessAddress.latitude ??
           (existingWorkshop?['latitude'] is num
               ? (existingWorkshop!['latitude'] as num).toDouble()
               : null),
-      longitude: _businessAddress.longitude ??
+      longitude:
+          _businessAddress.longitude ??
           (existingWorkshop?['longitude'] is num
               ? (existingWorkshop!['longitude'] as num).toDouble()
               : null),
@@ -350,9 +360,7 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
     final accountId = _accountId;
     final customerProfileId = _customerProfileId;
 
-    if (application == null ||
-        accountId == null ||
-        customerProfileId == null) {
+    if (application == null || accountId == null || customerProfileId == null) {
       _message('Application context is unavailable.');
       return;
     }
@@ -410,25 +418,87 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
+      _message('Unable to save $saveStage.\n$error', isError: true);
+    }
+  }
+
+  void _hydrateApplication(PartnerApplication application) {
+    _application = application;
+    _contact.text = application.contactName ?? '';
+    _business.text = application.businessName ?? '';
+    _mobile.text = application.mobileE164 ?? '';
+    _email.text = application.email ?? '';
+    _hydrateCommonBusiness(application);
+    _hydrate(
+      BoutiquePartnerDetails.fromOnboardingData(application.onboardingData),
+    );
+  }
+
+  void _continueLater() {
+    context.pop();
+  }
+
+  Future<void> _applyAgain() async {
+    final rejectedApplication = _application;
+    final accountId = _accountId;
+    final customerProfileId = _customerProfileId;
+    if (rejectedApplication == null ||
+        rejectedApplication.status != PartnerApplicationStatus.rejected ||
+        accountId == null ||
+        customerProfileId == null) {
+      return;
+    }
+    final confirmed = await showPartnerReapplyDialog(
+      context: context,
+      partnerLabel: 'Boutique Partner',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final newApplication = await PartnerService.reapplyFromRejected(
+        rejectedApplicationId: rejectedApplication.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+      if (!mounted) return;
+      _hydrateApplication(newApplication);
+      setState(() => _saving = false);
       _message(
-        'Unable to save $saveStage.\n$error',
+        'A new Boutique Partner Draft was created. Review the copied information before submitting.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message(
+        'Unable to create a new Boutique Partner application.\n$error',
         isError: true,
       );
     }
   }
 
+  Widget _buildLifecycleActions() {
+    final application = _application;
+    if (application == null) return const SizedBox.shrink();
+    return PartnerApplicationLifecycleActions(
+      application: application,
+      saving: _saving,
+      canSaveDraft: _editable && !_saving,
+      canSubmit: _canSubmit,
+      onSaveDraft: () => _save(submit: false),
+      onSubmitForReview: () => _save(submit: true),
+      onApplyAgain: _applyAgain,
+      onContinueLater: _continueLater,
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // SMALL UI HELPERS
   // ---------------------------------------------------------------------------
-  void _message(
-    String text, {
-    bool isError = false,
-  }) {
+  void _message(String text, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(text),
-        backgroundColor:
-            isError ? AppColors.error : Colors.green,
+        backgroundColor: isError ? AppColors.error : Colors.green,
       ),
     );
   }
@@ -451,8 +521,7 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
           hintText: hint,
           border: const OutlineInputBorder(),
         ),
-        validator: required &&
-                (controller.text.trim().isEmpty)
+        validator: required && (controller.text.trim().isEmpty)
             ? (_) => '$label is required'
             : null,
       ),
@@ -491,9 +560,7 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
@@ -521,6 +588,11 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            PartnerApplicationStatusNotice(
+              application: _application!,
+              partnerLabel: 'Boutique Partner',
+            ),
+            const SizedBox(height: 14),
             _card(
               'Basic Details',
               'Common Partner identity and contact information.',
@@ -531,7 +603,8 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
                   mobileController: _mobile,
                   emailController: _email,
                   editable: _editable,
-                  description: 'Common Partner identity and contact information.',
+                  description:
+                      'Common Partner identity and contact information.',
                   businessNameLabel: 'Boutique name',
                 ),
               ],
@@ -623,15 +696,14 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
                   type: TextInputType.number,
                 ),
                 CapabilityMultiSelector(
-                  metadataProvider:
-                      BoutiquePartnerCapabilityMetadata.instance,
+                  metadataProvider: BoutiquePartnerCapabilityMetadata.instance,
                   partnerCategoryCode:
                       BoutiquePartnerCapabilityMetadata.categoryCode,
                   initialValue: _capabilities,
                   enabled: _editable,
+                  minimumSelectionCount: 0,
                   requireOtherExpertiseDescription: false,
-                  onChanged: (value) =>
-                      setState(() => _capabilities = value),
+                  onChanged: (value) => setState(() => _capabilities = value),
                   sectionTitle: 'Boutique capabilities',
                 ),
               ],
@@ -639,8 +711,8 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
             const SizedBox(height: 14),
 
             _card(
-              'Operations & Fulfillment',
-              'Capture useful operational information for future matching.',
+              'Operations & Capacity',
+              'Provide the current team size and order-handling capacity.',
               [
                 _field('Team size', _teamSize, type: TextInputType.number),
                 _field(
@@ -652,42 +724,6 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
                   'Peak daily capacity',
                   _peakCapacity,
                   type: TextInputType.number,
-                ),
-                CheckboxListTile(
-                  value: _homeVisit,
-                  onChanged: _editable
-                      ? (value) =>
-                          setState(() => _homeVisit = value ?? false)
-                      : null,
-                  title: const Text('Home visit / consultation available'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                CheckboxListTile(
-                  value: _pickupAndDelivery,
-                  onChanged: _editable
-                      ? (value) => setState(
-                            () => _pickupAndDelivery = value ?? false,
-                          )
-                      : null,
-                  title: const Text('Pickup & Delivery'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                CheckboxListTile(
-                  value: _readyMade,
-                  onChanged: _editable
-                      ? (value) =>
-                          setState(() => _readyMade = value ?? false)
-                      : null,
-                  title: const Text('Ready-made inventory'),
-                  contentPadding: EdgeInsets.zero,
-                ),
-                CheckboxListTile(
-                  value: _returns,
-                  onChanged: _editable
-                      ? (value) => setState(() => _returns = value ?? false)
-                      : null,
-                  title: const Text('Return / exchange handling'),
-                  contentPadding: EdgeInsets.zero,
                 ),
               ],
             ),
@@ -706,30 +742,7 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
               ],
             ),
             const SizedBox(height: 18),
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _editable && !_saving
-                        ? () => _save(submit: false)
-                        : null,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save Draft'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _canSubmit
-                        ? () => _save(submit: true)
-                        : null,
-                    icon: const Icon(Icons.send_outlined),
-                    label: const Text('Submit for Review'),
-                  ),
-                ),
-              ],
-            ),
+            _buildLifecycleActions(),
             const SizedBox(height: 24),
           ],
         ),

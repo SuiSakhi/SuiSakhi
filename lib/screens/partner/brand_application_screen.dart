@@ -28,6 +28,8 @@ import '../../services/partner_service.dart';
 import '../../widgets/address/address_form_section.dart';
 import '../../widgets/capability/capability_multi_selector.dart';
 import '../../widgets/partner/partner_basic_details_section.dart';
+import '../../widgets/partner/partner_application_lifecycle_section.dart';
+import '../../widgets/partner/partner_reapply_dialog.dart';
 import '../../widgets/schedule/operating_schedule_field.dart';
 
 // =============================================================================
@@ -38,8 +40,7 @@ class BrandApplicationScreen extends StatefulWidget {
   const BrandApplicationScreen({super.key});
 
   @override
-  State<BrandApplicationScreen> createState() =>
-      _BrandApplicationScreenState();
+  State<BrandApplicationScreen> createState() => _BrandApplicationScreenState();
 }
 
 class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
@@ -72,8 +73,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
   final _peakCapacity = TextEditingController();
   final _notes = TextEditingController();
 
-  PartnerCapabilitySelection _capabilities =
-      const PartnerCapabilitySelection();
+  PartnerCapabilitySelection _capabilities = const PartnerCapabilitySelection();
 
   bool _catalogue = false;
   bool _inventory = false;
@@ -142,8 +142,9 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
         throw StateError('Your SuiSakhi account could not be resolved.');
       }
 
-      final profiles =
-          await AppState.instance.fetchActiveProfilesForAccount(accountId);
+      final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+        accountId,
+      );
 
       Map<String, dynamic>? customer;
 
@@ -154,8 +155,9 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
         }
       }
 
-      final customerProfileId =
-          (customer?['profileId'] ?? customer?['docId'])?.toString().trim();
+      final customerProfileId = (customer?['profileId'] ?? customer?['docId'])
+          ?.toString()
+          .trim();
 
       if (customerProfileId == null || customerProfileId.isEmpty) {
         throw StateError('Your active Customer profile could not be resolved.');
@@ -165,19 +167,23 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
         accountId: accountId,
         customerProfileId: customerProfileId,
         partnerType: PartnerType.brand,
-        contactName: customer?['displayName']?.toString() ??
+        contactName:
+            customer?['displayName']?.toString() ??
             AppState.instance.displayName,
         mobileE164: phone,
         email: (customer?['email'] ?? user.email)?.toString(),
       );
 
-      _contact.text = application.contactName ??
+      _contact.text =
+          application.contactName ??
           customer?['displayName']?.toString() ??
           AppState.instance.displayName;
       _business.text = application.businessName ?? '';
       _mobile.text = application.mobileE164 ?? phone;
       _email.text =
-          application.email ?? (customer?['email'] ?? user.email)?.toString() ?? '';
+          application.email ??
+          (customer?['email'] ?? user.email)?.toString() ??
+          '';
 
       _hydrateCommonBusiness(application);
       _hydrate(
@@ -338,9 +344,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
     final accountId = _accountId;
     final customerProfileId = _customerProfileId;
 
-    if (application == null ||
-        accountId == null ||
-        customerProfileId == null) {
+    if (application == null || accountId == null || customerProfileId == null) {
       _message('Application context is unavailable.');
       return;
     }
@@ -398,16 +402,88 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
     } catch (error) {
       if (!mounted) return;
       setState(() => _saving = false);
-      _message('Unable to save $saveStage.\n$error');
+      _message('Unable to save $saveStage.\n$error', isError: true);
     }
+  }
+
+  void _hydrateApplication(PartnerApplication application) {
+    _application = application;
+    _contact.text = application.contactName ?? '';
+    _business.text = application.businessName ?? '';
+    _mobile.text = application.mobileE164 ?? '';
+    _email.text = application.email ?? '';
+    _hydrateCommonBusiness(application);
+    _hydrate(
+      BrandPartnerDetails.fromOnboardingData(application.onboardingData),
+    );
+  }
+
+  void _continueLater() {
+    context.pop();
+  }
+
+  Future<void> _applyAgain() async {
+    final rejectedApplication = _application;
+    final accountId = _accountId;
+    final customerProfileId = _customerProfileId;
+    if (rejectedApplication == null ||
+        rejectedApplication.status != PartnerApplicationStatus.rejected ||
+        accountId == null ||
+        customerProfileId == null) {
+      return;
+    }
+    final confirmed = await showPartnerReapplyDialog(
+      context: context,
+      partnerLabel: 'Brand Partner',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final newApplication = await PartnerService.reapplyFromRejected(
+        rejectedApplicationId: rejectedApplication.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+      if (!mounted) return;
+      _hydrateApplication(newApplication);
+      setState(() => _saving = false);
+      _message(
+        'A new Brand Partner Draft was created. Review the copied information before submitting.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message(
+        'Unable to create a new Brand Partner application.\n$error',
+        isError: true,
+      );
+    }
+  }
+
+  Widget _buildLifecycleActions() {
+    final application = _application;
+    if (application == null) return const SizedBox.shrink();
+    return PartnerApplicationLifecycleActions(
+      application: application,
+      saving: _saving,
+      canSaveDraft: _editable && !_saving,
+      canSubmit: _canSubmit,
+      onSaveDraft: () => _save(submit: false),
+      onSubmitForReview: () => _save(submit: true),
+      onApplyAgain: _applyAgain,
+      onContinueLater: _continueLater,
+    );
   }
 
   // ---------------------------------------------------------------------------
   // SMALL UI HELPERS
   // ---------------------------------------------------------------------------
-  void _message(String text) {
+  void _message(String text, {bool isError = false}) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(text)),
+      SnackBar(
+        content: Text(text),
+        backgroundColor: isError ? AppColors.error : const Color(0xFF2E7D32),
+      ),
     );
   }
 
@@ -433,19 +509,6 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
             ? (_) => '$label is required'
             : null,
       ),
-    );
-  }
-
-  Widget _check(
-    String text,
-    bool value,
-    ValueChanged<bool?>? onChanged,
-  ) {
-    return CheckboxListTile(
-      value: value,
-      onChanged: onChanged,
-      title: Text(text),
-      contentPadding: EdgeInsets.zero,
     );
   }
 
@@ -481,9 +544,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (_error != null) {
@@ -511,6 +572,11 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            PartnerApplicationStatusNotice(
+              application: _application!,
+              partnerLabel: 'Brand Partner',
+            ),
+            const SizedBox(height: 14),
             _card(
               'Basic Details',
               'Common Partner identity and contact information.',
@@ -521,7 +587,8 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
                   mobileController: _mobile,
                   emailController: _email,
                   editable: _editable,
-                  description: 'Common Partner identity and contact information.',
+                  description:
+                      'Common Partner identity and contact information.',
                   businessNameLabel: 'Brand name',
                 ),
               ],
@@ -636,9 +703,9 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
                       BrandPartnerCapabilityMetadata.categoryCode,
                   initialValue: _capabilities,
                   enabled: _editable,
+                  minimumSelectionCount: 0,
                   requireOtherExpertiseDescription: false,
-                  onChanged: (value) =>
-                      setState(() => _capabilities = value),
+                  onChanged: (value) => setState(() => _capabilities = value),
                   sectionTitle: 'Brand capabilities',
                 ),
               ],
@@ -646,50 +713,9 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
             const SizedBox(height: 14),
 
             _card(
-              'Products, Inventory & Fulfillment',
-              'Capture useful operational information for future matching.',
+              'Operations & Capacity',
+              'Provide the current team size and order-handling capacity.',
               [
-                _check(
-                  'Catalogue is ready',
-                  _catalogue,
-                  _editable
-                      ? (value) =>
-                          setState(() => _catalogue = value ?? false)
-                      : null,
-                ),
-                _check(
-                  'Inventory is managed',
-                  _inventory,
-                  _editable
-                      ? (value) =>
-                          setState(() => _inventory = value ?? false)
-                      : null,
-                ),
-                _check(
-                  'Ready stock available',
-                  _readyStock,
-                  _editable
-                      ? (value) =>
-                          setState(() => _readyStock = value ?? false)
-                      : null,
-                ),
-                _check(
-                  'Pickup & Delivery',
-                  _pickupAndDelivery,
-                  _editable
-                      ? (value) => setState(
-                            () => _pickupAndDelivery = value ?? false,
-                          )
-                      : null,
-                ),
-                _check(
-                  'Return / exchange handling',
-                  _returns,
-                  _editable
-                      ? (value) =>
-                          setState(() => _returns = value ?? false)
-                      : null,
-                ),
                 _field('Team size', _teamSize, type: TextInputType.number),
                 _field(
                   'Normal daily capacity',
@@ -708,35 +734,10 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
             _card(
               'Additional Information',
               'Optional information useful for future SuiSakhi matching and AI.',
-              [
-                _field('Additional notes', _notes),
-              ],
+              [_field('Additional notes', _notes)],
             ),
             const SizedBox(height: 18),
-
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _editable && !_saving
-                        ? () => _save(submit: false)
-                        : null,
-                    icon: const Icon(Icons.save_outlined),
-                    label: const Text('Save Draft'),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton.icon(
-                    onPressed: _canSubmit
-                        ? () => _save(submit: true)
-                        : null,
-                    icon: const Icon(Icons.send_outlined),
-                    label: const Text('Submit for Review'),
-                  ),
-                ),
-              ],
-            ),
+            _buildLifecycleActions(),
             const SizedBox(height: 24),
           ],
         ),

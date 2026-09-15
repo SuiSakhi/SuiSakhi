@@ -78,6 +78,12 @@ class MeasurementPartnerCapabilityMetadata
       partnerCategoryCode: categoryCode,
       displayOrder: 40,
     ),
+    CapabilityGroupDefinition(
+      code: 'measurementPartner.fulfillment',
+      label: 'Collection & Delivery',
+      partnerCategoryCode: categoryCode,
+      displayOrder: 90,
+    ),
   ];
 
   // ==========================================================================
@@ -158,6 +164,16 @@ class MeasurementPartnerCapabilityMetadata
       groupCode: 'measurement.logistics',
       displayOrder: 20,
       requiresVerification: true,
+    ),
+    // ------------------------------------------------------------------------
+    // COLLECTION & DELIVERY
+    // ------------------------------------------------------------------------
+    CapabilityDefinition(
+      code: 'measurementPartner.pickupDelivery',
+      label: 'Pickup & Delivery Available',
+      partnerCategoryCode: categoryCode,
+      groupCode: 'measurementPartner.fulfillment',
+      displayOrder: 10,
     ),
   ];
 

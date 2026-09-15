@@ -30,6 +30,8 @@ import '../../models/partner_capability_selection.dart';
 import '../../services/partner_service.dart';
 import '../../widgets/capability/capability_multi_selector.dart';
 import '../../widgets/partner/partner_basic_details_section.dart';
+import '../../widgets/partner/partner_application_lifecycle_section.dart';
+import '../../widgets/partner/partner_reapply_dialog.dart';
 
 // ============================================================================
 // DESIGNER PARTNER APPLICATION
@@ -99,13 +101,6 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
         status == PartnerApplicationStatus.changesRequested;
   }
 
-  bool get _isUnderAdminReview {
-    final status = _application?.status;
-
-    return status == PartnerApplicationStatus.submitted ||
-        status == PartnerApplicationStatus.underReview;
-  }
-
   bool get _canSaveDraft {
     return _isEditable &&
         !_saving &&
@@ -114,76 +109,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
   }
 
   bool get _canSubmit {
-    return _isEditable &&
-        !_saving &&
-        _contactNameController.text.trim().isNotEmpty &&
-        _businessNameController.text.trim().isNotEmpty &&
-        _mobileController.text.trim().isNotEmpty &&
-        _professionalTypeController.text.trim().isNotEmpty &&
-        _originalWorkDeclaration;
-  }
-
-  String get _applicationStatusLabel {
-    switch (_application?.status) {
-      case PartnerApplicationStatus.draft:
-        return 'Draft';
-
-      case PartnerApplicationStatus.submitted:
-        return 'Submitted';
-
-      case PartnerApplicationStatus.underReview:
-        return 'Under Review';
-
-      case PartnerApplicationStatus.changesRequested:
-        return 'Changes Requested';
-
-      case PartnerApplicationStatus.approved:
-        return 'Approved';
-
-      case PartnerApplicationStatus.rejected:
-        return 'Requires Attention';
-
-      case PartnerApplicationStatus.suspended:
-        return 'Suspended';
-
-      case PartnerApplicationStatus.inactive:
-        return 'Inactive';
-
-      case null:
-        return 'Loading';
-    }
-  }
-
-  String get _applicationHeaderMessage {
-    switch (_application?.status) {
-      case PartnerApplicationStatus.changesRequested:
-        return 'SuiSakhi Admin has requested additional information. '
-            'Please review the instructions, update your details, '
-            'and submit the application again.';
-
-      case PartnerApplicationStatus.submitted:
-        return 'Your Designer Partner application has been submitted '
-            'and is waiting for SuiSakhi Admin review.';
-
-      case PartnerApplicationStatus.underReview:
-        return 'Your Designer Partner application is currently being '
-            'reviewed by SuiSakhi Admin. Editing is temporarily unavailable.';
-
-      case PartnerApplicationStatus.approved:
-        return 'Your Designer Partner application has been approved. '
-            'Partner profile activation will follow.';
-
-      case PartnerApplicationStatus.rejected:
-        return 'This application was not approved. Review the reason '
-            'provided by SuiSakhi Admin.';
-
-      case PartnerApplicationStatus.draft:
-      case PartnerApplicationStatus.suspended:
-      case PartnerApplicationStatus.inactive:
-      case null:
-        return 'Complete your Designer Partner information and save your '
-            'application as a draft. Submission will send it for Admin review.';
-    }
+    return _isEditable && !_saving;
   }
 
   // ==========================================================================
@@ -567,31 +493,16 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: AppColors.divider),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              const Icon(Icons.design_services_outlined, size: 30),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  'Designer Partner Application',
-                  style: AppTextStyles.headlineMedium,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _applicationHeaderMessage,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textSecondary,
-              height: 1.4,
+          const Icon(Icons.design_services_outlined, size: 30),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Designer Partner Application',
+              style: AppTextStyles.headlineMedium,
             ),
           ),
-          const SizedBox(height: 12),
-          Chip(label: Text(_applicationStatusLabel)),
         ],
       ),
     );
@@ -934,53 +845,74 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
     );
   }
 
+  void _hydrateApplication(PartnerApplication application) {
+    _application = application;
+    _contactNameController.text = application.contactName ?? '';
+    _businessNameController.text = application.businessName ?? '';
+    _mobileController.text = application.mobileE164 ?? '';
+    _emailController.text = application.email ?? '';
+    _hydrateDesignerDetails(
+      DesignerPartnerDetails.fromOnboardingData(application.onboardingData),
+    );
+  }
+
+  void _continueLater() {
+    context.pop();
+  }
+
+  Future<void> _applyAgain() async {
+    final rejectedApplication = _application;
+    final accountId = _accountId;
+    final customerProfileId = _customerProfileId;
+    if (rejectedApplication == null ||
+        rejectedApplication.status != PartnerApplicationStatus.rejected ||
+        accountId == null ||
+        customerProfileId == null) {
+      return;
+    }
+    final confirmed = await showPartnerReapplyDialog(
+      context: context,
+      partnerLabel: 'Designer Partner',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      final newApplication = await PartnerService.reapplyFromRejected(
+        rejectedApplicationId: rejectedApplication.id,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+      if (!mounted) return;
+      _hydrateApplication(newApplication);
+      setState(() => _saving = false);
+      _showSuccess(
+        'A new Designer Partner Draft was created. Review the copied information before submitting.',
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _showError(
+        'Unable to create a new Designer Partner application.\n$error',
+      );
+    }
+  }
+
   // ==========================================================================
   // ACTIONS
   // ==========================================================================
 
   Widget _buildActions() {
-    if (!_isEditable) {
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (_isUnderAdminReview)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: AppColors.divider),
-              ),
-              child: const Text(
-                'Editing is temporarily unavailable while Admin reviews '
-                'this application.',
-                textAlign: TextAlign.center,
-              ),
-            ),
-        ],
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        ElevatedButton.icon(
-          onPressed: _canSaveDraft ? _saveDraft : null,
-          icon: _saving
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save_outlined),
-          label: Text(_saving ? 'Saving...' : 'Save Draft'),
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: _canSubmit ? _submitForReview : null,
-          icon: const Icon(Icons.send_outlined),
-          label: const Text('Submit for Admin Review'),
-        ),
-      ],
+    final application = _application;
+    if (application == null) return const SizedBox.shrink();
+    return PartnerApplicationLifecycleActions(
+      application: application,
+      saving: _saving,
+      canSaveDraft: _canSaveDraft,
+      canSubmit: _canSubmit,
+      onSaveDraft: _saveDraft,
+      onSubmitForReview: _submitForReview,
+      onApplyAgain: _applyAgain,
+      onContinueLater: _continueLater,
     );
   }
 
@@ -1088,6 +1020,11 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             _buildApplicationHeader(),
+            const SizedBox(height: 16),
+            PartnerApplicationStatusNotice(
+              application: _application!,
+              partnerLabel: 'Designer Partner',
+            ),
             const SizedBox(height: 16),
 
             // COMMON PARTNER FOUNDATION: BASIC DETAILS
