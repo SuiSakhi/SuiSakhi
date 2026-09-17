@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import 'catalogue_design_asset.dart';
+import 'catalogue_design_view.dart';
 import 'catalogue_processing_status.dart';
 
 class CatalogueDesignVersion {
@@ -8,11 +9,22 @@ class CatalogueDesignVersion {
     required this.versionId,
     required this.designId,
     required this.versionNumber,
-    required this.originalAsset,
-    this.normalizedPreviewAsset,
-    this.structuredSvgAsset,
-    this.thumbnailAsset,
+    this.primaryViewId,
+    this.viewCount = 0,
     this.processing = const CatalogueProcessingResult(),
+
+    // Existing single-view constructor compatibility.
+    CatalogueDesignAsset? originalAsset,
+    CatalogueDesignAsset? normalizedPreviewAsset,
+    CatalogueDesignAsset? structuredSvgAsset,
+    CatalogueDesignAsset? thumbnailAsset,
+
+    // Explicit legacy-storage compatibility.
+    CatalogueDesignAsset? legacyOriginalAsset,
+    CatalogueDesignAsset? legacyNormalizedPreviewAsset,
+    CatalogueDesignAsset? legacyStructuredSvgAsset,
+    CatalogueDesignAsset? legacyThumbnailAsset,
+
     this.submittedByUid,
     this.submittedAt,
     this.reviewedByUid,
@@ -20,16 +32,42 @@ class CatalogueDesignVersion {
     this.publishedAt,
     this.createdAt,
     this.updatedAt,
-  });
+  }) : legacyOriginalAsset =
+          legacyOriginalAsset ?? originalAsset,
+      legacyNormalizedPreviewAsset =
+          legacyNormalizedPreviewAsset ??
+          normalizedPreviewAsset,
+      legacyStructuredSvgAsset =
+          legacyStructuredSvgAsset ??
+          structuredSvgAsset,
+      legacyThumbnailAsset =
+          legacyThumbnailAsset ?? thumbnailAsset;
 
   final String versionId;
   final String designId;
   final int versionNumber;
-  final CatalogueDesignAsset originalAsset;
-  final CatalogueDesignAsset? normalizedPreviewAsset;
-  final CatalogueDesignAsset? structuredSvgAsset;
-  final CatalogueDesignAsset? thumbnailAsset;
+  final String? primaryViewId;
+  final int viewCount;
   final CatalogueProcessingResult processing;
+
+  // Backward compatibility for records created before ARCH-CAT-006.
+  final CatalogueDesignAsset? legacyOriginalAsset;
+  final CatalogueDesignAsset? legacyNormalizedPreviewAsset;
+  final CatalogueDesignAsset? legacyStructuredSvgAsset;
+  final CatalogueDesignAsset? legacyThumbnailAsset;
+    // Backward-compatible getters for existing screens and services.
+  CatalogueDesignAsset? get originalAsset =>
+      legacyOriginalAsset;
+
+  CatalogueDesignAsset? get normalizedPreviewAsset =>
+      legacyNormalizedPreviewAsset;
+
+  CatalogueDesignAsset? get structuredSvgAsset =>
+      legacyStructuredSvgAsset;
+
+  CatalogueDesignAsset? get thumbnailAsset =>
+      legacyThumbnailAsset; 
+
   final String? submittedByUid;
   final DateTime? submittedAt;
   final String? reviewedByUid;
@@ -38,15 +76,48 @@ class CatalogueDesignVersion {
   final DateTime? createdAt;
   final DateTime? updatedAt;
 
+  bool get isLegacySingleView => viewCount == 0 && legacyOriginalAsset != null;
+
+  CatalogueDesignView? get legacyView => legacyOriginalAsset == null
+      ? null
+      : CatalogueDesignView(
+          viewId: 'legacy-single-view',
+          designId: designId,
+          versionId: versionId,
+          viewType: CatalogueDesignViewType.singleView,
+          displayOrder: 1,
+          isPrimary: true,
+          originalAsset: legacyOriginalAsset!,
+          normalizedPreviewAsset: legacyNormalizedPreviewAsset,
+          structuredSvgAsset: legacyStructuredSvgAsset,
+          thumbnailAsset: legacyThumbnailAsset,
+          processing: processing,
+          createdAt: createdAt,
+          updatedAt: updatedAt,
+        );
+
   Map<String, dynamic> toMap() => {
     'versionId': versionId.trim(),
     'designId': designId.trim(),
     'versionNumber': versionNumber < 1 ? 1 : versionNumber,
-    'originalAsset': originalAsset.toMap(),
-    'normalizedPreviewAsset': normalizedPreviewAsset?.toMap(),
-    'structuredSvgAsset': structuredSvgAsset?.toMap(),
-    'thumbnailAsset': thumbnailAsset?.toMap(),
+    'primaryViewId': _text(primaryViewId),
+    'viewCount': viewCount < 0 ? 0 : viewCount,
     'processing': processing.toMap(),
+
+    if (legacyOriginalAsset != null)
+      'originalAsset': legacyOriginalAsset!.toMap(),
+
+    if (legacyNormalizedPreviewAsset != null)
+      'normalizedPreviewAsset':
+          legacyNormalizedPreviewAsset!.toMap(),
+
+    if (legacyStructuredSvgAsset != null)
+      'structuredSvgAsset':
+          legacyStructuredSvgAsset!.toMap(),
+
+    if (legacyThumbnailAsset != null)
+      'thumbnailAsset':
+          legacyThumbnailAsset!.toMap(),
     'submittedByUid': _text(submittedByUid),
     'submittedAt': _timestamp(submittedAt),
     'reviewedByUid': _text(reviewedByUid),
@@ -57,16 +128,17 @@ class CatalogueDesignVersion {
   };
 
   factory CatalogueDesignVersion.fromMap(Map<String, dynamic> data) {
-    final original = _map(data['originalAsset']);
     return CatalogueDesignVersion(
       versionId: data['versionId']?.toString().trim() ?? '',
       designId: data['designId']?.toString().trim() ?? '',
       versionNumber: _int(data['versionNumber']) ?? 1,
-      originalAsset: CatalogueDesignAsset.fromMap(original),
-      normalizedPreviewAsset: _asset(data['normalizedPreviewAsset']),
-      structuredSvgAsset: _asset(data['structuredSvgAsset']),
-      thumbnailAsset: _asset(data['thumbnailAsset']),
+      primaryViewId: _text(data['primaryViewId']?.toString()),
+      viewCount: _int(data['viewCount']) ?? 0,
       processing: CatalogueProcessingResult.fromMap(_map(data['processing'])),
+      legacyOriginalAsset: _asset(data['originalAsset']),
+      legacyNormalizedPreviewAsset: _asset(data['normalizedPreviewAsset']),
+      legacyStructuredSvgAsset: _asset(data['structuredSvgAsset']),
+      legacyThumbnailAsset: _asset(data['thumbnailAsset']),
       submittedByUid: _text(data['submittedByUid']?.toString()),
       submittedAt: _date(data['submittedAt']),
       reviewedByUid: _text(data['reviewedByUid']?.toString()),
