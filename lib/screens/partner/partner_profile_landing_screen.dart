@@ -1,11 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 
 class PartnerProfileLandingScreen extends StatelessWidget {
-  const PartnerProfileLandingScreen({super.key});
+  const PartnerProfileLandingScreen({
+    super.key,
+    this.accountId,
+    this.partnerProfileId,
+    this.partnerCategoryCode,
+  });
+
+  final String? accountId;
+  final String? partnerProfileId;
+  final String? partnerCategoryCode;
+
+  bool get _isDesigner {
+    return partnerCategoryCode?.trim().toLowerCase() == 'designer';
+  }
+
+  bool get _hasDesignerIdentity {
+    return accountId?.trim().isNotEmpty == true &&
+        partnerProfileId?.trim().isNotEmpty == true;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,7 +85,26 @@ class PartnerProfileLandingScreen extends StatelessWidget {
                     height: 1.4,
                   ),
                 ),
-                const SizedBox(height: 22),
+                if (_isDesigner) ...[
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _hasDesignerIdentity
+                          ? () {
+                              context.push(
+                                '/partner/designer/catalogue'
+                                '?accountId=${Uri.encodeQueryComponent(accountId!.trim())}'
+                                '&profileId=${Uri.encodeQueryComponent(partnerProfileId!.trim())}',
+                              );
+                            }
+                          : null,
+                      icon: const Icon(Icons.design_services_outlined),
+                      label: const Text('My Catalogue Designs'),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(

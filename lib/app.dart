@@ -49,6 +49,14 @@ import 'screens/partner/measurement_partner_application_screen.dart';
 import 'screens/partner/quickcare_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
+import 'screens/owner/owner_catalogue_upload_screen.dart';
+import 'screens/partner/designer_catalogue_upload_screen.dart';
+import 'screens/owner/owner_catalogue_screen.dart';
+import 'screens/owner/owner_catalogue_review_screen.dart';
+import 'screens/owner/catalogue_correction_screen.dart';
+import 'screens/partner/designer_catalogue_screen.dart';
+import 'screens/partner/designer_catalogue_details_screen.dart';
+import 'screens/partner/designer_catalogue_correction_screen.dart';
 
 class StitchSmartApp extends StatelessWidget {
   const StitchSmartApp({super.key});
@@ -78,7 +86,35 @@ final _router = GoRouter(
     }
     return '/login';
   },
-  errorBuilder: (context, state) => const LoginScreen(),
+  errorBuilder: (context, state) => Scaffold(
+    appBar: AppBar(title: const Text('Page unavailable')),
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.route_outlined, size: 56),
+            const SizedBox(height: 16),
+            const Text(
+              'This page is not available.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            Text(state.uri.toString(), textAlign: TextAlign.center),
+            const SizedBox(height: 20),
+            FilledButton.icon(
+              onPressed: () =>
+                  context.canPop() ? context.pop() : context.go('/login'),
+              icon: const Icon(Icons.arrow_back_rounded),
+              label: const Text('Go Back'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  ),
   routes: [
     GoRoute(path: '/', builder: (ctx, state) => const SplashScreen()),
     GoRoute(path: '/login', builder: (ctx, state) => const LoginScreen()),
@@ -120,7 +156,11 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/partner/landing',
-      builder: (ctx, state) => const PartnerProfileLandingScreen(),
+      builder: (context, state) => PartnerProfileLandingScreen(
+        accountId: state.uri.queryParameters['accountId'],
+        partnerProfileId: state.uri.queryParameters['profileId'],
+        partnerCategoryCode: state.uri.queryParameters['category'],
+      ),
     ),
     GoRoute(
       path: '/partner/opportunities',
@@ -254,6 +294,56 @@ final _router = GoRouter(
     GoRoute(
       path: '/measurement-result',
       builder: (ctx, state) => const MeasurementResultScreen(),
+    ),
+    GoRoute(
+      path: '/owner/catalogue/upload',
+      builder: (context, state) => const OwnerCatalogueUploadScreen(),
+    ),
+    GoRoute(
+      path: '/partner/designer/catalogue',
+      builder: (context, state) => DesignerCatalogueScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        designerProfileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/designer/catalogue/upload',
+      builder: (context, state) => DesignerCatalogueUploadScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        designerProfileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/designer/catalogue/:designId/correct',
+      builder: (context, state) => DesignerCatalogueCorrectionScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        designerProfileId: state.uri.queryParameters['profileId'] ?? '',
+        designId: state.pathParameters['designId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/designer/catalogue/:designId',
+      builder: (context, state) => DesignerCatalogueDetailsScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        designerProfileId: state.uri.queryParameters['profileId'] ?? '',
+        designId: state.pathParameters['designId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/owner/catalogue',
+      builder: (context, state) => const OwnerCatalogueScreen(),
+    ),
+    GoRoute(
+      path: '/owner/catalogue/:designId/review',
+      builder: (context, state) => OwnerCatalogueReviewScreen(
+        designId: state.pathParameters['designId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/owner/catalogue/:designId/correct',
+      builder: (context, state) => CatalogueCorrectionScreen(
+        designId: state.pathParameters['designId'] ?? '',
+      ),
     ),
     GoRoute(
       path: '/catalog',

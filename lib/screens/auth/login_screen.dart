@@ -86,8 +86,10 @@ class _PhoneAuthFlowModel extends ChangeNotifier {
   bool loading = false;
   String? error;
   String phoneDisplay = '';
+
   /// Set when user taps Send OTP (used after sign-in for profile name).
   String collectedDisplayName = '';
+
   /// Captured when the phone sheet opens (survives [LoginScreen] recreation).
   UserRole intentRole = UserRole.customer;
   bool _disposed = false;
@@ -238,13 +240,8 @@ class _PhoneAuthRouteHostState extends State<_PhoneAuthRouteHost> {
       resizeToAvoidBottomInset: true,
       body: Column(
         children: [
-          if (m.loading)
-            const LinearProgressIndicator(minHeight: 3),
-          Expanded(
-            child: SafeArea(
-              child: widget.pageBuilder(widget.navCtx),
-            ),
-          ),
+          if (m.loading) const LinearProgressIndicator(minHeight: 3),
+          Expanded(child: SafeArea(child: widget.pageBuilder(widget.navCtx))),
         ],
       ),
     );
@@ -315,11 +312,96 @@ class _LoginScreenState extends State<LoginScreen> {
 
   String _destinationFor(UserRole role, {bool returning = false}) {
     return switch (role) {
-      UserRole.owner    => '/owner',
-      UserRole.tailor   => '/tailor',
+      UserRole.owner => '/owner',
+
+      // Legacy direct-role compatibility.
+      UserRole.tailor => '/tailor',
       UserRole.delivery => '/delivery',
+
+      // Generic Partner requires profile selection because UserRole alone
+      // cannot determine the category-specific destination.
+      UserRole.partner => '/profile-selection',
+
       UserRole.customer => returning ? '/home' : '/onboarding',
     };
+  }
+
+  // ==========================================================================
+  // PROFILE-BASED DESTINATION
+  // ==========================================================================
+  //
+  // UserRole determines the high-level access domain.
+  // partnerType determines the Partner-specific operational experience.
+  //
+  // Approved Partner Business Profiles must open operational modules,
+  // not Partner Application forms.
+  // ==========================================================================
+  String _destinationForProfile(
+    Map<String, dynamic> profile, {
+    required String accountId,
+    bool returning = false,
+  }) {
+    final role = (profile['role'] ?? 'customer')
+        .toString()
+        .trim()
+        .toLowerCase();
+
+    final profileId =
+        (profile['profileId'] ?? profile['docId'] ?? profile['id'] ?? '')
+            .toString()
+            .trim();
+
+    final partnerType = (profile['partnerType'] ?? '').toString().trim();
+
+    // COMMON CUSTOMER FOUNDATION
+    if (role == 'customer') {
+      return returning ? '/home' : '/onboarding';
+    }
+
+    // ADMIN / OWNER
+    if (role == 'owner') {
+      return '/owner';
+    }
+
+    // LEGACY DIRECT TAILOR PROFILE
+    if (role == 'tailor') {
+      return '/tailor';
+    }
+
+    // LEGACY DIRECT DELIVERY PROFILE
+    if (role == 'delivery' || role == 'delivery_partner') {
+      return '/delivery';
+    }
+
+    // GENERIC PARTNER BUSINESS PROFILE
+    if (role == 'partner') {
+      switch (partnerType) {
+        case 'tailor':
+          return '/tailor';
+
+        case 'deliveryPartner':
+          return '/delivery';
+
+        case 'measurementPartner':
+          return '/partner/landing'
+              '?accountId=${Uri.encodeQueryComponent(accountId.trim())}'
+              '&profileId=${Uri.encodeQueryComponent(profileId)}'
+              '&category=${Uri.encodeQueryComponent(partnerType)}';
+
+        case 'designer':
+          return '/partner/designer/catalogue'
+              '?accountId=${Uri.encodeQueryComponent(accountId.trim())}'
+              '&profileId=${Uri.encodeQueryComponent(profileId)}';
+
+        default:
+          return '/partner/landing'
+              '?accountId=${Uri.encodeQueryComponent(accountId.trim())}'
+              '&profileId=${Uri.encodeQueryComponent(profileId)}'
+              '&category=${Uri.encodeQueryComponent(partnerType)}';
+      }
+    }
+
+    return returning ? '/home' : '/onboarding';
   }
 
   // ── Shared post-auth handler ─────────────────────────────────────────────
@@ -330,17 +412,19 @@ class _LoginScreenState extends State<LoginScreen> {
     String? displayNameOverride,
   }) async {
     // Step 1: Temporary profile
-    AppState.instance.setProfile(UserProfile(
-      name: _resolvedProfileDisplayName(
-        user: user,
-        email: email,
-        override: displayNameOverride,
+    AppState.instance.setProfile(
+      UserProfile(
+        name: _resolvedProfileDisplayName(
+          user: user,
+          email: email,
+          override: displayNameOverride,
+        ),
+        email: email ?? user.email,
+        photoUrl: user.photoURL,
+        role: UserRole.customer,
+        notifyWhatsApp: true,
       ),
-      email: email ?? user.email,
-      photoUrl: user.photoURL,
-      role: UserRole.customer,
-      notifyWhatsApp: true,
-    ));
+    );
 
     // Step 2: Check config role (admin: owner/tailor/delivery emails + tailorPhones for OTP).
     final configRole = await AppState.instance.getRoleFromConfig(
@@ -390,9 +474,9 @@ class _LoginScreenState extends State<LoginScreen> {
       final detail = (em != null && em.isNotEmpty)
           ? 'Ask the owner to add this email under Owner → Enroll Tailor:\n\n$em'
           : (ph != null && ph.isNotEmpty)
-              ? 'Ask the owner to add this exact phone (E.164) under Owner → Enroll Tailor:\n\n$ph'
-              : 'Sign in with the phone number the owner enrolled under Owner → Enroll Tailor '
-                  '(E.164, e.g. +91…), or ask them to add your email in config.';
+          ? 'Ask the owner to add this exact phone (E.164) under Owner → Enroll Tailor:\n\n$ph'
+          : 'Sign in with the phone number the owner enrolled under Owner → Enroll Tailor '
+                '(E.164, e.g. +91…), or ask them to add your email in config.';
       if (mounted) {
         setState(() {
           _error = 'Tailor access is not enabled for this account.\n\n$detail';
@@ -409,39 +493,38 @@ class _LoginScreenState extends State<LoginScreen> {
     // Preserve all existing customer profile fields loaded from Firestore.
     // Important: Do not lose DOB, height, weight, fit preference, language,
     // and notification preferences during login role resolution.
-    AppState.instance.setProfile(UserProfile(
-      name: _resolvedProfileDisplayName(
-        user: user,
-        email: email,
-        override: displayNameOverride,
-        existing: existing,
+    AppState.instance.setProfile(
+      UserProfile(
+        name: _resolvedProfileDisplayName(
+          user: user,
+          email: email,
+          override: displayNameOverride,
+          existing: existing,
+        ),
+        gender: existing?.gender ?? Gender.female,
+        age: existing?.age ?? 0,
+        role: finalRole,
+        avatarPath: existing?.avatarPath,
+        email: ownerEnrollmentEmail ?? existing?.email ?? email ?? user.email,
+        photoUrl: existing?.photoUrl ?? user.photoURL,
+
+        // Preserve new customer profile fields.
+        dateOfBirth: existing?.dateOfBirth,
+        heightCm: existing?.heightCm,
+        weightKg: existing?.weightKg,
+        fitPreference: existing?.fitPreference,
+        preferredLanguage: existing?.preferredLanguage ?? 'English',
+
+        // Preserve notification preferences.
+        notifySms: existing?.notifySms ?? true,
+        notifyWhatsApp: existing?.notifyWhatsApp ?? true,
+        notifyApp: existing?.notifyApp ?? true,
+        notifyEmail: existing?.notifyEmail ?? false,
+
+        payoutUpiId: existing?.payoutUpiId,
+        deliveryAddress: existing?.deliveryAddress,
       ),
-      gender: existing?.gender ?? Gender.female,
-      age: existing?.age ?? 0,
-      role: finalRole,
-      avatarPath: existing?.avatarPath,
-      email: ownerEnrollmentEmail ??
-          existing?.email ??
-          email ??
-          user.email,
-      photoUrl: existing?.photoUrl ?? user.photoURL,
-
-      // Preserve new customer profile fields.
-      dateOfBirth: existing?.dateOfBirth,
-      heightCm: existing?.heightCm,
-      weightKg: existing?.weightKg,
-      fitPreference: existing?.fitPreference,
-      preferredLanguage: existing?.preferredLanguage ?? 'English',
-
-      // Preserve notification preferences.
-      notifySms: existing?.notifySms ?? true,
-      notifyWhatsApp: existing?.notifyWhatsApp ?? true,
-      notifyApp: existing?.notifyApp ?? true,
-      notifyEmail: existing?.notifyEmail ?? false,
-
-      payoutUpiId: existing?.payoutUpiId,
-      deliveryAddress: existing?.deliveryAddress,
-    ));
+    );
     try {
       await AppState.instance.saveUserProfile();
     } on FirebaseException catch (e) {
@@ -462,7 +545,7 @@ class _LoginScreenState extends State<LoginScreen> {
             content: Text(
               e.code == 'permission-denied'
                   ? 'Signed in, but Firestore blocked saving your profile. '
-                      'Publish rules for users/{userId} (see firebase/firestore.rules).'
+                        'Publish rules for users/{userId} (see firebase/firestore.rules).'
                   : 'Could not save profile: ${e.message ?? e.code}',
             ),
             action: rulesUri != null && e.code == 'permission-denied'
@@ -470,8 +553,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     label: 'Rules',
                     onPressed: () async {
                       if (await canLaunchUrl(rulesUri)) {
-                        await launchUrl(rulesUri,
-                            mode: LaunchMode.externalApplication);
+                        await launchUrl(
+                          rulesUri,
+                          mode: LaunchMode.externalApplication,
+                        );
                       }
                     },
                   )
@@ -500,29 +585,29 @@ class _LoginScreenState extends State<LoginScreen> {
     } catch (e) {
       debugPrint('SuiSakhi account/profile foundation skipped: $e');
     }
-    
-final navCtx = (mounted && context.mounted)
-    ? context
-    : stitchSmartRootNavigatorKey.currentContext;
 
-if (navCtx != null && navCtx.mounted) {
-  try {
-    final signedInUser = FirebaseAuth.instance.currentUser;
-    final signedInPhone = signedInUser?.phoneNumber;
+    final navCtx = (mounted && context.mounted)
+        ? context
+        : stitchSmartRootNavigatorKey.currentContext;
 
-    if (signedInUser != null &&
-        signedInPhone != null &&
-        signedInPhone.trim().isNotEmpty) {
-      final accountId = await AppState.instance.fetchAccountIdForMobile(
-        signedInPhone.trim(),
-      );
+    if (navCtx != null && navCtx.mounted) {
+      try {
+        final signedInUser = FirebaseAuth.instance.currentUser;
+        final signedInPhone = signedInUser?.phoneNumber;
 
-      if (accountId != null && accountId.isNotEmpty) {
-        final profiles =
-            await AppState.instance.fetchActiveProfilesForAccount(accountId);
+        if (signedInUser != null &&
+            signedInPhone != null &&
+            signedInPhone.trim().isNotEmpty) {
+          final accountId = await AppState.instance.fetchAccountIdForMobile(
+            signedInPhone.trim(),
+          );
 
-        debugPrint('SuiSakhi active profile count: ${profiles.length}');    
-/*
+          if (accountId != null && accountId.isNotEmpty) {
+            final profiles = await AppState.instance
+                .fetchActiveProfilesForAccount(accountId);
+
+            debugPrint('SuiSakhi active profile count: ${profiles.length}');
+            /*
         debugPrint(
           'SuiSakhi profiles found for account $accountId: ${profiles.length}',
         );
@@ -533,90 +618,87 @@ if (navCtx != null && navCtx.mounted) {
           );
         }
 */
-        if (profiles.length > 1 && navCtx.mounted) {
-          final selectedProfile =
-              await Navigator.of(navCtx, rootNavigator: true)
-                  .push<Map<String, dynamic>>(
-            MaterialPageRoute<Map<String, dynamic>>(
-              builder: (_) => ProfileSelectionScreen(
-                profiles: profiles,
-              ),
-            ),
-          );
+            if (profiles.length > 1 && navCtx.mounted) {
+              final selectedProfile =
+                  await Navigator.of(
+                    navCtx,
+                    rootNavigator: true,
+                  ).push<Map<String, dynamic>>(
+                    MaterialPageRoute<Map<String, dynamic>>(
+                      builder: (_) =>
+                          ProfileSelectionScreen(profiles: profiles),
+                    ),
+                  );
 
-          if (selectedProfile != null) {
-            final selectedProfileId =
-                selectedProfile['profileId']?.toString() ??
+              if (selectedProfile != null) {
+                final selectedProfileId =
+                    selectedProfile['profileId']?.toString() ??
                     selectedProfile['docId']?.toString();
 
-            if (selectedProfileId != null &&
-                selectedProfileId.trim().isNotEmpty) {
-              await AppState.instance.setActiveProfileForAccount(
-                accountId: accountId,
-                profileId: selectedProfileId,
-              );
+                if (selectedProfileId != null &&
+                    selectedProfileId.trim().isNotEmpty) {
+                  await AppState.instance.setActiveProfileForAccount(
+                    accountId: accountId,
+                    profileId: selectedProfileId,
+                  );
 
-              final selectedRole =
-                  AppState.instance.roleFromProfileData(selectedProfile);
+                  if (mounted) {
+                    setState(() => _loading = false);
+                  }
 
-              if (mounted) {
-                setState(() => _loading = false);
+                  if (navCtx.mounted) {
+                    GoRouter.of(navCtx).go(
+                      _destinationForProfile(
+                        selectedProfile,
+                        accountId: accountId,
+                      ),
+                    );
+                  }
+                  return;
+                }
               }
-
-              if (navCtx.mounted) {
-                GoRouter.of(navCtx).go(
-                  _destinationFor(selectedRole, returning: true),
-                );
-              }
-
-              return;
             }
-          }
-        }
-        if (profiles.length == 1 && navCtx.mounted) {
-          final onlyProfile = profiles.first;
+            if (profiles.length == 1 && navCtx.mounted) {
+              final onlyProfile = profiles.first;
 
-          final onlyProfileId =
-              onlyProfile['profileId']?.toString() ??
+              final onlyProfileId =
+                  onlyProfile['profileId']?.toString() ??
                   onlyProfile['docId']?.toString();
 
-          if (onlyProfileId != null && onlyProfileId.trim().isNotEmpty) {
-            await AppState.instance.setActiveProfileForAccount(
-              accountId: accountId,
-              profileId: onlyProfileId,
-            );
+              if (onlyProfileId != null && onlyProfileId.trim().isNotEmpty) {
+                await AppState.instance.setActiveProfileForAccount(
+                  accountId: accountId,
+                  profileId: onlyProfileId,
+                );
 
-            final onlyRole = AppState.instance.roleFromProfileData(onlyProfile);
+                if (mounted) {
+                  setState(() => _loading = false);
+                }
 
-            if (mounted) {
-              setState(() => _loading = false);
+                if (navCtx.mounted) {
+                  GoRouter.of(navCtx).go(
+                    _destinationForProfile(onlyProfile, accountId: accountId),
+                  );
+                }
+                return;
+              }
             }
-
-            if (navCtx.mounted) {
-              GoRouter.of(navCtx).go(
-                _destinationFor(onlyRole, returning: true),
-              );
-            }
-
-            return;
           }
         }
+      } catch (e) {
+        debugPrint('Profile selection skipped: $e');
+      }
+
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+
+      if (navCtx.mounted) {
+        GoRouter.of(
+          navCtx,
+        ).go(_destinationFor(finalRole, returning: returning));
       }
     }
-  } catch (e) {
-    debugPrint('Profile selection skipped: $e');
-  }
-
-  if (mounted) {
-    setState(() => _loading = false);
-  }
-
-  if (navCtx.mounted) {
-    GoRouter.of(navCtx).go(
-      _destinationFor(finalRole, returning: returning),
-    );
-  }
-}
   }
 
   // ── Phone / OTP Sign-In ──────────────────────────────────────────────────
@@ -703,8 +785,8 @@ if (navCtx != null && navCtx.mounted) {
     var name = nameCtrl.text.trim();
     try {
       if (!_isMeaningfulDisplayName(name)) {
-        final fromDb =
-            await AppState.instance.lookupDisplayNameByPhoneForSignIn(e164);
+        final fromDb = await AppState.instance
+            .lookupDisplayNameByPhoneForSignIn(e164);
         if (_isMeaningfulDisplayName(fromDb)) {
           name = fromDb!;
           nameCtrl.text = name;
@@ -722,51 +804,53 @@ if (navCtx != null && navCtx.mounted) {
 
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
-      phoneNumber: e164,
-      timeout: const Duration(seconds: 120),
-      // Android instant verification — auto sign-in. On iOS always show OTP (avoids
-      // rare plugin/callback ordering that pops the sheet before the OTP UI paints).
-      verificationCompleted: (credential) async {
-        _cancelPhoneWatchdog();
-        if (!_phoneAuthModel.alive) return;
-        _phoneAuthModel.cancelVerificationFailDebounce();
-        _phoneAuthModel.setLoading(false);
-        if (defaultTargetPlatform == TargetPlatform.iOS) return;
-        if (!navCtx.mounted) return;
-        await _completePhoneSignInAndPop(navCtx, credential);
-      },
-verificationFailed: (e) {
-/*  print('====================================');
+        phoneNumber: e164,
+        timeout: const Duration(seconds: 120),
+        // Android instant verification — auto sign-in. On iOS always show OTP (avoids
+        // rare plugin/callback ordering that pops the sheet before the OTP UI paints).
+        verificationCompleted: (credential) async {
+          _cancelPhoneWatchdog();
+          if (!_phoneAuthModel.alive) return;
+          _phoneAuthModel.cancelVerificationFailDebounce();
+          _phoneAuthModel.setLoading(false);
+          if (defaultTargetPlatform == TargetPlatform.iOS) return;
+          if (!navCtx.mounted) return;
+          await _completePhoneSignInAndPop(navCtx, credential);
+        },
+        verificationFailed: (e) {
+          /*  print('====================================');
   print('PHONE AUTH FAILED');
   print('CODE: ${e.code}');
   print('MESSAGE: ${e.message}');
   print('====================================');
 */
-  _cancelPhoneWatchdog();
+          _cancelPhoneWatchdog();
 
-  _phoneAuthModel.debouncedVerificationFailed(
-    _formatPhoneVerifyError(e),
-  );
-},
-      // Do NOT gate on LoginScreen mounted — it is often false here with GoRouter + push.
-      codeSent: (verificationId, _) {
-        _cancelPhoneWatchdog();
-        if (kDebugMode) {
-          debugPrint('[PhoneAuth] codeSent verificationId received');
-        }
-        _phoneAuthModel.setCodeSent(verificationId);
-      },
-      codeAutoRetrievalTimeout: (verificationId) {
-        if (kDebugMode) {
-          debugPrint('[PhoneAuth] codeAutoRetrievalTimeout');
-        }
-        _phoneAuthModel.mergeTimeoutVerificationId(verificationId);
-      },
-    );
+          _phoneAuthModel.debouncedVerificationFailed(
+            _formatPhoneVerifyError(e),
+          );
+        },
+        // Do NOT gate on LoginScreen mounted — it is often false here with GoRouter + push.
+        codeSent: (verificationId, _) {
+          _cancelPhoneWatchdog();
+          if (kDebugMode) {
+            debugPrint('[PhoneAuth] codeSent verificationId received');
+          }
+          _phoneAuthModel.setCodeSent(verificationId);
+        },
+        codeAutoRetrievalTimeout: (verificationId) {
+          if (kDebugMode) {
+            debugPrint('[PhoneAuth] codeAutoRetrievalTimeout');
+          }
+          _phoneAuthModel.mergeTimeoutVerificationId(verificationId);
+        },
+      );
     } catch (e) {
       _cancelPhoneWatchdog();
       _phoneAuthModel.cancelVerificationFailDebounce();
-      _phoneAuthModel.setFailed('Could not start phone verification. Try again.');
+      _phoneAuthModel.setFailed(
+        'Could not start phone verification. Try again.',
+      );
     }
   }
 
@@ -877,7 +961,10 @@ verificationFailed: (e) {
                   IconButton(
                     visualDensity: VisualDensity.compact,
                     onPressed: () => _closePhoneAuthSheet(context),
-                    icon: const Icon(Icons.close_rounded, color: AppColors.textSecondary),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
@@ -886,7 +973,9 @@ verificationFailed: (e) {
                 m.otpStep
                     ? 'Code sent to ${m.phoneDisplay}'
                     : 'Enter your mobile number to continue ...',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textSecondary),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
               ),
               const SizedBox(height: 12),
               if (!m.otpStep) ...[
@@ -984,10 +1073,7 @@ verificationFailed: (e) {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 1.8,
-                      ),
+                      border: Border.all(color: AppColors.primary, width: 1.8),
                       boxShadow: [
                         BoxShadow(
                           color: AppColors.primary.withValues(alpha: 0.12),
@@ -1008,10 +1094,7 @@ verificationFailed: (e) {
                     decoration: BoxDecoration(
                       color: AppColors.primary.withValues(alpha: 0.06),
                       borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.primary,
-                        width: 1.3,
-                      ),
+                      border: Border.all(color: AppColors.primary, width: 1.3),
                     ),
                   ),
                   errorPinTheme: PinTheme(
@@ -1059,7 +1142,10 @@ verificationFailed: (e) {
               if (!m.loading && m.error != null) ...[
                 const SizedBox(height: 8),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
                     borderRadius: BorderRadius.circular(8),
@@ -1067,12 +1153,19 @@ verificationFailed: (e) {
                   ),
                   child: Row(
                     children: [
-                      const Icon(Icons.error_outline_rounded, size: 16, color: Colors.red),
+                      const Icon(
+                        Icons.error_outline_rounded,
+                        size: 16,
+                        color: Colors.red,
+                      ),
                       const SizedBox(width: 8),
                       Flexible(
                         child: Text(
                           m.error!,
-                          style: const TextStyle(color: Colors.red, fontSize: 13),
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 13,
+                          ),
                         ),
                       ),
                     ],
@@ -1088,12 +1181,19 @@ verificationFailed: (e) {
     );
   }
 
-  Future<void> _signInWithPhoneCredential(PhoneAuthCredential credential) async {
+  Future<void> _signInWithPhoneCredential(
+    PhoneAuthCredential credential,
+  ) async {
     if (mounted) {
-      setState(() { _loading = true; _error = null; });
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
     }
     try {
-      final userCred = await FirebaseAuth.instance.signInWithCredential(credential);
+      final userCred = await FirebaseAuth.instance.signInWithCredential(
+        credential,
+      );
       final user = userCred.user;
       if (user == null) {
         if (mounted) setState(() => _loading = false);
@@ -1102,7 +1202,8 @@ verificationFailed: (e) {
       await _handleSignedInUser(
         user,
         loginRoleOverride: _kPhoneAuthFlowModel.intentRole,
-        displayNameOverride: _kPhoneAuthFlowModel.collectedDisplayName.trim().isEmpty
+        displayNameOverride:
+            _kPhoneAuthFlowModel.collectedDisplayName.trim().isEmpty
             ? null
             : _kPhoneAuthFlowModel.collectedDisplayName.trim(),
       );
@@ -1128,66 +1229,62 @@ verificationFailed: (e) {
     return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s.trim());
   } */
 
-Future<String?> _promptOwnerSetup({String? existingEmail}) async {
-  try {
-    final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+  Future<String?> _promptOwnerSetup({String? existingEmail}) async {
+    try {
+      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
 
-    if (phone == null) {
-      return null;
-    }
+      if (phone == null) {
+        return null;
+      }
 
-    final snapshot = await FirebaseFirestore.instance
-        .collection('partner_users')
-        .where('phone', isEqualTo: phone)
-        .where('active', isEqualTo: true)
-        .limit(1)
-        .get();
+      final snapshot = await FirebaseFirestore.instance
+          .collection('partner_users')
+          .where('phone', isEqualTo: phone)
+          .where('active', isEqualTo: true)
+          .limit(1)
+          .get();
 
-    if (snapshot.docs.isEmpty) {
+      if (snapshot.docs.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'This mobile number is not registered as a Fashion Partner.',
+              ),
+            ),
+          );
+        }
+        return null;
+      }
+
+      final data = snapshot.docs.first.data();
+
+      final email = (data['email'] ?? '').toString().trim();
+
+      if (email.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Partner email is missing. Contact Administrator.'),
+            ),
+          );
+        }
+        return null;
+      }
+
+      return email;
+    } catch (e) {
+      debugPrint('Partner verification failed: $e');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'This mobile number is not registered as a Fashion Partner.',
-            ),
-          ),
+          SnackBar(content: Text('Partner verification failed.\n$e')),
         );
       }
+
       return null;
     }
-
-    final data = snapshot.docs.first.data();
-
-    final email = (data['email'] ?? '').toString().trim();
-
-    if (email.isEmpty) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Partner email is missing. Contact Administrator.',
-            ),
-          ),
-        );
-      }
-      return null;
-    }
-
-    return email;
-  } catch (e) {
-    debugPrint('Partner verification failed: $e');
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Partner verification failed.\n$e'),
-        ),
-      );
-    }
-
-    return null;
   }
-}
 
   // ── Build ────────────────────────────────────────────────────────────────
   @override
@@ -1214,111 +1311,129 @@ Future<String?> _promptOwnerSetup({String? existingEmail}) async {
                   padding: const EdgeInsets.symmetric(horizontal: 32),
                   child: Column(
                     children: [
-                const SizedBox(height: 40),
-                // Logo
-                Container(
-                  width: 96,
-                  height: 96,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(28),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.2),
-                        blurRadius: 24,
-                        offset: const Offset(0, 8),
+                      const SizedBox(height: 40),
+                      // Logo
+                      Container(
+                        width: 96,
+                        height: 96,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(28),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.2),
+                              blurRadius: 24,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(8),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Image.asset(
+                              'assets/images/suisakhi_logo.png',
+                              fit: BoxFit.contain,
+                            ),
+                          ),
+                        ),
                       ),
-                    ],
-                  ),
-		  child: Padding(
-                    padding: const EdgeInsets.all(8),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(18),
-                      child: Image.asset(
-                         'assets/images/suisakhi_logo.png',
-                         fit: BoxFit.contain,
-                         ),
+                      const SizedBox(height: 28),
+                      Text(
+                        'SuiSakhi',
+                        style: AppTextStyles.displayLarge.copyWith(
+                          color: Colors.white,
+                          letterSpacing: 1,
+                        ),
                       ),
-                   ),
-		),
-                const SizedBox(height: 28),
-                Text(
-                  'SuiSakhi',
-                  style: AppTextStyles.displayLarge.copyWith(
-                      color: Colors.white, letterSpacing: 1),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Design • Stitch • Wear',
-                  style: AppTextStyles.bodyLarge
-                      .copyWith(color: Colors.white.withValues(alpha: 0.85)),
-                ),
-                const SizedBox(height: 32),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Design • Stitch • Wear',
+                        style: AppTextStyles.bodyLarge.copyWith(
+                          color: Colors.white.withValues(alpha: 0.85),
+                        ),
+                      ),
+                      const SizedBox(height: 32),
 
-                // Role selector
-                Text('Choose how you want to continue ...',
-                    style: AppTextStyles.titleMedium
-                        .copyWith(color: Colors.white.withValues(alpha: 0.8))),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _RoleCard(
-                      label: 'Customer',
-                      icon: Icons.person_rounded,
-                      selected: _selectedRole == UserRole.customer,
-                      onTap: () => setState(() => _selectedRole = UserRole.customer),
-                    ),
-                    const SizedBox(width: 10),
-                    _RoleCard(
-                      label: 'Fashion Partner',
-                      icon: Icons.store_rounded,
-                      selected: _selectedRole == UserRole.owner,
-                      onTap: () => setState(() => _selectedRole = UserRole.owner),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
+                      // Role selector
+                      Text(
+                        'Choose how you want to continue ...',
+                        style: AppTextStyles.titleMedium.copyWith(
+                          color: Colors.white.withValues(alpha: 0.8),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          _RoleCard(
+                            label: 'Customer',
+                            icon: Icons.person_rounded,
+                            selected: _selectedRole == UserRole.customer,
+                            onTap: () => setState(
+                              () => _selectedRole = UserRole.customer,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          _RoleCard(
+                            label: 'Fashion Partner',
+                            icon: Icons.store_rounded,
+                            selected: _selectedRole == UserRole.owner,
+                            onTap: () =>
+                                setState(() => _selectedRole = UserRole.owner),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
 
-                Text(
-                  'Sign in with SMS OTP.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.85),
-                    fontSize: 14,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 16),
+                      Text(
+                        'Sign in with SMS OTP.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.85),
+                          fontSize: 14,
+                          height: 1.35,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
 
-                _OtpSignInButton(loading: _loading, onTap: _showPhoneSignInSheet),
+                      _OtpSignInButton(
+                        loading: _loading,
+                        onTap: _showPhoneSignInSheet,
+                      ),
 
-                if (_error != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      _error!,
-                      style: const TextStyle(
-                          color: Colors.white, fontSize: 13, height: 1.4),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 20),
-                Text(
-                  'By continuing you agree to Terms & Privacy.',
-                  style: TextStyle(
-                    color: Colors.white.withValues(alpha: 0.55),
-                    fontSize: 11,
-                    height: 1.5,
-                  ),
-                  textAlign: TextAlign.center,
-                ),
-                const SizedBox(height: 32),
+                      if (_error != null) ...[
+                        const SizedBox(height: 10),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 10,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            _error!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              height: 1.4,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      Text(
+                        'By continuing you agree to Terms & Privacy.',
+                        style: TextStyle(
+                          color: Colors.white.withValues(alpha: 0.55),
+                          fontSize: 11,
+                          height: 1.5,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
                     ],
                   ),
                 ),
@@ -1354,18 +1469,25 @@ class _RoleCard extends StatelessWidget {
           duration: const Duration(milliseconds: 180),
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
-            color: selected ? Colors.white : Colors.white.withValues(alpha: 0.15),
+            color: selected
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.15),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: selected ? Colors.white : Colors.white.withValues(alpha: 0.3),
+              color: selected
+                  ? Colors.white
+                  : Colors.white.withValues(alpha: 0.3),
               width: 1.5,
             ),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 26,
-                  color: selected ? AppColors.primary : Colors.white),
+              Icon(
+                icon,
+                size: 26,
+                color: selected ? AppColors.primary : Colors.white,
+              ),
               const SizedBox(height: 6),
               Text(
                 label,
