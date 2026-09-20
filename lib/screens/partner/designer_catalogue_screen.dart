@@ -71,29 +71,33 @@ class _DesignerCatalogueScreenState extends State<DesignerCatalogueScreen> {
   Widget _dashboard(DesignerCatalogueAccessContext access) {
     return Scaffold(
       backgroundColor: AppColors.background,
-          appBar: AppBar(
-          leading: IconButton(
+      appBar: AppBar(
+        leading: IconButton(
           tooltip: 'Back to Partner Profile',
           onPressed: () {
             context.go(
-              '/partner/landing'
+              '/partner/workspace'
               '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
               '&profileId=${Uri.encodeQueryComponent(widget.designerProfileId)}'
               '&category=designer',
             );
           },
-          icon: const Icon(
-            Icons.arrow_back_ios_rounded,
-          ),
+          icon: const Icon(Icons.arrow_back_ios_rounded),
         ),
         title: const Text('My Catalogue Designs'),
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: 'Upload Design',
-            onPressed: () =>
-                context.push('/partner/designer/catalogue/upload$_query'),
-            icon: const Icon(Icons.add_photo_alternate_outlined),
+            tooltip: 'Partner Workspace',
+            onPressed: () {
+              context.push(
+                '/partner/workspace'
+                '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
+                '&profileId=${Uri.encodeQueryComponent(widget.designerProfileId)}'
+                '&category=designer',
+              );
+            },
+            icon: const Icon(Icons.account_circle_outlined),
           ),
         ],
       ),

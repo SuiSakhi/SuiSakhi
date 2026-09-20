@@ -49,6 +49,10 @@ import 'screens/partner/measurement_partner_application_screen.dart';
 import 'screens/partner/quickcare_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
+import 'screens/partner/partner_workspace_screen.dart';
+import 'screens/partner/partner_profile_view_screen.dart';
+import 'screens/partner/partner_business_details_screen.dart';
+import 'screens/partner/partner_addresses_view_screen.dart';
 import 'screens/owner/owner_catalogue_upload_screen.dart';
 import 'screens/partner/designer_catalogue_upload_screen.dart';
 import 'screens/owner/owner_catalogue_screen.dart';
@@ -160,6 +164,35 @@ final _router = GoRouter(
         accountId: state.uri.queryParameters['accountId'],
         partnerProfileId: state.uri.queryParameters['profileId'],
         partnerCategoryCode: state.uri.queryParameters['category'],
+      ),
+    ),
+    GoRoute(
+      path: '/partner/workspace',
+      builder: (context, state) => PartnerWorkspaceScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        partnerProfileId: state.uri.queryParameters['profileId'] ?? '',
+        partnerCategoryCode: state.uri.queryParameters['category'],
+      ),
+    ),
+    GoRoute(
+      path: '/partner/profile',
+      builder: (context, state) => PartnerProfileViewScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/business-details',
+      builder: (context, state) => PartnerBusinessDetailsScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/addresses',
+      builder: (context, state) => PartnerAddressesViewScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
       ),
     ),
     GoRoute(

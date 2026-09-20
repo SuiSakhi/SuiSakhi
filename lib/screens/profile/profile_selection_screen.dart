@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../services/partner_workspace_registry.dart';
 
 class ProfileSelectionScreen extends StatelessWidget {
   final List<Map<String, dynamic>> profiles;
@@ -23,49 +24,7 @@ class ProfileSelectionScreen extends StatelessWidget {
     // partnerType = tailor | measurementPartner | deliveryPartner | ...
     // ================================================================
     if (role == 'partner') {
-      switch (partnerType) {
-        case 'tailor':
-          return Icons.content_cut;
-
-        case 'measurementPartner':
-          return Icons.straighten;
-
-        case 'garmentCare':
-          return Icons.local_laundry_service_outlined;
-
-        case 'deliveryPartner':
-          return Icons.local_shipping;
-
-        case 'designer':
-          return Icons.design_services;
-
-        case 'boutique':
-          return Icons.storefront;
-
-        case 'fabricSupplier':
-          return Icons.inventory_2;
-
-        case 'printing':
-          return Icons.print;
-
-        case 'embroidery':
-          return Icons.auto_awesome;
-
-        case 'rental':
-          return Icons.checkroom;
-
-        case 'accessories':
-          return Icons.watch;
-
-        case 'brand':
-          return Icons.business;
-
-        case 'doorstepServices':
-          return Icons.home_repair_service;
-
-        default:
-          return Icons.handshake;
-      }
+      return PartnerWorkspaceRegistry.categoryIcon(partnerType);
     }
 
     // ================================================================
@@ -96,7 +55,13 @@ class ProfileSelectionScreen extends StatelessWidget {
 
   String _displayName(Map<String, dynamic> profile) {
     final role = (profile['role'] ?? '').toString().toLowerCase();
-
+    if (role == 'partner') {
+      for (final key in ['businessName', 'shopName', 'displayName', 'name']) {
+        final value = (profile[key] ?? '').toString().trim();
+        if (value.isNotEmpty) return value;
+      }
+      return 'SuiSakhi Partner';
+    }
     switch (role) {
       case 'owner':
       case 'tailor':
@@ -124,28 +89,7 @@ class ProfileSelectionScreen extends StatelessWidget {
     final partnerType = (profile['partnerType'] ?? '').toString().trim();
 
     if (role == 'partner') {
-      switch (partnerType) {
-        case 'tailor':
-          return 'Tailor';
-
-        case 'measurementPartner':
-          return 'Measurement Partner';
-
-        case 'garmentCare':
-          return 'Garment Care';
-
-        case 'deliveryPartner':
-          return 'Delivery Partner';
-
-        case 'designer':
-          return 'Designer';
-
-        case 'boutique':
-          return 'Boutique';
-
-        default:
-          return 'Partner';
-      }
+      return PartnerWorkspaceRegistry.categoryLabel(partnerType);
     }
 
     switch (role) {
