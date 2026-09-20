@@ -5,13 +5,14 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:image_picker/image_picker.dart';
 
 import '../models/catalogue_agreement.dart';
 import '../models/catalogue_design.dart';
 import '../models/catalogue_design_asset.dart';
 import '../models/catalogue_design_version.dart';
+import '../models/catalogue_design_view.dart';
 import '../models/catalogue_processing_status.dart';
 import 'catalogue_upload_policy.dart';
 import 'firebase_storage_helpers.dart';
@@ -34,12 +35,10 @@ class CatalogueDesignService {
     Query<Map<String, dynamic>> query = _designs
         .where('lifecycleStatus', isEqualTo: 'approved')
         .where('publicationStatus', isEqualTo: 'published');
-
     final garment = garmentTypeCode?.trim() ?? '';
     if (garment.isNotEmpty) {
       query = query.where('garmentTypeCodes', arrayContains: garment);
     }
-
     return query.snapshots().map((snapshot) {
       final designs = snapshot.docs.map(CatalogueDesign.fromDoc).toList();
       final occasion = occasionCode?.trim() ?? '';
@@ -71,6 +70,7 @@ class CatalogueDesignService {
     required CatalogueDesignOwnerType ownerType,
     required String title,
     required CatalogueDesignCommercial commercial,
+    String? ownerAccountId,
     String? ownerProfileId,
     String? description,
     List<String> garmentTypeCodes = const [],
@@ -86,6 +86,7 @@ class CatalogueDesignService {
       designId: doc.id,
       ownerType: ownerType,
       submittedByUid: uid,
+      ownerAccountId: ownerAccountId,
       ownerProfileId: ownerProfileId,
       title: title.trim().isEmpty ? 'Untitled Design' : title.trim(),
       description: description,
@@ -99,7 +100,6 @@ class CatalogueDesignService {
       lifecycleStatus: CatalogueDesignLifecycleStatus.draft,
       publicationStatus: CataloguePublicationStatus.unpublished,
     );
-
     final payload = design.toMap()
       ..['createdAt'] = FieldValue.serverTimestamp()
       ..['updatedAt'] = FieldValue.serverTimestamp();
@@ -107,6 +107,197 @@ class CatalogueDesignService {
     return doc.id;
   }
 
+  static Future<CatalogueDesignVersion> createVersion({
+    required String designId,
+  }) async {
+    final uid = _requireUid();
+    final normalizedDesignId = designId.trim();
+    if (normalizedDesignId.isEmpty) {
+      throw StateError('Catalogue design ID is required.');
+    }
+    final designRef = _designs.doc(normalizedDesignId);
+    final designSnapshot = await designRef.get();
+    if (!designSnapshot.exists) {
+      throw StateError('Catalogue design not found.');
+    }
+    final versionRef = designRef.collection('versions').doc();
+    final version = CatalogueDesignVersion(
+      versionId: versionRef.id,
+      designId: normalizedDesignId,
+      versionNumber: await _nextVersionNumber(designRef),
+      viewCount: 0,
+      processing: const CatalogueProcessingResult(
+        status: CatalogueProcessingStatus.queued,
+      ),
+      submittedByUid: uid,
+      submittedAt: DateTime.now(),
+    );
+    await versionRef.set(
+      version.toMap()
+        ..['createdAt'] = FieldValue.serverTimestamp()
+        ..['updatedAt'] = FieldValue.serverTimestamp(),
+    );
+    return version;
+  }
+
+  static Future<CatalogueDesignView> uploadView({
+    required String designId,
+    required String versionId,
+    required XFile file,
+    required CatalogueDesignViewType viewType,
+    required int displayOrder,
+    required bool isPrimary,
+    String? title,
+  }) async {
+    final validation = await CatalogueUploadPolicy.validate(file);
+    if (!validation.accepted) {
+      throw StateError(
+        validation.errorMessage ?? 'Catalogue view upload rejected.',
+      );
+    }
+    final normalizedDesignId = designId.trim();
+    final normalizedVersionId = versionId.trim();
+    final versionRef = _designs
+        .doc(normalizedDesignId)
+        .collection('versions')
+        .doc(normalizedVersionId);
+    final versionSnapshot = await versionRef.get();
+    final designSnapshot = await _designs.doc(normalizedDesignId).get();
+
+    final designData = designSnapshot.data();
+
+    debugPrint(
+      'CATALOGUE_DESIGN_DEBUG '
+      'exists=${designSnapshot.exists} '
+      'ownerType=${designData?['ownerType']} '
+      'ownerAccountId=${designData?['ownerAccountId']} '
+      'ownerProfileId=${designData?['ownerProfileId']} '
+      'submittedByUid=${designData?['submittedByUid']} '
+      'lifecycleStatus=${designData?['lifecycleStatus']} '
+      'publicationStatus=${designData?['publicationStatus']}',
+    );
+    if (!versionSnapshot.exists) {
+      throw StateError('Catalogue version not found.');
+    }
+    final viewRef = versionRef.collection('views').doc();
+    final extension = validation.extension!;
+    final storagePath =
+        'catalogue_designs/$normalizedDesignId/'
+        'versions/$normalizedVersionId/'
+        'views/${viewRef.id}/original/source.$extension';
+    final storageRef = _storage.ref(storagePath);
+    debugPrint(
+      'CATALOGUE_STORAGE_DEBUG '
+      'uid=${FirebaseAuth.instance.currentUser?.uid} '
+      'designId=$normalizedDesignId '
+      'versionId=$normalizedVersionId '
+      'path=$storagePath '
+      'contentType=${validation.contentType} '
+      'extension=${validation.extension} '
+      'bytes=${validation.byteSize}',
+    );
+    File? ioFile;
+    if (!kIsWeb && file.path.isNotEmpty) {
+      final candidate = File(file.path);
+      if (await candidate.exists() && await candidate.length() > 0) {
+        ioFile = candidate;
+      }
+    }
+    Uint8List? bytes;
+    if (ioFile == null) {
+      bytes = Uint8List.fromList(await file.readAsBytes());
+    }
+    try {
+      final downloadUrl = await FirebaseStorageHelpers.putImageGetDownloadUrl(
+        ref: storageRef,
+        file: ioFile,
+        bytes: bytes,
+        contentType: validation.contentType!,
+      );
+      if (downloadUrl == null) {
+        throw StateError('The Design View could not be uploaded.');
+      }
+      final view = CatalogueDesignView(
+        viewId: viewRef.id,
+        designId: normalizedDesignId,
+        versionId: normalizedVersionId,
+        viewType: viewType,
+        displayOrder: displayOrder,
+        isPrimary: isPrimary,
+        title: title,
+        originalAsset: CatalogueDesignAsset(
+          assetType: CatalogueAssetType.original,
+          storagePath: storagePath,
+          downloadUrl: downloadUrl,
+          mimeType: validation.contentType!,
+          byteSize: validation.byteSize!,
+          createdAt: DateTime.now(),
+        ),
+        processing: const CatalogueProcessingResult(
+          status: CatalogueProcessingStatus.queued,
+          missingLayers: CatalogueSvgLayer.values,
+        ),
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      await viewRef.set(
+        view.toMap()
+          ..['createdAt'] = FieldValue.serverTimestamp()
+          ..['updatedAt'] = FieldValue.serverTimestamp(),
+      );
+      return view;
+    } catch (_) {
+      try {
+        await storageRef.delete();
+      } catch (_) {
+        // Best-effort orphan cleanup only.
+      }
+      rethrow;
+    }
+  }
+
+  static Future<void> finalizeVersion({
+    required String designId,
+    required CatalogueDesignVersion version,
+    required List<CatalogueDesignView> views,
+  }) async {
+    if (views.isEmpty || views.length > 10) {
+      throw StateError('A Catalogue version requires 1 to 10 Design Views.');
+    }
+    final primaryViews = views
+        .where((view) => view.isPrimary)
+        .toList(growable: false);
+    if (primaryViews.length != 1) {
+      throw StateError('Select exactly one Primary View.');
+    }
+    final primaryView = primaryViews.single;
+    if (!primaryView.viewType.canBePrimary) {
+      throw StateError(
+        'Primary View must be Front, Combined Front + Back, or Single View.',
+      );
+    }
+    final normalizedDesignId = designId.trim();
+    final designRef = _designs.doc(normalizedDesignId);
+    final versionRef = designRef.collection('versions').doc(version.versionId);
+    final batch = _db.batch();
+    batch.update(versionRef, {
+      'primaryViewId': primaryView.viewId,
+      'viewCount': views.length,
+      'processing': const CatalogueProcessingResult(
+        status: CatalogueProcessingStatus.queued,
+      ).toMap(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    batch.update(designRef, {
+      'activeVersionId': version.versionId,
+      'lifecycleStatus': CatalogueDesignLifecycleStatus.uploaded.name,
+      'processingStatus': CatalogueProcessingStatus.queued.name,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    await batch.commit();
+  }
+
+  // Legacy single-view upload retained for existing flows and records.
   static Future<CatalogueDesignVersion> uploadOriginal({
     required String designId,
     required XFile file,
@@ -116,7 +307,6 @@ class CatalogueDesignService {
     if (!validation.accepted) {
       throw StateError(validation.errorMessage ?? 'Catalogue upload rejected.');
     }
-
     final designRef = _designs.doc(designId.trim());
     final versionRef = designRef.collection('versions').doc();
     final versionId = versionRef.id;
@@ -124,7 +314,6 @@ class CatalogueDesignService {
     final storagePath =
         'catalogue_designs/$designId/versions/$versionId/original/source.$extension';
     final storageRef = _storage.ref(storagePath);
-
     File? ioFile;
     if (!kIsWeb && file.path.isNotEmpty) {
       final candidate = File(file.path);
@@ -132,15 +321,12 @@ class CatalogueDesignService {
         ioFile = candidate;
       }
     }
-
     Uint8List? bytes;
     if (ioFile == null) {
       bytes = Uint8List.fromList(await file.readAsBytes());
     }
-
-    String? downloadUrl;
     try {
-      downloadUrl = await FirebaseStorageHelpers.putImageGetDownloadUrl(
+      final downloadUrl = await FirebaseStorageHelpers.putImageGetDownloadUrl(
         ref: storageRef,
         file: ioFile,
         bytes: bytes,
@@ -149,7 +335,6 @@ class CatalogueDesignService {
       if (downloadUrl == null) {
         throw StateError('The original Catalogue asset could not be uploaded.');
       }
-
       final version = CatalogueDesignVersion(
         versionId: versionId,
         designId: designId,
@@ -169,7 +354,6 @@ class CatalogueDesignService {
         submittedByUid: uid,
         submittedAt: DateTime.now(),
       );
-
       final batch = _db.batch();
       batch.set(
         versionRef,
@@ -189,7 +373,7 @@ class CatalogueDesignService {
       try {
         await storageRef.delete();
       } catch (_) {
-        // Best-effort orphan cleanup. A backend audit job should also check.
+        // Best-effort orphan cleanup.
       }
       rethrow;
     }

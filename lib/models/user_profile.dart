@@ -1,6 +1,6 @@
 enum Gender { male, female, other }
 
-enum UserRole { customer, tailor, owner, delivery }
+enum UserRole { customer, partner, tailor, owner, delivery }
 
 class UserProfile {
   final String name;
@@ -18,10 +18,13 @@ class UserProfile {
   final bool notifyApp;
   final bool notifyEmail;
   final String? photoUrl;
+
   /// Order / status pings via WhatsApp Cloud API (requires backend + Meta template).
   final bool notifyWhatsApp;
+
   /// Optional UPI for tailor/delivery payout records (shop may mirror in Owner settings).
   final String? payoutUpiId;
+
   /// Doorstep / delivery address for customers (shown to delivery partners on orders).
   final String? deliveryAddress;
 

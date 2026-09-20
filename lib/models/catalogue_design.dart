@@ -85,9 +85,9 @@ class CatalogueDesign {
     required this.designId,
     required this.ownerType,
     required this.submittedByUid,
-    required this.title,
-    required this.commercial,
+    this.ownerAccountId,
     this.ownerProfileId,
+    required this.title,
     this.description,
     this.garmentTypeCodes = const [],
     this.occasionCodes = const [],
@@ -95,6 +95,7 @@ class CatalogueDesign {
     this.fabricCompatibilityCodes = const [],
     this.eventCapabilityTags = const [],
     this.constructionMetadata,
+    required this.commercial,
     this.activeVersionId,
     this.lifecycleStatus = CatalogueDesignLifecycleStatus.draft,
     this.publicationStatus = CataloguePublicationStatus.unpublished,
@@ -109,6 +110,7 @@ class CatalogueDesign {
   final String designId;
   final CatalogueDesignOwnerType ownerType;
   final String submittedByUid;
+  final String? ownerAccountId;
   final String? ownerProfileId;
   final String title;
   final String? description;
@@ -137,6 +139,7 @@ class CatalogueDesign {
     'designId': designId.trim(),
     'ownerType': ownerType.name,
     'submittedByUid': submittedByUid.trim(),
+    'ownerAccountId': _text(ownerAccountId),
     'ownerProfileId': _text(ownerProfileId),
     'title': title.trim(),
     'description': _text(description),
@@ -171,6 +174,7 @@ class CatalogueDesign {
         orElse: () => CatalogueDesignOwnerType.suisakhi,
       ),
       submittedByUid: data['submittedByUid']?.toString().trim() ?? '',
+      ownerAccountId: _text(data['ownerAccountId']?.toString()),
       ownerProfileId: _text(data['ownerProfileId']?.toString()),
       title: data['title']?.toString().trim() ?? 'Design',
       description: _text(data['description']?.toString()),
