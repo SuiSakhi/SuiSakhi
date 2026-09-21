@@ -14,7 +14,19 @@ import '../../models/user_profile.dart';
 import '../../services/claude_smart_assistant_service.dart';
 
 class TailorDashboardScreen extends StatefulWidget {
-  const TailorDashboardScreen({super.key});
+  const TailorDashboardScreen({
+    super.key,
+    this.accountId,
+    this.tailorProfileId,
+  });
+
+  final String? accountId;
+  final String? tailorProfileId;
+
+  bool get hasApprovedPartnerContext {
+    return accountId?.trim().isNotEmpty == true &&
+        tailorProfileId?.trim().isNotEmpty == true;
+  }
 
   @override
   State<TailorDashboardScreen> createState() => _TailorDashboardScreenState();
@@ -39,10 +51,11 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
           .get();
       if (mounted) {
         setState(() {
-          _orders = snap.docs
-              .map((d) => DressOrder.fromFirestore(d.id, d.data()))
-              .toList()
-            ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+          _orders =
+              snap.docs
+                  .map((d) => DressOrder.fromFirestore(d.id, d.data()))
+                  .toList()
+                ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
           _loadingOrders = false;
         });
       }
@@ -60,9 +73,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
           children: [
             _buildHeader(context),
             _buildTabBar(),
-            Expanded(
-              child: _tab == 0 ? _buildOrdersList() : _buildRatesList(),
-            ),
+            Expanded(child: _tab == 0 ? _buildOrdersList() : _buildRatesList()),
           ],
         ),
       ),
@@ -81,7 +92,10 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
                 borderRadius: BorderRadius.circular(12),
                 onTap: () => _showTailorContactDialog(context),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 4,
+                    horizontal: 2,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -109,29 +123,48 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
               color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(
-                  color: const Color(0xFF4CAF50).withValues(alpha: 0.4)),
+                color: const Color(0xFF4CAF50).withValues(alpha: 0.4),
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.content_cut_rounded,
-                    color: Color(0xFF4CAF50), size: 15),
+                const Icon(
+                  Icons.content_cut_rounded,
+                  color: Color(0xFF4CAF50),
+                  size: 15,
+                ),
                 const SizedBox(width: 6),
-                Text('Tailor',
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: const Color(0xFF4CAF50))),
+                Text(
+                  'Tailor',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: const Color(0xFF4CAF50),
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(width: 10),
           GestureDetector(
             onTap: () {
+              final accountId = widget.accountId?.trim() ?? '';
+              final profileId = widget.tailorProfileId?.trim() ?? '';
+
+              if (accountId.isNotEmpty && profileId.isNotEmpty) {
+                context.push(
+                  '/partner/workspace'
+                  '?accountId=${Uri.encodeQueryComponent(accountId)}'
+                  '&profileId=${Uri.encodeQueryComponent(profileId)}'
+                  '&category=tailor',
+                );
+                return;
+              }
+
               context.push('/tailor-account');
             },
             child: Container(
@@ -158,8 +191,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
     final fullName = (p?.name ?? user?.displayName ?? '').trim();
     final parts = fullName.split(RegExp(r'\s+'));
     final firstName = parts.isNotEmpty ? parts.first : '—';
-    final lastName =
-        parts.length > 1 ? parts.sublist(1).join(' ') : '—';
+    final lastName = parts.length > 1 ? parts.sublist(1).join(' ') : '—';
     final phone = (user?.phoneNumber ?? '').trim();
     final emailCtrl = TextEditingController(
       text: (p?.email ?? user?.email ?? '').trim(),
@@ -248,24 +280,28 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
               final existing = AppState.instance.profile;
               final em = emailCtrl.text.trim();
               if (existing != null) {
-                AppState.instance.setProfile(UserProfile(
-                  name: existing.name,
-                  gender: existing.gender,
-                  age: existing.age,
-                  role: existing.role,
-                  avatarPath: existing.avatarPath,
-                  email: em.isEmpty ? null : em,
-                  photoUrl: existing.photoUrl,
-                  notifyWhatsApp: existing.notifyWhatsApp,
-                  payoutUpiId: existing.payoutUpiId,
-                  deliveryAddress: existing.deliveryAddress,
-                ));
+                AppState.instance.setProfile(
+                  UserProfile(
+                    name: existing.name,
+                    gender: existing.gender,
+                    age: existing.age,
+                    role: existing.role,
+                    avatarPath: existing.avatarPath,
+                    email: em.isEmpty ? null : em,
+                    photoUrl: existing.photoUrl,
+                    notifyWhatsApp: existing.notifyWhatsApp,
+                    payoutUpiId: existing.payoutUpiId,
+                    deliveryAddress: existing.deliveryAddress,
+                  ),
+                );
               } else {
-                AppState.instance.setProfile(UserProfile(
-                  name: fullName.isEmpty ? 'Tailor' : fullName,
-                  role: UserRole.tailor,
-                  email: em.isEmpty ? null : em,
-                ));
+                AppState.instance.setProfile(
+                  UserProfile(
+                    name: fullName.isEmpty ? 'Tailor' : fullName,
+                    role: UserRole.tailor,
+                    email: em.isEmpty ? null : em,
+                  ),
+                );
               }
               await AppState.instance.saveUserProfile();
               if (!ctx.mounted) return;
@@ -284,8 +320,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
         ],
       ),
     ).then((_) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => emailCtrl.dispose());
+      WidgetsBinding.instance.addPostFrameCallback((_) => emailCtrl.dispose());
     });
   }
 
@@ -295,14 +330,16 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
       child: Row(
         children: [
           _TabBtn(
-              label: 'My Orders',
-              selected: _tab == 0,
-              onTap: () => setState(() => _tab = 0)),
+            label: 'My Orders',
+            selected: _tab == 0,
+            onTap: () => setState(() => _tab = 0),
+          ),
           const SizedBox(width: 10),
           _TabBtn(
-              label: 'Rate Card',
-              selected: _tab == 1,
-              onTap: () => setState(() => _tab = 1)),
+            label: 'Rate Card',
+            selected: _tab == 1,
+            onTap: () => setState(() => _tab = 1),
+          ),
         ],
       ),
     );
@@ -317,13 +354,19 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.inbox_outlined, size: 64, color: AppColors.textHint),
+            const Icon(
+              Icons.inbox_outlined,
+              size: 64,
+              color: AppColors.textHint,
+            ),
             const SizedBox(height: 16),
             Text('No active orders', style: AppTextStyles.headlineMedium),
             const SizedBox(height: 8),
-            Text('Orders placed by customers will appear here',
-                style: AppTextStyles.bodyMedium,
-                textAlign: TextAlign.center),
+            Text(
+              'Orders placed by customers will appear here',
+              style: AppTextStyles.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       );
@@ -332,14 +375,18 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
     return ListView(
       padding: const EdgeInsets.all(20),
       children: [
-        Text('Active Orders (${_orders.length})',
-            style: AppTextStyles.headlineMedium),
+        Text(
+          'Active Orders (${_orders.length})',
+          style: AppTextStyles.headlineMedium,
+        ),
         const SizedBox(height: 16),
-        ..._orders.map((o) => _OrderCard(
-              order: o,
-              onStatusUpdate: () => _updateStatus(o),
-              onAiChecklist: () => _showTailorAiChecklist(context, o),
-            )),
+        ..._orders.map(
+          (o) => _OrderCard(
+            order: o,
+            onStatusUpdate: () => _updateStatus(o),
+            onAiChecklist: () => _showTailorAiChecklist(context, o),
+          ),
+        ),
       ],
     );
   }
@@ -360,11 +407,13 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
         title: Text('Advance to “${next.label}”?'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
           ElevatedButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Confirm')),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Confirm'),
+          ),
         ],
       ),
     );
@@ -382,25 +431,32 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
         return ListView(
           padding: const EdgeInsets.all(20),
           children: [
-            Text('Current Stitching Rates',
-                style: AppTextStyles.headlineMedium),
+            Text(
+              'Current Stitching Rates',
+              style: AppTextStyles.headlineMedium,
+            ),
             const SizedBox(height: 4),
-            Text('Set by shop owner — for your reference',
-                style: AppTextStyles.bodySmall),
+            Text(
+              'Set by shop owner — for your reference',
+              style: AppTextStyles.bodySmall,
+            ),
             const SizedBox(height: 16),
             ...rates.map(
               (r) => Container(
                 margin: const EdgeInsets.only(bottom: 10),
                 padding: const EdgeInsets.symmetric(
-                    horizontal: 16, vertical: 14),
+                  horizontal: 16,
+                  vertical: 14,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surface,
                   borderRadius: BorderRadius.circular(14),
                   boxShadow: [
                     BoxShadow(
-                        color: AppColors.cardShadow,
-                        blurRadius: 6,
-                        offset: const Offset(0, 2)),
+                      color: AppColors.cardShadow,
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
                   ],
                 ),
                 child: Row(
@@ -411,28 +467,33 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
                         color: AppColors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.checkroom_rounded,
-                          color: AppColors.primary, size: 18),
+                      child: const Icon(
+                        Icons.checkroom_rounded,
+                        color: AppColors.primary,
+                        size: 18,
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(r.dressType,
-                              style: AppTextStyles.titleMedium),
+                          Text(r.dressType, style: AppTextStyles.titleMedium),
                           if (r.notes != null && r.notes!.isNotEmpty)
-                            Text(r.notes!,
-                                style: AppTextStyles.bodySmall,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
+                            Text(
+                              r.notes!,
+                              style: AppTextStyles.bodySmall,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                         ],
                       ),
                     ),
                     Text(
                       '₹${r.basePrice.toStringAsFixed(0)}',
-                      style: AppTextStyles.headlineMedium
-                          .copyWith(color: AppColors.primary),
+                      style: AppTextStyles.headlineMedium.copyWith(
+                        color: AppColors.primary,
+                      ),
                     ),
                   ],
                 ),
@@ -491,7 +552,8 @@ class _TailorChecklistDialogState extends State<_TailorChecklistDialog> {
   }
 
   MarkdownStyleSheet _markdownStyles() {
-    final useDeva = _lang == TailorChecklistLanguage.hindi ||
+    final useDeva =
+        _lang == TailorChecklistLanguage.hindi ||
         _lang == TailorChecklistLanguage.marathi;
     final body = useDeva
         ? GoogleFonts.notoSansDevanagari(
@@ -513,11 +575,7 @@ class _TailorChecklistDialogState extends State<_TailorChecklistDialog> {
         fontWeight: FontWeight.w800,
         height: 1.25,
       ),
-      h2: body.copyWith(
-        fontSize: 20,
-        fontWeight: FontWeight.w800,
-        height: 1.3,
-      ),
+      h2: body.copyWith(fontSize: 20, fontWeight: FontWeight.w800, height: 1.3),
       h3: body.copyWith(fontSize: 18, fontWeight: FontWeight.w800),
       listBullet: body,
       listIndent: 28,
@@ -544,8 +602,11 @@ class _TailorChecklistDialogState extends State<_TailorChecklistDialog> {
             children: [
               Row(
                 children: [
-                  Icon(Icons.auto_awesome_rounded,
-                      color: AppColors.primary, size: 26),
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    color: AppColors.primary,
+                    size: 26,
+                  ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
@@ -700,7 +761,9 @@ class _TailorPayoutBanner extends StatelessWidget {
           if (line.creditToUpi != null && line.creditToUpi!.isNotEmpty)
             Text(
               'Ledger UPI: ${line.creditToUpi}',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+              ),
             ),
         ],
       ),
@@ -712,8 +775,11 @@ class _TabBtn extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _TabBtn(
-      {required this.label, required this.selected, required this.onTap});
+  const _TabBtn({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -721,13 +787,13 @@ class _TabBtn extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
         decoration: BoxDecoration(
           color: selected ? AppColors.primary : AppColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? AppColors.primary : AppColors.divider),
+            color: selected ? AppColors.primary : AppColors.divider,
+          ),
         ),
         child: Text(
           label,
@@ -768,9 +834,10 @@ class _OrderCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         boxShadow: [
           BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 6,
-              offset: const Offset(0, 2)),
+            color: AppColors.cardShadow,
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -785,8 +852,11 @@ class _OrderCard extends StatelessWidget {
                   color: order.status.color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(Icons.checkroom_rounded,
-                    color: order.status.color, size: 22),
+                child: Icon(
+                  Icons.checkroom_rounded,
+                  color: order.status.color,
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -812,8 +882,10 @@ class _OrderCard extends StatelessWidget {
               const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 4,
+                  ),
                   decoration: BoxDecoration(
                     color: order.status.color.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(20),
@@ -837,14 +909,20 @@ class _OrderCard extends StatelessWidget {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.location_on_rounded,
-                    size: 14, color: AppColors.textHint),
+                const Icon(
+                  Icons.location_on_rounded,
+                  size: 14,
+                  color: AppColors.textHint,
+                ),
                 const SizedBox(width: 4),
                 Expanded(
-                    child: Text(order.deliveryAddress!,
-                        style: AppTextStyles.bodySmall,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis)),
+                  child: Text(
+                    order.deliveryAddress!,
+                    style: AppTextStyles.bodySmall,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ],
@@ -872,12 +950,16 @@ class _OrderCard extends StatelessWidget {
                       ? const Color(0xFF9C27B0)
                       : AppColors.primary,
                   shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                   padding: const EdgeInsets.symmetric(vertical: 8),
                 ),
-                child: Text(_nextActionLabel,
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: Colors.white)),
+                child: Text(
+                  _nextActionLabel,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
           ],

@@ -104,6 +104,29 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         context.go('/delivery');
         return;
       case 'partner':
+        if (partnerType == 'tailor') {
+          context.go(
+            '/tailor'
+            '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
+            '&profileId=${Uri.encodeQueryComponent(profileId)}',
+          );
+          return;
+        }
+
+        if (partnerType == 'designer') {
+          context.go(
+            '/partner/designer/catalogue'
+            '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
+            '&profileId=${Uri.encodeQueryComponent(profileId)}',
+          );
+          return;
+        }
+
+        if (partnerType == 'deliveryPartner') {
+          context.go('/delivery');
+          return;
+        }
+
         context.go(
           '/partner/workspace'
           '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'

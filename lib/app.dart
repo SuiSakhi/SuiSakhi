@@ -300,7 +300,10 @@ final _router = GoRouter(
     // ── Tailor routes ─────────────────────────────────────────────────────
     GoRoute(
       path: '/tailor',
-      builder: (ctx, state) => const TailorDashboardScreen(),
+      builder: (context, state) => TailorDashboardScreen(
+        accountId: state.uri.queryParameters['accountId'],
+        tailorProfileId: state.uri.queryParameters['profileId'],
+      ),
     ),
     GoRoute(
       path: '/tailor-account',

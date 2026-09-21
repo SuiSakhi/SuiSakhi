@@ -377,7 +377,9 @@ class _LoginScreenState extends State<LoginScreen> {
     if (role == 'partner') {
       switch (partnerType) {
         case 'tailor':
-          return '/tailor';
+          return '/tailor'
+              '?accountId=${Uri.encodeQueryComponent(accountId.trim())}'
+              '&profileId=${Uri.encodeQueryComponent(profileId)}';
 
         case 'deliveryPartner':
           return '/delivery';
