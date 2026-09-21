@@ -1,48 +1,43 @@
-'use strict';
+"use strict";
 
 const {
   createStorageAdapter,
   createFirestoreAdapter,
-} = require('./firebase_adapter');
+} = require("./firebase_adapter");
 
-const {
-  runCatalogueWorker,
-} = require('./worker_orchestrator');
+const { createProcessingRunStore } = require("./processing_run_store");
 
-const TARGET_BUCKET =
-  'suisakhitest.firebasestorage.app';
+const { runCatalogueWorker } = require("./worker_orchestrator");
 
-const TARGET_REGION = 'us-east1';
+const TARGET_BUCKET = "suisakhitest.firebasestorage.app";
 
-function createCatalogueWorkerHandler({
-  admin,
-  logger = console,
-}) {
+const TARGET_REGION = "us-east1";
+
+function createCatalogueWorkerHandler({ admin, logger = console }) {
   if (
     !admin ||
-    typeof admin.storage !== 'function' ||
-    typeof admin.firestore !== 'function'
+    typeof admin.storage !== "function" ||
+    typeof admin.firestore !== "function"
   ) {
-    throw new Error(
-      'WORKER_ADMIN_INVALID: Firebase Admin is required.',
-    );
+    throw new Error("WORKER_ADMIN_INVALID: Firebase Admin is required.");
   }
 
-  const bucket =
-    admin.storage().bucket(TARGET_BUCKET);
+  const bucket = admin.storage().bucket(TARGET_BUCKET);
 
   const db = admin.firestore();
 
-  const storageAdapter =
-    createStorageAdapter({
-      bucket,
-      bucketName: TARGET_BUCKET,
-    });
+  const storageAdapter = createStorageAdapter({
+    bucket,
+    bucketName: TARGET_BUCKET,
+  });
 
-  const firestoreAdapter =
-    createFirestoreAdapter({
-      db,
-    });
+  const firestoreAdapter = createFirestoreAdapter({
+    db,
+  });
+
+  const processingRunStore = createProcessingRunStore({
+    db,
+  });
 
   return async function catalogueStorageHandler(object) {
     return runCatalogueWorker({
@@ -54,6 +49,7 @@ function createCatalogueWorkerHandler({
       },
       storageAdapter,
       firestoreAdapter,
+      processingRunStore,
       logger,
     });
   };

@@ -4,6 +4,8 @@ const { parseCatalogueOriginalPath } = require("./catalogue_path");
 
 const { processCloudImage } = require("./cloud_processor");
 
+const { buildEventIdentity } = require("./run_identity");
+
 const {
   buildSuccessfulViewPatch,
   buildFailedViewPatch,
@@ -124,12 +126,14 @@ function processingPatch(status, processedAt) {
   };
 }
 
-async function runCatalogueWorker({
+async function runCatalogueWorkerCore({
   event,
   storageAdapter,
   firestoreAdapter,
   logger = console,
   now = () => new Date(),
+  afterViewRegistered = async () => {},
+  beforeGovernedWrites = async () => {},
 }) {
   validateAdapters({
     storageAdapter,
@@ -181,6 +185,8 @@ async function runCatalogueWorker({
     throw new Error("WORKER_VIEW_NOT_FOUND: Catalogue View does not exist.");
   }
 
+  await afterViewRegistered();
+
   const registeredOriginalPath =
     view.originalAsset && typeof view.originalAsset.storagePath === "string"
       ? view.originalAsset.storagePath.trim()
@@ -224,6 +230,8 @@ async function runCatalogueWorker({
         manifestPath: parsed.manifestPath,
       },
     });
+
+    await beforeGovernedWrites();
 
     const normalizedUpload = await storageAdapter.upload({
       bucket: normalizedEvent.bucket,
@@ -319,9 +327,16 @@ async function runCatalogueWorker({
       designId: parsed.designId,
       versionId: parsed.versionId,
       viewId: parsed.viewId,
+      manifestPath: parsed.manifestPath,
       status: viewPatch.processing.status,
     };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+
+    if (errorMessage.startsWith("RUN_CLAIM_LOST")) {
+      throw error;
+    }
+
     const failedAt = now();
 
     await firestoreAdapter.updateView({
@@ -369,8 +384,158 @@ async function runCatalogueWorker({
       designId: parsed.designId,
       versionId: parsed.versionId,
       viewId: parsed.viewId,
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage,
     });
+
+    throw error;
+  }
+}
+
+async function runCatalogueWorker({
+  event,
+  storageAdapter,
+  firestoreAdapter,
+  processingRunStore = null,
+  logger = console,
+  now = () => new Date(),
+}) {
+  if (!processingRunStore) {
+    return runCatalogueWorkerCore({
+      event,
+      storageAdapter,
+      firestoreAdapter,
+      logger,
+      now,
+    });
+  }
+
+  for (const methodName of ["claim", "renew", "complete", "fail"]) {
+    requireAdapterMethod(processingRunStore, methodName);
+  }
+
+  const normalizedEvent = normalizeStorageEvent(event);
+
+  if (normalizedEvent.bucket !== EXPECTED_BUCKET) {
+    return runCatalogueWorkerCore({
+      event,
+      storageAdapter,
+      firestoreAdapter,
+      logger,
+      now,
+    });
+  }
+
+  const parsed = parseCatalogueOriginalPath(normalizedEvent.objectPath);
+
+  if (!parsed) {
+    return runCatalogueWorkerCore({
+      event,
+      storageAdapter,
+      firestoreAdapter,
+      logger,
+      now,
+    });
+  }
+
+  if (!normalizedEvent.generation) {
+    throw new Error(
+      "WORKER_GENERATION_MISSING: Storage generation is required.",
+    );
+  }
+
+  const identity = buildEventIdentity({
+    bucket: normalizedEvent.bucket,
+    objectPath: normalizedEvent.objectPath,
+    generation: normalizedEvent.generation,
+  });
+
+  const claim = await processingRunStore.claim(identity);
+
+  if (!claim.acquired) {
+    logger.info?.("Catalogue worker ignored duplicate event.", {
+      eventRunId: identity.runId,
+      reason: claim.reason,
+      designId: parsed.designId,
+      versionId: parsed.versionId,
+      viewId: parsed.viewId,
+    });
+
+    return {
+      ok: true,
+      ignored: true,
+      reason: claim.reason,
+      eventRunId: identity.runId,
+      designId: parsed.designId,
+      versionId: parsed.versionId,
+      viewId: parsed.viewId,
+    };
+  }
+
+  try {
+    const result = await runCatalogueWorkerCore({
+      event,
+      storageAdapter,
+      firestoreAdapter,
+      logger,
+      now,
+      afterViewRegistered: async () => {
+        await processingRunStore.renew({
+          identity,
+          claimToken: claim.claimToken,
+          renewedAt: now(),
+        });
+      },
+      beforeGovernedWrites: async () => {
+        await processingRunStore.renew({
+          identity,
+          claimToken: claim.claimToken,
+          renewedAt: now(),
+        });
+      },
+    });
+
+    await processingRunStore.complete({
+      identity,
+      claimToken: claim.claimToken,
+      processorRunId: result.runId,
+      manifestPath: result.manifestPath || parsed.manifestPath,
+      completedAt: now(),
+    });
+
+    return {
+      ...result,
+      eventRunId: identity.runId,
+      claimReason: claim.reason,
+      attemptCount: claim.attemptCount,
+    };
+  } catch (error) {
+    try {
+      await processingRunStore.fail({
+        identity,
+        claimToken: claim.claimToken,
+        error,
+        failedAt: now(),
+      });
+    } catch (claimError) {
+      const claimMessage =
+        claimError instanceof Error ? claimError.message : String(claimError);
+
+      if (claimMessage.startsWith("RUN_CLAIM_LOST")) {
+        logger.error?.("Catalogue worker lost processing ownership.", {
+          eventRunId: identity.runId,
+          designId: parsed.designId,
+          versionId: parsed.versionId,
+          viewId: parsed.viewId,
+        });
+
+        throw claimError;
+      }
+
+      logger.error?.("Catalogue worker could not record run failure.", {
+        eventRunId: identity.runId,
+        error: claimMessage,
+      });
+    }
 
     throw error;
   }
@@ -380,5 +545,6 @@ module.exports = {
   EXPECTED_BUCKET,
   normalizeStorageEvent,
   waitForRegisteredView,
+  runCatalogueWorkerCore,
   runCatalogueWorker,
 };
