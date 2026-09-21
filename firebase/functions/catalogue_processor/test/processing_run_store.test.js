@@ -459,3 +459,113 @@ test('records failure only for the current claim owner', async () => {
     /RUN_CLAIM_LOST/,
   );
 });
+
+test('renews the lease only for the current claim owner', async () => {
+  const fake = fakeFirestore();
+
+  const store = fixedStore(fake, {
+    now:
+      new Date(
+        '2026-09-21T17:00:00.000Z',
+      ),
+    token: 'renew-token',
+  });
+
+  const claim =
+    await store.claim(IDENTITY);
+
+  const renewedAt =
+    new Date(
+      '2026-09-21T17:05:00.000Z',
+    );
+
+  const renewed =
+    await store.renew({
+      identity: IDENTITY,
+      claimToken:
+        claim.claimToken,
+      renewedAt,
+    });
+
+  assert.equal(
+    renewed.renewed,
+    true,
+  );
+
+  assert.equal(
+    renewed.claimToken,
+    'renew-token',
+  );
+
+  assert.equal(
+    renewed.leaseExpiresAt.toISOString(),
+    '2026-09-21T17:20:00.000Z',
+  );
+
+  const document =
+    fake.documents.get(
+      IDENTITY.firestorePath,
+    );
+
+  assert.equal(
+    document.status,
+    'processing',
+  );
+
+  assert.equal(
+    document.attemptCount,
+    1,
+  );
+
+  assert.equal(
+    document.leaseExpiresAt.toISOString(),
+    '2026-09-21T17:20:00.000Z',
+  );
+});
+
+test('rejects renewal after claim ownership is lost', async () => {
+  const fake = fakeFirestore({
+    [IDENTITY.firestorePath]: {
+      status: 'processing',
+      attemptCount: 2,
+      claimToken:
+        'newer-invocation-token',
+      leaseExpiresAt:
+        new Date(
+          '2026-09-21T17:20:00.000Z',
+        ),
+    },
+  });
+
+  const store = fixedStore(fake, {
+    token: 'unused-token',
+  });
+
+  await assert.rejects(
+    store.renew({
+      identity: IDENTITY,
+      claimToken:
+        'older-invocation-token',
+      renewedAt:
+        new Date(
+          '2026-09-21T17:06:00.000Z',
+        ),
+    }),
+    /RUN_CLAIM_LOST/,
+  );
+
+  const document =
+    fake.documents.get(
+      IDENTITY.firestorePath,
+    );
+
+  assert.equal(
+    document.claimToken,
+    'newer-invocation-token',
+  );
+
+  assert.equal(
+    document.attemptCount,
+    2,
+  );
+});

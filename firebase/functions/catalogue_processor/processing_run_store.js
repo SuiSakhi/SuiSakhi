@@ -377,8 +377,89 @@ function createProcessingRunStore({
     );
   }
 
+  async function renew({
+    identity,
+    claimToken,
+    renewedAt = now(),
+  }) {
+    if (
+      !identity ||
+      !identity.firestorePath ||
+      !identity.runId
+    ) {
+      throw new Error(
+        'RUN_IDENTITY_INVALID: Event identity is required.',
+      );
+    }
+
+    if (
+      typeof claimToken !== 'string' ||
+      claimToken.trim().length === 0
+    ) {
+      throw new Error(
+        'RUN_CLAIM_TOKEN_INVALID: Claim token is required.',
+      );
+    }
+
+    const ref =
+      db.doc(identity.firestorePath);
+
+    return db.runTransaction(
+      async (transaction) => {
+        const snapshot =
+          await transaction.get(ref);
+
+        if (!snapshot.exists) {
+          throw new Error(
+            'RUN_CLAIM_NOT_FOUND: Processing claim is missing.',
+          );
+        }
+
+        const data =
+          snapshot.data() || {};
+
+        if (
+          data.status !== 'processing' ||
+          data.claimToken !==
+            claimToken.trim()
+        ) {
+          throw new Error(
+            'RUN_CLAIM_LOST: Processing claim is owned by another invocation.',
+          );
+        }
+
+        const date =
+          validDate(
+            renewedAt,
+            'RUN_RENEW_DATE_INVALID',
+          );
+
+        const leaseExpiresAt =
+          new Date(
+            date.getTime() +
+            normalizedLeaseMs,
+          );
+
+        transaction.update(ref, {
+          leaseExpiresAt,
+          updatedAt: date,
+        });
+
+        return {
+          renewed: true,
+          runId: identity.runId,
+          claimToken:
+            claimToken.trim(),
+          renewedAt: date,
+          leaseExpiresAt,
+        };
+      },
+    );
+  }
+
   return {
     claim,
+    renew,
     complete,
     fail,
   };
