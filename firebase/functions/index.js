@@ -8,56 +8,64 @@
  *
  * Optional override: whatsapp.template_default for template name (default hello_world).
  */
-const functions = require('firebase-functions');
-const admin = require('firebase-admin');
+const functions = require("firebase-functions");
+const admin = require("firebase-admin");
 
 if (!admin.apps.length) {
   admin.initializeApp();
 }
 
+const {
+  createCatalogueStorageTrigger,
+} = require("./catalogue_processor/catalogue_trigger");
+
+exports.processCatalogueViewOriginal = createCatalogueStorageTrigger({
+  functions,
+  admin,
+});
+
 /**
  * @param {string} raw E.164 or digits
  */
 function whatsappToDigits(raw) {
-  if (!raw || typeof raw !== 'string') return '';
-  return raw.replace(/\D/g, '');
+  if (!raw || typeof raw !== "string") return "";
+  return raw.replace(/\D/g, "");
 }
 
 exports.sendUserWhatsApp = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
-    throw new functions.https.HttpsError('unauthenticated', 'Sign in required');
+    throw new functions.https.HttpsError("unauthenticated", "Sign in required");
   }
 
   const tokenPhone = context.auth.token.phone_number;
-  const digits = whatsappToDigits(tokenPhone || '');
+  const digits = whatsappToDigits(tokenPhone || "");
   if (!digits || digits.length < 10) {
     throw new functions.https.HttpsError(
-      'failed-precondition',
-      'WhatsApp notifications require phone (OTP) sign-in so we know your number.',
+      "failed-precondition",
+      "WhatsApp notifications require phone (OTP) sign-in so we know your number.",
     );
   }
 
   const cfg = functions.config().whatsapp || {};
   const graphToken = process.env.WHATSAPP_TOKEN || cfg.token;
-  const phoneNumberId = process.env.WHATSAPP_PHONE_NUMBER_ID || cfg.phone_number_id;
+  const phoneNumberId =
+    process.env.WHATSAPP_PHONE_NUMBER_ID || cfg.phone_number_id;
   if (!graphToken || !phoneNumberId) {
     throw new functions.https.HttpsError(
-      'failed-precondition',
-      'WhatsApp is not configured. Set whatsapp.token and whatsapp.phone_number_id (Firebase Functions config).',
+      "failed-precondition",
+      "WhatsApp is not configured. Set whatsapp.token and whatsapp.phone_number_id (Firebase Functions config).",
     );
   }
 
   const templateName =
-    (data && data.templateName) ||
-    cfg.template_default ||
-    'hello_world';
-  const languageCode = (data && data.languageCode) || 'en_US';
+    (data && data.templateName) || cfg.template_default || "hello_world";
+  const languageCode = (data && data.languageCode) || "en_US";
 
   const url = `https://graph.facebook.com/v21.0/${phoneNumberId}/messages`;
   const body = {
-    messaging_product: 'whatsapp',
+    messaging_product: "whatsapp",
     to: digits,
-    type: 'template',
+    type: "template",
     template: {
       name: String(templateName),
       language: { code: String(languageCode) },
@@ -65,30 +73,33 @@ exports.sendUserWhatsApp = functions.https.onCall(async (data, context) => {
   };
 
   const res = await fetch(url, {
-    method: 'POST',
+    method: "POST",
     headers: {
       Authorization: `Bearer ${graphToken}`,
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
   });
 
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
-    functions.logger.error('WhatsApp API error', { status: res.status, json });
+    functions.logger.error("WhatsApp API error", { status: res.status, json });
     throw new functions.https.HttpsError(
-      'internal',
+      "internal",
       json.error && json.error.message
         ? json.error.message
         : `WhatsApp HTTP ${res.status}`,
     );
   }
 
-  functions.logger.info('WhatsApp sent', {
+  functions.logger.info("WhatsApp sent", {
     uid: context.auth.uid,
     kind: data && data.kind,
     dressType: data && data.dressType,
   });
 
-  return { ok: true, messageId: json.messages && json.messages[0] && json.messages[0].id };
+  return {
+    ok: true,
+    messageId: json.messages && json.messages[0] && json.messages[0].id,
+  };
 });
