@@ -107,3 +107,29 @@ Virtual Try-On is reserved as a separate future engine.
 No body measurement or customer-body processing is introduced into C1.4.
 Customer-friendly labels use Original Design, SuiSakhi Assisted View, and AI-Assisted Preview.
 The Customer Order and Tailor measurement-finalisation flow remains separate.
+
+with the final SuiSakhi direction:
+
+Designer Catalogue Design
+        ↓
+View Understanding
+        ↓
+Missing Design View Generation
+        ↓
+Masks
+        ↓
+Structured SVG
+        ↓
+Design Semantics
+        ↓
+Material Assignment
+        ↓
+Multi-View Visual Consistency Check
+        ↓
+Admin Review
+        ↓
+360° Design Preview
+        ↓
+Material/Fabric Preview
+        ↓
+Future Virtual Try-On
