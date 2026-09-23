@@ -84,3 +84,26 @@ Rental Partner
 Printing Partner
 
 Delivery Partner
+
+# 23-Sep-2026
+The frozen
+SuiSakhi_ARCH-CAT-007_Architecture_Engine_v1.3_REVIEW_DRAFT.md
+SuiSakhi_SESSION_RECOVERY_CATALOGUE.md
+SuiSakhi_PROJECT_CONTEXT.md 
+Summary :
+Key decisions captured
+Designer Catalogue Design is separate from Customer Reference Design.
+Design input is not measurement input.
+Front-only, Back-only, Front/Back, Front/Side, Front/Back/Side, detail-view, combined-view, and multi-piece inputs are supported.
+Missing design views may be proposed where appropriate.
+Consistency validation is visual, not measurement-based.
+Customer Reference Designs remain reference-only.
+Masks, structured SVG, Design Semantics, and Material Assignment are included.
+Material Assignment is metadata, not another mask.
+Material/Fabric Preview is material-aware, not color replacement only.
+Fabric Estimation remains an independent engine with a governed future integration boundary.
+The customer-facing capability is 360° Design Preview, not garment simulation.
+Virtual Try-On is reserved as a separate future engine.
+No body measurement or customer-body processing is introduced into C1.4.
+Customer-friendly labels use Original Design, SuiSakhi Assisted View, and AI-Assisted Preview.
+The Customer Order and Tailor measurement-finalisation flow remains separate.

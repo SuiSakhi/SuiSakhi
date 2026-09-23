@@ -10,3 +10,30 @@
 8. Preserve legacy single-view fallback.
 9. Preserve immutable original Storage assets and submitted Versions.
 10. Update both context documents after the correction milestone and commit them.
+
+
+# Date 23-Sep-2026
+
+# Date 23-Sep-2026
+
+ARCH-CAT-007 frozen
+
+Designer Catalogue Engine Architecture
+
+Capabilities:
+- View Reconstruction
+- Masks
+- Structured SVG
+- Design Semantics
+- Material Assignment
+- Multi-View Visual Consistency
+- 360° Design Preview
+
+Explicitly excluded:
+- Measurements
+- Customer body representation
+- Customer reference image conversion
+- Virtual Try-On implementation
+
+Reserved:
+- Future Virtual Try-On Engine
