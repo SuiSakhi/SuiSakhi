@@ -6,7 +6,7 @@ class CatalogueBenchmarkFixtureRegistry {
 
   static CatalogueBenchmarkFixtureManifest fixture001({
     CatalogueFixtureOwnershipStatus ownershipStatus =
-        CatalogueFixtureOwnershipStatus.ownershipReviewRequired,
+        CatalogueFixtureOwnershipStatus.suisakhiOwned,
   }) {
     return CatalogueBenchmarkFixtureManifest(
       schemaVersion: '1.0',

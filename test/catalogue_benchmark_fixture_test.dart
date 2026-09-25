@@ -68,17 +68,20 @@ void main() {
   });
 
   group('Fixture-001 validation', () {
-    test('ownership review is intentionally required initially', () {
+    test('explicit ownership review status remains blocked', () {
       final result = CatalogueBenchmarkFixtureValidator.validate(
-        CatalogueBenchmarkFixtureRegistry.fixture001(),
+        CatalogueBenchmarkFixtureRegistry.fixture001(
+          ownershipStatus:
+              CatalogueFixtureOwnershipStatus.ownershipReviewRequired,
+        ),
       );
+
       expect(result.valid, isFalse);
       expect(
         result.codes,
         contains(CatalogueFixtureValidationCode.ownershipReviewRequired),
       );
     });
-
     test('SuiSakhi-owned fixture passes validation', () {
       final result = CatalogueBenchmarkFixtureValidator.validate(
         CatalogueBenchmarkFixtureRegistry.fixture001(

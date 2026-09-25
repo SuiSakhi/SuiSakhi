@@ -4,7 +4,7 @@
   "fixtureVersion": "1.0",
   "garmentProfileCode": "shirtV1",
   "semanticProfileVersion": "1.0",
-  "ownershipStatus": "ownershipReviewRequired",
+  "ownershipStatus": "suisakhiOwned",
   "usagePermissions": ["automatedTesting", "localEvaluation"],
   "frontAsset": {
     "assetId": "fixture-001-front",

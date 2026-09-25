@@ -16,3 +16,10 @@ Frozen checksums:
 
 - Front: `56dc098a749f92ae2f205ee60ba41651f02985c9d243058a2e47cf6815d503a1`
 - Back: `f3c608c656ae83c0125bdd2069350a03e4f26208e4d0701df306a47df9b814f4`
+
+## Ownership declaration
+
+The Front and expected Back reference images are owned by SuiSakhi and are
+approved for local evaluation and automated testing within this repository.
+
+The images are not approved for model training or customer publication.
