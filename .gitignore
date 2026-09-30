@@ -52,3 +52,6 @@ doc/product_Docs/*.pdf
 doc/product_Docs/*.docx
 doc/product_Docs/*.html
 doc/product_Docs/TECHNICAL_GUIDE.md
+
+# Local SuiSakhi architecture/review archive - never commit
+.suisakhi_archive/
