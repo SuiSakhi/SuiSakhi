@@ -15,6 +15,21 @@ import '../../models/user_profile.dart';
 import '../profile/profile_selection_screen.dart';
 
 String _formatPhoneVerifyError(FirebaseAuthException e) {
+  final message = e.message?.toLowerCase() ?? '';
+  final isConnectionFailure =
+      e.code == 'network-request-failed' ||
+      message.contains('connection abort') ||
+      message.contains('connection reset') ||
+      message.contains('connection timed out') ||
+      message.contains('socket') ||
+      message.contains('failed to connect') ||
+      message.contains('unable to resolve host');
+
+  if (isConnectionFailure) {
+    return 'We couldn’t connect to verify your code. Check your internet connection, then tap '
+        'Verify & Sign In to try again. If it keeps happening, tap Change and request a new OTP.';
+  }
+
   switch (e.code) {
     case 'invalid-phone-number':
       return 'Invalid phone number.';
@@ -28,14 +43,11 @@ String _formatPhoneVerifyError(FirebaseAuthException e) {
       return 'Too many attempts. Firebase may temporarily block this device. Wait several hours, '
           'try another device or network, or add a test phone number in Firebase Console.';
     case 'internal-error':
-      // Common after device block, APNs/reCAPTCHA edge cases, or transient backend issues.
       if (e.message != null && e.message!.trim().isNotEmpty) {
-        return '${e.message!.trim()}\n\nIf you recently saw “blocked” or “too many requests”, wait several '
-            'hours or use a Firebase test phone number. Otherwise check iOS push capability and try again.';
+        return 'Phone verification hit a temporary authentication error. Please wait a moment and try again. '
+            'If it continues, tap Change and request a new OTP.';
       }
-      return 'Phone verification failed (internal error). This often follows rate limits or a temporary '
-          'Firebase issue. Wait, use a test number in Firebase Console (Authentication → Phone), or try '
-          'another device.';
+      return 'Phone verification hit a temporary authentication error. Please try again in a moment.';
     case 'invalid-app-credential':
       return 'iOS app credential rejected (APNs / Firebase setup). In Xcode enable Push Notifications, '
           'ensure the same bundle ID as Firebase, and that Phone auth is enabled for this iOS app.';
@@ -47,8 +59,6 @@ String _formatPhoneVerifyError(FirebaseAuthException e) {
       return 'iOS setup issue: enable Phone in Firebase Console and check bundle ID.';
     case 'app-not-authorized':
       return 'Phone sign-in is not enabled for this app in Firebase.';
-    case 'network-request-failed':
-      return 'Network error. Check connection and try again.';
     case 'invalid-verification-code':
       return 'Wrong verification code. Use the 6-digit code from the SMS Firebase sent — '
           'not a made-up code like 123456 unless you added this exact number as a '
