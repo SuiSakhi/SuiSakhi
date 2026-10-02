@@ -203,7 +203,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
           GestureDetector(
             onTap: () {
               AppState.instance.signOut();
-              context.go('/login');
+              context.go('/');
             },
             child: Container(
               padding: const EdgeInsets.all(10),

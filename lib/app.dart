@@ -79,9 +79,8 @@ class StitchSmartApp extends StatelessWidget {
 final _router = GoRouter(
   navigatorKey: stitchSmartRootNavigatorKey,
   initialLocation: '/',
-  // Firebase Phone reCAPTCHA returns a custom iOS URL scheme. Without this,
-  // GoRouter has no matching route, [errorBuilder] runs, and the original
-  // [LoginScreen] is disposed while the phone sheet is still open — OTP UI breaks.
+  // Firebase Phone reCAPTCHA returns a custom iOS URL scheme. Redirect it to
+  // LoginScreen so the shared phone/OTP flow can rebuild with its current state.
   redirect: (BuildContext context, GoRouterState state) {
     final scheme = state.uri.scheme.toLowerCase();
     if (scheme.isEmpty) return null;
@@ -120,8 +119,30 @@ final _router = GoRouter(
     ),
   ),
   routes: [
-    GoRoute(path: '/', builder: (ctx, state) => const SplashScreen()),
-    GoRoute(path: '/login', builder: (ctx, state) => const LoginScreen()),
+    GoRoute(
+      path: '/',
+      builder: (ctx, state) {
+        // Reset the retained OTP only after the current frame so route changes
+        // don't notify the outgoing login page while it is being rebuilt.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          resetPhoneAuthFlowForWelcome();
+        });
+        return const SplashScreen();
+      },
+    ),
+    GoRoute(
+      path: '/login',
+      builder: (ctx, state) {
+        final intent = state.uri.queryParameters['intent'];
+        return LoginScreen(
+          partnerEntry: intent == 'partner'
+              ? true
+              : intent == 'customer'
+              ? false
+              : null,
+        );
+      },
+    ),
     GoRoute(
       path: '/profile-selection',
       builder: (ctx, state) => ProfileSelectionScreen(

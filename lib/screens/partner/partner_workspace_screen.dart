@@ -143,7 +143,7 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
   Future<void> _logout() async {
     await AppState.instance.signOut();
     if (mounted) {
-      context.go('/login');
+      context.go('/');
     }
   }
 

@@ -150,7 +150,7 @@ class TailorAccountCenterScreen extends StatelessWidget {
             onTap: () async {
               await AppState.instance.signOut();
               if (context.mounted) {
-                context.go('/login');
+                context.go('/');
               }
             },
           ),

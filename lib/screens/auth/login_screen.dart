@@ -7,15 +7,12 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:url_launcher/url_launcher.dart';
-
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/router_keys.dart';
 import '../../models/user_profile.dart';
 import '../profile/profile_selection_screen.dart';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 String _formatPhoneVerifyError(FirebaseAuthException e) {
   switch (e.code) {
@@ -58,9 +55,9 @@ String _formatPhoneVerifyError(FirebaseAuthException e) {
           'test phone in Firebase Console → Authentication → Phone.';
     case 'invalid-verification-id':
     case 'expired-action-code':
-      return 'Verification expired or invalid. Tap Continue with OTP and tap Send OTP again.';
+      return 'Verification expired or invalid. Return to phone entry and send a new OTP.';
     case 'session-expired':
-      return 'Session expired. Open Continue with OTP again and request a new code.';
+      return 'Session expired. Return to phone entry and request a new code.';
     case 'credential-already-in-use':
       return 'This phone number is already linked to another account. Contact support if you need help.';
     default:
@@ -71,27 +68,37 @@ String _formatPhoneVerifyError(FirebaseAuthException e) {
 }
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Null means the route was reached without an explicit Welcome choice, such
+  /// as during the Firebase reCAPTCHA URL round-trip.
+  final bool? partnerEntry;
+
+  const LoginScreen({super.key, this.partnerEntry});
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
 /// Holds phone-verification UI state. Firebase callbacks must not depend on
-/// [State.mounted] for the login route — with GoRouter + a pushed page, [mounted]
-/// can be false even though this model and the phone route are still active.
+/// [State.mounted] because GoRouter can rebuild the login route during the
+/// reCAPTCHA return while phone verification is still active.
 class _PhoneAuthFlowModel extends ChangeNotifier {
+  final nameController = TextEditingController();
+  final phoneController = TextEditingController();
+  final otpController = TextEditingController();
+
   String? verificationId;
   bool otpStep = false;
   bool loading = false;
+  bool flowActive = false;
   String? error;
   String phoneDisplay = '';
 
   /// Set when user taps Send OTP (used after sign-in for profile name).
   String collectedDisplayName = '';
 
-  /// Captured when the phone sheet opens (survives [LoginScreen] recreation).
-  UserRole intentRole = UserRole.customer;
+  /// Captured when the phone flow starts. Kept across the Firebase reCAPTCHA
+  /// route round-trip; a successful sign-in clears it.
+  bool partnerEntry = false;
   bool _disposed = false;
   Timer? _verificationFailDebounce;
 
@@ -100,6 +107,9 @@ class _PhoneAuthFlowModel extends ChangeNotifier {
   @override
   void dispose() {
     _verificationFailDebounce?.cancel();
+    nameController.dispose();
+    phoneController.dispose();
+    otpController.dispose();
     _disposed = true;
     super.dispose();
   }
@@ -127,9 +137,14 @@ class _PhoneAuthFlowModel extends ChangeNotifier {
     verificationId = null;
     otpStep = false;
     loading = false;
+    flowActive = false;
     error = null;
     phoneDisplay = '';
     collectedDisplayName = '';
+    nameController.clear();
+    phoneController.clear();
+    otpController.clear();
+    partnerEntry = false;
     notifyListeners();
   }
 
@@ -183,22 +198,21 @@ class _PhoneAuthFlowModel extends ChangeNotifier {
 }
 
 /// Shared instance — must not be tied to [LoginScreen] lifecycle. GoRouter can
-/// rebuild login when Firebase reCAPTCHA returns a custom URL scheme, which
-/// would dispose a per-screen model while the phone sheet is still open.
+/// rebuild login when Firebase reCAPTCHA returns a custom URL scheme, while
+/// phone and OTP input must remain available.
 final _kPhoneAuthFlowModel = _PhoneAuthFlowModel();
 
-/// Pushed on root navigator; [State.setState] on model updates so the OTP step
-/// reliably repaints with GoRouter + overlay routes.
+/// Clears any unfinished phone/OTP UI when returning to the Welcome screen,
+/// including after logout. The flow remains shared during Firebase reCAPTCHA.
+void resetPhoneAuthFlowForWelcome() => _kPhoneAuthFlowModel.reset();
+
+/// Hosts the phone and OTP states together on the login route. The shared model
+/// keeps Firebase callbacks and input values alive across GoRouter URL returns.
 class _PhoneAuthRouteHost extends StatefulWidget {
-  const _PhoneAuthRouteHost({
-    required this.model,
-    required this.navCtx,
-    required this.pageBuilder,
-  });
+  const _PhoneAuthRouteHost({required this.model, required this.pageBuilder});
 
   final _PhoneAuthFlowModel model;
-  final BuildContext navCtx;
-  final Widget Function(BuildContext navCtx) pageBuilder;
+  final Widget Function() pageBuilder;
 
   @override
   State<_PhoneAuthRouteHost> createState() => _PhoneAuthRouteHostState();
@@ -241,7 +255,7 @@ class _PhoneAuthRouteHostState extends State<_PhoneAuthRouteHost> {
       body: Column(
         children: [
           if (m.loading) const LinearProgressIndicator(minHeight: 3),
-          Expanded(child: SafeArea(child: widget.pageBuilder(widget.navCtx))),
+          Expanded(child: SafeArea(child: widget.pageBuilder())),
         ],
       ),
     );
@@ -250,13 +264,27 @@ class _PhoneAuthRouteHostState extends State<_PhoneAuthRouteHost> {
 
 class _LoginScreenState extends State<LoginScreen> {
   _PhoneAuthFlowModel get _phoneAuthModel => _kPhoneAuthFlowModel;
-  TextEditingController? _phoneFlowNameCtrl;
-  TextEditingController? _phoneFlowPhoneCtrl;
-  TextEditingController? _phoneFlowOtpCtrl;
   Timer? _phoneVerifyWatchdog;
-  bool _loading = false;
-  String? _error;
-  UserRole _selectedRole = UserRole.customer;
+
+  @override
+  void initState() {
+    super.initState();
+    _applyEntryIntent(widget.partnerEntry);
+  }
+
+  @override
+  void didUpdateWidget(covariant LoginScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.partnerEntry != oldWidget.partnerEntry) {
+      _applyEntryIntent(widget.partnerEntry);
+    }
+  }
+
+  void _applyEntryIntent(bool? partnerEntry) {
+    if (partnerEntry == null || _phoneAuthModel.flowActive) return;
+    _phoneAuthModel.reset();
+    _phoneAuthModel.partnerEntry = partnerEntry;
+  }
 
   void _cancelPhoneWatchdog() {
     _phoneVerifyWatchdog?.cancel();
@@ -287,8 +315,8 @@ class _LoginScreenState extends State<LoginScreen> {
     return t.isNotEmpty && t != 'User' && t != 'Guest';
   }
 
-  /// Display name: saved Firestore name first (returning phone users), then name
-  /// typed on the OTP sheet, then profile email local-part — never raw phone as display name.
+  /// Display name: saved Firestore name first for returning phone users, then a
+  /// name collected during OTP, then profile email local-part; never raw phone.
   String _resolvedProfileDisplayName({
     required User user,
     String? email,
@@ -410,7 +438,7 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _handleSignedInUser(
     User user, {
     String? email,
-    UserRole? loginRoleOverride,
+    bool partnerEntry = false,
     String? displayNameOverride,
   }) async {
     // Step 1: Temporary profile
@@ -438,12 +466,9 @@ class _LoginScreenState extends State<LoginScreen> {
     await AppState.instance.loadUserProfile(user.uid);
     await AppState.instance.loadRates();
 
-    final chosenRole = loginRoleOverride ?? _selectedRole;
-
     UserRole finalRole;
     bool returning = AppState.instance.hasCompletedSetup;
     final existing = AppState.instance.profile;
-    String? ownerEnrollmentEmail;
 
     if (configRole != null) {
       // Email in owner/tailor/delivery config — highest priority
@@ -451,44 +476,8 @@ class _LoginScreenState extends State<LoginScreen> {
     } else if (existing != null && existing.role != UserRole.customer) {
       // Firestore profile already has a non-customer role (set from a prior login)
       finalRole = existing.role;
-    } else if (chosenRole == UserRole.owner) {
-      final ownerEmail = await _promptOwnerSetup(
-        existingEmail: email ?? user.email,
-      );
-      if (ownerEmail == null) {
-        if (mounted) {
-          setState(() {
-            _error = 'Owner access denied. Contact the app administrator.';
-            _loading = false;
-          });
-        }
-        await FirebaseAuth.instance.signOut();
-        return;
-      }
-      finalRole = UserRole.owner;
-      returning = false;
-      ownerEnrollmentEmail = ownerEmail;
-      await AppState.instance.enrollOwner(ownerEmail);
-    } else if (chosenRole == UserRole.tailor) {
-      // Tailor is invite-only: config/admin.tailorEmails and/or tailorPhones (Owner → Enroll Tailor).
-      final em = (email ?? user.email)?.trim();
-      final ph = user.phoneNumber?.trim();
-      final detail = (em != null && em.isNotEmpty)
-          ? 'Ask the owner to add this email under Owner → Enroll Tailor:\n\n$em'
-          : (ph != null && ph.isNotEmpty)
-          ? 'Ask the owner to add this exact phone (E.164) under Owner → Enroll Tailor:\n\n$ph'
-          : 'Sign in with the phone number the owner enrolled under Owner → Enroll Tailor '
-                '(E.164, e.g. +91…), or ask them to add your email in config.';
-      if (mounted) {
-        setState(() {
-          _error = 'Tailor access is not enabled for this account.\n\n$detail';
-          _loading = false;
-        });
-      }
-      await FirebaseAuth.instance.signOut();
-      return;
     } else {
-      finalRole = chosenRole;
+      finalRole = UserRole.customer;
     }
 
     // Step 4: Save final profile
@@ -507,7 +496,7 @@ class _LoginScreenState extends State<LoginScreen> {
         age: existing?.age ?? 0,
         role: finalRole,
         avatarPath: existing?.avatarPath,
-        email: ownerEnrollmentEmail ?? existing?.email ?? email ?? user.email,
+        email: existing?.email ?? email ?? user.email,
         photoUrl: existing?.photoUrl ?? user.photoURL,
 
         // Preserve new customer profile fields.
@@ -593,6 +582,18 @@ class _LoginScreenState extends State<LoginScreen> {
         : stitchSmartRootNavigatorKey.currentContext;
 
     if (navCtx != null && navCtx.mounted) {
+      // Partner applicants use the same authentication and default Customer
+      // Profile foundation. Preserve configured staff access and existing
+      // non-customer profiles, while sending regular customer accounts onward
+      // to the Partner Opportunities list.
+      if (partnerEntry &&
+          configRole == null &&
+          (existing == null || existing.role == UserRole.customer)) {
+        _phoneAuthModel.setLoading(false);
+        GoRouter.of(navCtx).go('/partner/opportunities');
+        return;
+      }
+
       try {
         final signedInUser = FirebaseAuth.instance.currentUser;
         final signedInPhone = signedInUser?.phoneNumber;
@@ -644,15 +645,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     profileId: selectedProfileId,
                   );
 
-                  if (mounted) {
-                    setState(() => _loading = false);
-                  }
+                  _phoneAuthModel.setLoading(false);
 
                   if (navCtx.mounted) {
                     GoRouter.of(navCtx).go(
                       _destinationForProfile(
                         selectedProfile,
                         accountId: accountId,
+                        returning: returning,
                       ),
                     );
                   }
@@ -673,13 +673,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   profileId: onlyProfileId,
                 );
 
-                if (mounted) {
-                  setState(() => _loading = false);
-                }
+                _phoneAuthModel.setLoading(false);
 
                 if (navCtx.mounted) {
                   GoRouter.of(navCtx).go(
-                    _destinationForProfile(onlyProfile, accountId: accountId),
+                    _destinationForProfile(
+                      onlyProfile,
+                      accountId: accountId,
+                      returning: returning,
+                    ),
                   );
                 }
                 return;
@@ -691,9 +693,7 @@ class _LoginScreenState extends State<LoginScreen> {
         debugPrint('Profile selection skipped: $e');
       }
 
-      if (mounted) {
-        setState(() => _loading = false);
-      }
+      _phoneAuthModel.setLoading(false);
 
       if (navCtx.mounted) {
         GoRouter.of(
@@ -704,66 +704,24 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   // ── Phone / OTP Sign-In ──────────────────────────────────────────────────
-  Future<void> _showPhoneSignInSheet() async {
-    _cancelPhoneWatchdog();
-    _phoneFlowNameCtrl = TextEditingController();
-    _phoneFlowPhoneCtrl = TextEditingController();
-    _phoneFlowOtpCtrl = TextEditingController();
-    _phoneAuthModel.reset();
-    _phoneAuthModel.intentRole = _selectedRole;
-
-    await Navigator.of(context, rootNavigator: true).push<void>(
-      MaterialPageRoute<void>(
-        fullscreenDialog: true,
-        builder: (navCtx) {
-          return _PhoneAuthRouteHost(
-            model: _phoneAuthModel,
-            navCtx: navCtx,
-            pageBuilder: _buildPhoneOtpPage,
-          );
-        },
-      ),
-    );
-
-    // Dispose after the route is gone — avoids races with TextField / focus teardown
-    // that can trigger framework.dart _dependents assertions on iOS when popping with keyboard up.
-    final nameC = _phoneFlowNameCtrl;
-    final phoneC = _phoneFlowPhoneCtrl;
-    final otpC = _phoneFlowOtpCtrl;
-    _phoneFlowNameCtrl = null;
-    _phoneFlowPhoneCtrl = null;
-    _phoneFlowOtpCtrl = null;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      nameC?.dispose();
-      phoneC?.dispose();
-      otpC?.dispose();
-    });
-  }
-
-  /// Pops the OTP sheet safely (keyboard + inherited widgets tear down in a stable order).
-  void _closePhoneAuthSheet(BuildContext sheetContext) {
+  /// Return to Welcome when the user closes the direct phone authentication page.
+  void _closePhoneAuthPage(BuildContext pageContext) {
     FocusManager.instance.primaryFocus?.unfocus();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!sheetContext.mounted) return;
-      Navigator.of(sheetContext, rootNavigator: true).pop();
+      if (!pageContext.mounted) return;
+      _phoneAuthModel.reset();
+      GoRouter.of(pageContext).go('/');
     });
   }
 
-  Future<void> _completePhoneSignInAndPop(
-    BuildContext navCtx,
-    PhoneAuthCredential credential,
-  ) async {
-    if (navCtx.mounted) {
-      Navigator.of(navCtx, rootNavigator: true).pop();
-    }
-    _phoneAuthModel.setLoading(false);
+  Future<void> _completePhoneSignIn(PhoneAuthCredential credential) async {
+    _phoneAuthModel.setLoading(true);
     await _signInWithPhoneCredential(credential);
   }
 
-  Future<void> _sendPhoneFlowOtp(BuildContext navCtx) async {
-    final nameCtrl = _phoneFlowNameCtrl;
-    final phoneCtrl = _phoneFlowPhoneCtrl;
-    if (phoneCtrl == null || nameCtrl == null) return;
+  Future<void> _sendPhoneFlowOtp() async {
+    final nameCtrl = _phoneAuthModel.nameController;
+    final phoneCtrl = _phoneAuthModel.phoneController;
     final raw = phoneCtrl.text.trim().replaceAll(RegExp(r'\s+'), '');
     if (raw.length < 10) {
       _phoneAuthModel.setFailed('Enter a valid phone number (10+ digits)');
@@ -802,6 +760,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // prefer the saved Firestore name for returning users.
     _phoneAuthModel.collectedDisplayName = name;
     _phoneAuthModel.phoneDisplay = display;
+    _phoneAuthModel.flowActive = true;
     _armPhoneWatchdog();
 
     try {
@@ -809,15 +768,14 @@ class _LoginScreenState extends State<LoginScreen> {
         phoneNumber: e164,
         timeout: const Duration(seconds: 120),
         // Android instant verification — auto sign-in. On iOS always show OTP (avoids
-        // rare plugin/callback ordering that pops the sheet before the OTP UI paints).
+        // rare plugin/callback ordering that completes before the OTP UI paints).
         verificationCompleted: (credential) async {
           _cancelPhoneWatchdog();
           if (!_phoneAuthModel.alive) return;
           _phoneAuthModel.cancelVerificationFailDebounce();
           _phoneAuthModel.setLoading(false);
           if (defaultTargetPlatform == TargetPlatform.iOS) return;
-          if (!navCtx.mounted) return;
-          await _completePhoneSignInAndPop(navCtx, credential);
+          await _completePhoneSignIn(credential);
         },
         verificationFailed: (e) {
           /*  print('====================================');
@@ -832,7 +790,7 @@ class _LoginScreenState extends State<LoginScreen> {
             _formatPhoneVerifyError(e),
           );
         },
-        // Do NOT gate on LoginScreen mounted — it is often false here with GoRouter + push.
+        // Do NOT gate on LoginScreen mounted — it can be false during GoRouter URL returns.
         codeSent: (verificationId, _) {
           _cancelPhoneWatchdog();
           if (kDebugMode) {
@@ -856,10 +814,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Future<void> _verifyPhoneFlowOtp(BuildContext navCtx) async {
+  Future<void> _verifyPhoneFlowOtp() async {
     final vid = _phoneAuthModel.verificationId;
-    final otpCtrl = _phoneFlowOtpCtrl;
-    if (vid == null || otpCtrl == null) {
+    final otpCtrl = _phoneAuthModel.otpController;
+    if (vid == null) {
       _phoneAuthModel.setFailed('No verification in progress. Send OTP again.');
       return;
     }
@@ -875,7 +833,7 @@ class _LoginScreenState extends State<LoginScreen> {
         verificationId: vid,
         smsCode: code,
       );
-      await _completePhoneSignInAndPop(navCtx, credential);
+      await _completePhoneSignIn(credential);
     } on FirebaseAuthException catch (e) {
       _phoneAuthModel.setFailed(_formatPhoneVerifyError(e));
     } catch (_) {
@@ -883,15 +841,10 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
-  Widget _buildPhoneOtpPage(BuildContext navCtx) {
+  Widget _buildPhoneOtpPage() {
     final m = _phoneAuthModel;
-    //final nameCtrl = _phoneFlowNameCtrl!;
-    final phoneCtrl = _phoneFlowPhoneCtrl;
-    final otpCtrl = _phoneFlowOtpCtrl;
-
-    if (phoneCtrl == null || otpCtrl == null) {
-      return const SizedBox.shrink();
-    }
+    final phoneCtrl = m.phoneController;
+    final otpCtrl = m.otpController;
 
     const fieldScrollPad = EdgeInsets.only(bottom: 100);
 
@@ -904,9 +857,9 @@ class _LoginScreenState extends State<LoginScreen> {
               ? null
               : () {
                   if (m.otpStep) {
-                    _verifyPhoneFlowOtp(navCtx);
+                    _verifyPhoneFlowOtp();
                   } else {
-                    _sendPhoneFlowOtp(navCtx);
+                    _sendPhoneFlowOtp();
                   }
                 },
           style: ElevatedButton.styleFrom(
@@ -962,7 +915,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   IconButton(
                     visualDensity: VisualDensity.compact,
-                    onPressed: () => _closePhoneAuthSheet(context),
+                    onPressed: () => _closePhoneAuthPage(context),
                     icon: const Icon(
                       Icons.close_rounded,
                       color: AppColors.textSecondary,
@@ -973,8 +926,10 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 4),
               Text(
                 m.otpStep
-                    ? 'Code sent to ${m.phoneDisplay}'
-                    : 'Enter your mobile number to continue ...',
+                    ? 'Enter the six-digit code sent to your phone.'
+                    : m.partnerEntry
+                    ? 'Use your phone number to continue to Partner Opportunities.'
+                    : 'Enter your mobile number to sign in or create an account.',
                 style: AppTextStyles.bodySmall.copyWith(
                   color: AppColors.textSecondary,
                 ),
@@ -1028,7 +983,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   onSubmitted: (_) {
-                    if (!m.loading) _sendPhoneFlowOtp(navCtx);
+                    if (!m.loading) _sendPhoneFlowOtp();
                   },
                 ),
                 const SizedBox(height: 2),
@@ -1040,6 +995,63 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                 ),
               ] else ...[
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.16),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.phone_rounded, color: AppColors.primary),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Verification code sent to',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              m.phoneDisplay,
+                              style: AppTextStyles.titleMedium.copyWith(
+                                fontSize: 14,
+                                color: AppColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      TextButton(
+                        style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: m.loading
+                            ? null
+                            : () {
+                                otpCtrl.clear();
+                                m.verificationId = null;
+                                m.flowActive = false;
+                                _phoneAuthModel.backToPhoneInput();
+                              },
+                        child: const Text('Change'),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
                 Pinput(
                   controller: otpCtrl,
                   length: 6,
@@ -1117,28 +1129,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                   ),
                   onCompleted: (_) {
-                    if (!m.loading) _verifyPhoneFlowOtp(navCtx);
+                    if (!m.loading) _verifyPhoneFlowOtp();
                   },
                   onSubmitted: (_) {
-                    if (!m.loading) _verifyPhoneFlowOtp(navCtx);
+                    if (!m.loading) _verifyPhoneFlowOtp();
                   },
-                ),
-                const SizedBox(height: 4),
-                Center(
-                  child: TextButton.icon(
-                    style: TextButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    onPressed: m.loading
-                        ? null
-                        : () {
-                            otpCtrl.clear();
-                            _phoneAuthModel.backToPhoneInput();
-                          },
-                    icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                    label: const Text('Change number'),
-                  ),
                 ),
               ],
               if (!m.loading && m.error != null) ...[
@@ -1186,373 +1181,45 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithPhoneCredential(
     PhoneAuthCredential credential,
   ) async {
-    if (mounted) {
-      setState(() {
-        _loading = true;
-        _error = null;
-      });
-    }
     try {
       final userCred = await FirebaseAuth.instance.signInWithCredential(
         credential,
       );
       final user = userCred.user;
       if (user == null) {
-        if (mounted) setState(() => _loading = false);
+        _phoneAuthModel.setLoading(false);
         return;
       }
+      final partnerEntry = _kPhoneAuthFlowModel.partnerEntry;
       await _handleSignedInUser(
         user,
-        loginRoleOverride: _kPhoneAuthFlowModel.intentRole,
+        partnerEntry: partnerEntry,
         displayNameOverride:
             _kPhoneAuthFlowModel.collectedDisplayName.trim().isEmpty
             ? null
             : _kPhoneAuthFlowModel.collectedDisplayName.trim(),
       );
+      _kPhoneAuthFlowModel.partnerEntry = false;
+      _kPhoneAuthFlowModel.flowActive = false;
+      _kPhoneAuthFlowModel.setLoading(false);
     } on FirebaseAuthException catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = _formatPhoneVerifyError(e);
-          _loading = false;
-        });
-      }
+      _phoneAuthModel.setFailed(_formatPhoneVerifyError(e));
     } catch (e) {
-      if (mounted) {
-        setState(() {
-          _error = 'Sign-in failed: $e';
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  // ── Owner bootstrap (OTP-only: collect shop email for config enrollment) ─
-  /* static bool _looksLikeEmail(String s) {
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(s.trim());
-  } */
-
-  Future<String?> _promptOwnerSetup({String? existingEmail}) async {
-    try {
-      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
-
-      if (phone == null) {
-        return null;
-      }
-
-      final snapshot = await FirebaseFirestore.instance
-          .collection('partner_users')
-          .where('phone', isEqualTo: phone)
-          .where('active', isEqualTo: true)
-          .limit(1)
-          .get();
-
-      if (snapshot.docs.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'This mobile number is not registered as a Fashion Partner.',
-              ),
-            ),
-          );
-        }
-        return null;
-      }
-
-      final data = snapshot.docs.first.data();
-
-      final email = (data['email'] ?? '').toString().trim();
-
-      if (email.isEmpty) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Partner email is missing. Contact Administrator.'),
-            ),
-          );
-        }
-        return null;
-      }
-
-      return email;
-    } catch (e) {
-      debugPrint('Partner verification failed: $e');
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Partner verification failed.\n$e')),
-        );
-      }
-
-      return null;
+      _phoneAuthModel.setFailed('Sign-in failed: $e');
     }
   }
 
   // ── Build ────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Body [Container] must fill the viewport; otherwise it shrink-wraps and the
-      // default scaffold color shows as a band under the safe area (e.g. home indicator).
-      backgroundColor: AppColors.primary,
-      body: Container(
-        width: double.infinity,
-        height: double.infinity,
-        decoration: const BoxDecoration(gradient: AppColors.primaryGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              if (_loading)
-                const LinearProgressIndicator(
-                  minHeight: 3,
-                  backgroundColor: Colors.white24,
-                  color: Colors.white,
-                ),
-              Expanded(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Column(
-                    children: [
-                      const SizedBox(height: 40),
-                      // Logo
-                      Container(
-                        width: 96,
-                        height: 96,
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(28),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withValues(alpha: 0.2),
-                              blurRadius: 24,
-                              offset: const Offset(0, 8),
-                            ),
-                          ],
-                        ),
-                        child: Padding(
-                          padding: const EdgeInsets.all(8),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(18),
-                            child: Image.asset(
-                              'assets/images/suisakhi_logo.png',
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 28),
-                      Text(
-                        'SuiSakhi',
-                        style: AppTextStyles.displayLarge.copyWith(
-                          color: Colors.white,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'Design • Stitch • Wear',
-                        style: AppTextStyles.bodyLarge.copyWith(
-                          color: Colors.white.withValues(alpha: 0.85),
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-
-                      // Role selector
-                      Text(
-                        'Choose how you want to continue ...',
-                        style: AppTextStyles.titleMedium.copyWith(
-                          color: Colors.white.withValues(alpha: 0.8),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          _RoleCard(
-                            label: 'Customer',
-                            icon: Icons.person_rounded,
-                            selected: _selectedRole == UserRole.customer,
-                            onTap: () => setState(
-                              () => _selectedRole = UserRole.customer,
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          _RoleCard(
-                            label: 'Fashion Partner',
-                            icon: Icons.store_rounded,
-                            selected: _selectedRole == UserRole.owner,
-                            onTap: () =>
-                                setState(() => _selectedRole = UserRole.owner),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-
-                      Text(
-                        'Sign in with SMS OTP.',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 14,
-                          height: 1.35,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      _OtpSignInButton(
-                        loading: _loading,
-                        onTap: _showPhoneSignInSheet,
-                      ),
-
-                      if (_error != null) ...[
-                        const SizedBox(height: 10),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 10,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            _error!,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 20),
-                      Text(
-                        'By continuing you agree to Terms & Privacy.',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.55),
-                          fontSize: 11,
-                          height: 1.5,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 32),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── Role Card ────────────────────────────────────────────────────────────────
-class _RoleCard extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _RoleCard({
-    required this.label,
-    required this.icon,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: selected
-                ? Colors.white
-                : Colors.white.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected
-                  ? Colors.white
-                  : Colors.white.withValues(alpha: 0.3),
-              width: 1.5,
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 26,
-                color: selected ? AppColors.primary : Colors.white,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: selected ? AppColors.primary : Colors.white,
-                  fontSize: 12,
-                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ── OTP Sign-In Button ───────────────────────────────────────────────────────
-class _OtpSignInButton extends StatelessWidget {
-  final bool loading;
-  final VoidCallback onTap;
-  const _OtpSignInButton({required this.loading, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: loading ? null : onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.12),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.phone_rounded, color: AppColors.primary, size: 22),
-            const SizedBox(width: 14),
-            Flexible(
-              child: Text(
-                'Continue with OTP',
-                style: AppTextStyles.titleMedium.copyWith(
-                  color: const Color(0xFF3C4043),
-                  fontSize: 16,
-                ),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ],
-        ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _closePhoneAuthPage(context);
+      },
+      child: _PhoneAuthRouteHost(
+        model: _phoneAuthModel,
+        pageBuilder: _buildPhoneOtpPage,
       ),
     );
   }
