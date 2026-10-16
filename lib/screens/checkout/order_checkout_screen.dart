@@ -28,6 +28,17 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
   String? _loadError;
   bool _busy = false;
 
+  bool get _isBalancePayment =>
+      _order?.assignmentVersion == 'v1' &&
+      _order?.status == OrderStatus.readyForPickup &&
+      _order?.paymentStatus == PaymentStatus.advancePaid;
+
+  double get _amountDue {
+    final order = _order;
+    if (order == null) return 0;
+    return _isBalancePayment ? order.balanceAmount : order.advanceAmount;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +65,24 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
         setState(() => _loadError = 'This order is not yours.');
         return;
       }
+      final isAdvanceDue = data['assignmentVersion'] == 'v1' &&
+          data['assignmentStatus'] == 'awaiting_customer_decision' &&
+          data['paymentStatus'] == 'pending_payment';
+      final isBalanceDue = data['assignmentVersion'] == 'v1' &&
+          data['status'] == 'readyForPickup' &&
+          data['paymentStatus'] == 'advancePaid';
+      if (data['assignmentVersion'] == 'v1' && !isAdvanceDue && !isBalanceDue) {
+        setState(() => _loadError =
+            'No payment is due for this order right now.');
+        return;
+      }
+      final customerDeadline = data['customerDecisionExpiresAt'];
+      if (isAdvanceDue && customerDeadline is Timestamp &&
+          customerDeadline.toDate().isBefore(DateTime.now())) {
+        setState(() => _loadError =
+            'The customer decision deadline has passed. Please contact SuiSakhi support.');
+        return;
+      }
       final cfg = await PayoutConfigService.fetch();
       if (!mounted) return;
       setState(() {
@@ -68,7 +97,11 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
 
   Future<void> _pay(OnlinePaymentMethod method) async {
     final o = _order;
-    if (o == null || o.paymentStatus != PaymentStatus.pendingPayment) return;
+    if (o == null ||
+        (!_isBalancePayment && o.paymentStatus != PaymentStatus.pendingPayment) ||
+        _amountDue <= 0) {
+      return;
+    }
 
     final confirm = await showDialog<bool>(
       context: context,
@@ -78,7 +111,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
           _payoutConfig?.sandboxMode == true
               ? 'This is a dummy checkout for testing. No real money is charged.\n\n'
                   'Method: ${method.label}\n'
-                  'Amount: ₹${o.advanceAmount.toStringAsFixed(0)}'
+                  'Amount: ₹${_amountDue.toStringAsFixed(0)}'
               : 'Live gateway is not fully wired from this build. Enable sandbox under Owner → Payments.',
         ),
         actions: [
@@ -96,10 +129,15 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     if (confirm != true || !mounted) return;
 
     setState(() => _busy = true);
-    final err = await PaymentCompletionService.completeAdvancePayment(
-      orderId: widget.orderId,
-      method: method,
-    );
+    final err = _isBalancePayment
+        ? await PaymentCompletionService.completeBalancePayment(
+            orderId: widget.orderId,
+            method: method,
+          )
+        : await PaymentCompletionService.completeAdvancePayment(
+            orderId: widget.orderId,
+            method: method,
+          );
     if (!mounted) return;
     setState(() => _busy = false);
 
@@ -109,7 +147,9 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     }
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Payment recorded — thank you!')),
+      SnackBar(content: Text(_isBalancePayment
+          ? 'Remaining payment recorded. Your order can now be dispatched.'
+          : 'Advance recorded — thank you!')),
     );
     context.go('/orders');
   }
@@ -119,7 +159,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Pay advance'),
+        title: Text(_isBalancePayment ? 'Pay remaining balance' : 'Pay advance'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => context.pop(),
@@ -153,7 +193,7 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (o.paymentStatus != PaymentStatus.pendingPayment) {
+    if (o.paymentStatus != PaymentStatus.pendingPayment && !_isBalancePayment) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -212,8 +252,8 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
                   Expanded(
                     child: Text(
                       'Test mode: choose a method below to simulate card, UPI, or '
-                      'net banking. Splits are saved on the order for owner, tailor, '
-                      'delivery, and platform.',
+                      'net banking. This only records the test payment state; it does '
+                      'not move real money or settle Partner payouts.',
                       style: AppTextStyles.bodySmall.copyWith(height: 1.4),
                     ),
                   ),
@@ -239,21 +279,27 @@ class _OrderCheckoutScreenState extends State<OrderCheckoutScreen> {
             Text(o.clientName!, style: AppTextStyles.bodyMedium),
           const SizedBox(height: 16),
           Text(
-            'Order total · ₹${o.price.toStringAsFixed(0)}',
+            'Current stitching estimate · ₹${o.price.toStringAsFixed(0)}',
             style: AppTextStyles.titleMedium,
           ),
           const SizedBox(height: 6),
           Text(
-            'Advance (${o.advancePercent}%) · ₹${o.advanceAmount.toStringAsFixed(0)}',
+            _isBalancePayment
+                ? 'Remaining balance · ₹${o.balanceAmount.toStringAsFixed(0)}'
+                : 'Advance (${o.advancePercent}%) · ₹${o.advanceAmount.toStringAsFixed(0)}',
             style: AppTextStyles.headlineMedium.copyWith(color: AppColors.primary),
           ),
           Text(
-            'Balance after advance · ₹${o.balanceAmount.toStringAsFixed(0)}',
+            _isBalancePayment
+                ? 'Stitching estimate · ₹${o.price.toStringAsFixed(0)} · advance received · ₹${o.amountPaid?.toStringAsFixed(0) ?? o.advanceAmount.toStringAsFixed(0)}'
+                : 'Balance after advance · ₹${o.balanceAmount.toStringAsFixed(0)}',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 8),
           Text(
-            'Only online payment is accepted for the advance (card, UPI, or net banking).',
+            _isBalancePayment
+                ? 'Pay the remaining balance online before the Delivery Partner can accept the dispatch.'
+                : 'Pay 50% of this stitching estimate to finalize the order.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 28),

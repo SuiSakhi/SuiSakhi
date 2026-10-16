@@ -31,6 +31,7 @@ class PartnerService {
     String? businessName,
     String? contactName,
     String? mobileE164,
+    List<String> additionalContactNumbers = const <String>[],
     String? email,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -94,8 +95,35 @@ class PartnerService {
         return rightScore.compareTo(leftScore);
       });
 
-      return existingApplications.first;
+      final existingApplication = existingApplications.first;
+      if (!existingApplication.canEdit) return existingApplication;
+
+      // Older second-service drafts may have been created before shared
+      // business/address prefill existed. Fill only blank fields so saved
+      // edits remain the applicant's source of truth.
+      final reusedPartnerDetails = await _approvedPartnerDetailsToReuse(
+        accountId: normalizedAccountId,
+        requestedType: partnerType,
+      );
+      if (reusedPartnerDetails == null) return existingApplication;
+
+      return _prefillMissingDetailsIntoDraft(
+        application: existingApplication,
+        accountId: normalizedAccountId,
+        customerProfileId: normalizedCustomerProfileId,
+        uid: user.uid,
+        source: reusedPartnerDetails,
+      );
     }
+
+    // When an already-approved Partner adds a second service category, reuse
+    // their shared identity and business location as editable draft values.
+    // Accounts with no approved Partner profile keep the original
+    // Customer-first registration flow unchanged.
+    final reusedPartnerDetails = await _approvedPartnerDetailsToReuse(
+      accountId: normalizedAccountId,
+      requestedType: partnerType,
+    );
 
     final document = _applicationsCollection.doc();
     final now = DateTime.now();
@@ -107,10 +135,27 @@ class PartnerService {
       createdByUid: user.uid,
       partnerType: partnerType,
       status: PartnerApplicationStatus.draft,
-      businessName: _normalizedOptionalText(businessName),
-      contactName: _normalizedOptionalText(contactName),
-      mobileE164: _normalizedOptionalText(mobileE164),
-      email: _normalizedOptionalText(email),
+      businessName: _normalizedOptionalText(
+        reusedPartnerDetails?['businessName']?.toString() ?? businessName,
+      ),
+      contactName: _normalizedOptionalText(
+        reusedPartnerDetails?['contactName']?.toString() ?? contactName,
+      ),
+      mobileE164: _normalizedOptionalText(
+        reusedPartnerDetails?['mobileE164']?.toString() ?? mobileE164,
+      ),
+      additionalContactNumbers: _normalizedContactNumbers(
+        (reusedPartnerDetails?['additionalContactNumbers'] as List?)
+                ?.map((value) => value.toString()) ??
+            additionalContactNumbers,
+        reusedPartnerDetails?['mobileE164']?.toString() ?? mobileE164,
+      ),
+      email: _normalizedOptionalText(
+        reusedPartnerDetails?['email']?.toString() ?? email,
+      ),
+      onboardingData: Map<String, dynamic>.from(
+        reusedPartnerDetails?['onboardingData'] as Map? ?? const {},
+      ),
       createdAt: now,
       updatedAt: now,
     );
@@ -251,6 +296,7 @@ class PartnerService {
       businessName: rejectedApplication.businessName,
       contactName: rejectedApplication.contactName,
       mobileE164: rejectedApplication.mobileE164,
+      additionalContactNumbers: rejectedApplication.additionalContactNumbers,
       email: rejectedApplication.email,
       onboardingData: Map<String, dynamic>.from(
         rejectedApplication.onboardingData,
@@ -315,6 +361,7 @@ class PartnerService {
     String? businessName,
     String? contactName,
     String? mobileE164,
+    String? additionalContactNumbers,
     String? email,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
@@ -345,6 +392,14 @@ class PartnerService {
       throw StateError('This partner application can no longer be edited.');
     }
 
+    final normalizedAdditionalNumbers = _normalizedContactNumbers(
+      _splitContactNumbers(additionalContactNumbers),
+      mobileE164,
+    );
+    final existingAdditionalNumbers = _normalizedContactNumbers(
+      application.additionalContactNumbers,
+      application.mobileE164,
+    );
     final payload = <String, dynamic>{
       'businessName': _normalizedOptionalText(businessName),
       'contactName': _normalizedOptionalText(contactName),
@@ -352,6 +407,12 @@ class PartnerService {
       'email': _normalizedOptionalText(email),
       'updatedAt': FieldValue.serverTimestamp(),
     };
+    if (!_sameContactNumbers(
+      existingAdditionalNumbers,
+      normalizedAdditionalNumbers,
+    )) {
+      payload['additionalContactNumbers'] = normalizedAdditionalNumbers;
+    }
     await document.set(payload, SetOptions(merge: true));
   }
 
@@ -1710,6 +1771,364 @@ class PartnerService {
     return score;
   }
 
+  static Future<Map<String, dynamic>?> _approvedPartnerDetailsToReuse({
+    required String accountId,
+    required PartnerType requestedType,
+  }) async {
+    final snapshot = await _db
+        .collection('accounts')
+        .doc(accountId)
+        .collection('profiles')
+        .where('role', isEqualTo: 'partner')
+        .get();
+    final profiles = snapshot.docs.where((document) {
+      final data = document.data();
+      return data['partnerType'] != requestedType.name &&
+          data['status'] == 'active' &&
+          data['operationalStatus'] == 'active' &&
+          data['activationStatus'] == 'active' &&
+          data['approvalStatus'] == 'approved' &&
+          data['kycStatus'] == 'verified';
+    }).toList();
+    if (profiles.isEmpty) return null;
+    profiles.sort((left, right) {
+      DateTime changedAt(Map<String, dynamic> data) {
+        final value = data['updatedAt'] ?? data['createdAt'];
+        return value is Timestamp ? value.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+      }
+
+      return changedAt(right.data()).compareTo(changedAt(left.data()));
+    });
+
+    final profile = profiles.first.data();
+    final sourceType = profile['partnerType']?.toString() ?? '';
+    final partnerData = _stringMap(profile['partnerData']);
+    final extensions = _stringMap(partnerData['extensions']);
+    final sourceExtension = _stringMap(extensions[sourceType]);
+    final categoryWorkshop = _stringMap(sourceExtension['workshopDetails']);
+    final sourceWorkshop = categoryWorkshop.isNotEmpty
+        ? categoryWorkshop
+        : _stringMap(partnerData['workshopDetails']);
+    final sourceServiceLocation = _stringMap(sourceExtension['serviceLocation']);
+    final sourceAddress = _stringMap(sourceServiceLocation['address']);
+    final nestedWorkshopAddress = _stringMap(sourceWorkshop['businessAddress']);
+    final workshopAddress = nestedWorkshopAddress.isNotEmpty
+        ? nestedWorkshopAddress
+        : _stringMap(sourceWorkshop['address']);
+    final profileAddress = _stringMap(profile['businessAddress']).isNotEmpty
+        ? _stringMap(profile['businessAddress'])
+        : _stringMap(profile['address']);
+    final legacyBusinessAddress = workshopAddress.isNotEmpty
+        ? workshopAddress
+        : _stringMap(partnerData['businessAddress']).isNotEmpty
+            ? _stringMap(partnerData['businessAddress'])
+            : profileAddress;
+    final sourceSchedule = _stringMap(sourceExtension['operatingSchedule']);
+
+    dynamic firstValue(Iterable<dynamic> values) {
+      for (final value in values) {
+        if (value != null && value.toString().trim().isNotEmpty) return value;
+      }
+      return null;
+    }
+
+    final serviceAreas = firstValue([
+      sourceWorkshop['serviceAreaPincodes'],
+      sourceServiceLocation['serviceAreaPincodes'],
+    ]);
+    final areaList = serviceAreas is List
+        ? serviceAreas.map((value) => value.toString()).toList()
+        : sourceServiceLocation['serviceArea']?.toString().split(RegExp(r'[\s,;]+')) ??
+            const <String>[];
+    final sharedWorkshop = <String, dynamic>{
+      'addressLine1': firstValue([
+        sourceWorkshop['addressLine1'],
+        sourceAddress['addressLine1'],
+        sourceAddress['line1'],
+        legacyBusinessAddress['addressLine1'],
+        legacyBusinessAddress['line1'],
+      ]),
+      'addressLine2': firstValue([
+        sourceWorkshop['addressLine2'],
+        sourceAddress['addressLine2'],
+        sourceAddress['line2'],
+        legacyBusinessAddress['addressLine2'],
+        legacyBusinessAddress['line2'],
+      ]),
+      'locality': firstValue([
+        sourceWorkshop['locality'],
+        sourceAddress['locality'],
+        legacyBusinessAddress['locality'],
+      ]),
+      'city': firstValue([
+        sourceWorkshop['city'],
+        sourceWorkshop['cityName'],
+        sourceAddress['city'],
+        sourceAddress['cityName'],
+        legacyBusinessAddress['city'],
+        legacyBusinessAddress['cityName'],
+      ]),
+      'cityCode': firstValue([
+        sourceWorkshop['cityCode'],
+        sourceAddress['cityCode'],
+        legacyBusinessAddress['cityCode'],
+      ]),
+      'state': firstValue([
+        sourceWorkshop['state'],
+        sourceWorkshop['stateName'],
+        sourceAddress['state'],
+        sourceAddress['stateName'],
+        legacyBusinessAddress['state'],
+        legacyBusinessAddress['stateName'],
+      ]),
+      'stateCode': firstValue([
+        sourceWorkshop['stateCode'],
+        sourceAddress['stateCode'],
+        legacyBusinessAddress['stateCode'],
+      ]),
+      'pincode': firstValue([
+        sourceWorkshop['pincode'],
+        sourceServiceLocation['pincode'],
+        sourceAddress['pincode'],
+        legacyBusinessAddress['pincode'],
+      ]),
+      'placeId': firstValue([
+        sourceWorkshop['placeId'],
+        sourceAddress['placeId'],
+        legacyBusinessAddress['placeId'],
+      ]),
+      'latitude': firstValue([
+        sourceWorkshop['latitude'],
+        sourceAddress['latitude'],
+        legacyBusinessAddress['latitude'],
+      ]),
+      'longitude': firstValue([
+        sourceWorkshop['longitude'],
+        sourceWorkshop['lon'],
+        sourceAddress['longitude'],
+        sourceAddress['lon'],
+        legacyBusinessAddress['longitude'],
+        legacyBusinessAddress['lon'],
+      ]),
+      'serviceAreaPincodes': areaList,
+      'operatingDays': firstValue([
+            sourceWorkshop['operatingDays'],
+            sourceSchedule['operatingDays'],
+          ]) ??
+          const <String>[],
+      'openingTime': firstValue([
+        sourceWorkshop['openingTime'],
+        sourceSchedule['openingTime'],
+      ]),
+      'closingTime': firstValue([
+        sourceWorkshop['closingTime'],
+        sourceSchedule['closingTime'],
+      ]),
+    };
+    final hasSharedAddress = sharedWorkshop.values.any((value) {
+      if (value == null) return false;
+      if (value is List) return value.isNotEmpty;
+      return value.toString().trim().isNotEmpty;
+    });
+    final requestedExtension = <String, dynamic>{
+      'workshopDetails': sharedWorkshop,
+    };
+    if (requestedType == PartnerType.measurementPartner) {
+      requestedExtension['serviceLocation'] = <String, dynamic>{
+        'address': <String, dynamic>{
+          'addressLine1': sharedWorkshop['addressLine1'],
+          'addressLine2': sharedWorkshop['addressLine2'],
+          'locality': sharedWorkshop['locality'],
+          'cityName': sharedWorkshop['city'],
+          'cityCode': sharedWorkshop['cityCode'],
+          'stateName': sharedWorkshop['state'],
+          'stateCode': sharedWorkshop['stateCode'],
+          'pincode': sharedWorkshop['pincode'],
+          'countryCode': 'IN',
+          'placeId': sharedWorkshop['placeId'],
+          'latitude': sharedWorkshop['latitude'],
+          'longitude': sharedWorkshop['longitude'],
+        },
+        'serviceAreaPincodes': areaList,
+      };
+      requestedExtension['operatingSchedule'] = <String, dynamic>{
+        'operatingDays': sharedWorkshop['operatingDays'],
+        'openingTime': sharedWorkshop['openingTime'],
+        'closingTime': sharedWorkshop['closingTime'],
+      };
+    }
+
+    return {
+      'businessName': profile['businessName'] ?? profile['shopName'] ?? profile['displayName'],
+      'contactName': profile['contactName'],
+      'mobileE164': profile['mobileE164'] ?? profile['phone'],
+      'additionalContactNumbers': profile['additionalContactNumbers'] ??
+          profile['alternateContactNumbers'] ??
+          const <String>[],
+      'email': profile['email'],
+      'onboardingData': hasSharedAddress
+          ? <String, dynamic>{
+              'extensions': <String, dynamic>{
+                requestedType.name: requestedExtension,
+              },
+            }
+          : const <String, dynamic>{},
+    };
+  }
+
+  static Future<PartnerApplication> _prefillMissingDetailsIntoDraft({
+    required PartnerApplication application,
+    required String accountId,
+    required String customerProfileId,
+    required String uid,
+    required Map<String, dynamic> source,
+  }) async {
+    final document = _applicationsCollection.doc(application.id);
+    // Firestore rules intentionally authorize applicant Basic Details and
+    // onboardingData through separate update branches. Keep these writes
+    // separate so opening an older draft can safely prefill both.
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+      if (!snapshot.exists) return;
+
+      final current = PartnerApplication.fromDoc(snapshot);
+      _validateCustomerOwnership(
+        application: current,
+        uid: uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+      if (!current.canEdit || current.partnerType != application.partnerType) {
+        return;
+      }
+
+      final basicDetailsPayload = <String, dynamic>{};
+      for (final field in const [
+        'businessName',
+        'contactName',
+        'mobileE164',
+        'email',
+      ]) {
+        final currentValue = switch (field) {
+          'businessName' => current.businessName,
+          'contactName' => current.contactName,
+          'mobileE164' => current.mobileE164,
+          _ => current.email,
+        };
+        final sourceValue = source[field];
+        if (_isMissingPartnerValue(currentValue) &&
+            !_isMissingPartnerValue(sourceValue)) {
+          basicDetailsPayload[field] = sourceValue;
+        }
+      }
+
+      if (current.additionalContactNumbers.isEmpty &&
+          source['additionalContactNumbers'] is List &&
+          (source['additionalContactNumbers'] as List).isNotEmpty) {
+        basicDetailsPayload['additionalContactNumbers'] =
+            source['additionalContactNumbers'];
+      }
+
+      if (basicDetailsPayload.isNotEmpty) {
+        basicDetailsPayload['updatedAt'] = FieldValue.serverTimestamp();
+        transaction.set(
+          document,
+          basicDetailsPayload,
+          SetOptions(merge: true),
+        );
+      }
+    });
+
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(document);
+      if (!snapshot.exists) return;
+
+      final current = PartnerApplication.fromDoc(snapshot);
+      _validateCustomerOwnership(
+        application: current,
+        uid: uid,
+        accountId: accountId,
+        customerProfileId: customerProfileId,
+      );
+      if (!current.canEdit || current.partnerType != application.partnerType) {
+        return;
+      }
+
+      final sourceOnboarding = source['onboardingData'];
+      if (sourceOnboarding is! Map ||
+          !_hasMissingPartnerValues(current.onboardingData, sourceOnboarding)) {
+        return;
+      }
+
+      transaction.set(
+        document,
+        {
+          'onboardingData': _mergeMissingPartnerValues(
+            current.onboardingData,
+            sourceOnboarding,
+          ),
+          'onboardingUpdatedByUid': uid,
+          'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    });
+
+    final refreshed = await document.get();
+    if (!refreshed.exists) return application;
+    return PartnerApplication.fromDoc(refreshed);
+  }
+
+  static bool _isMissingPartnerValue(dynamic value) =>
+      value == null ||
+      (value is String && value.trim().isEmpty) ||
+      (value is Iterable && value.isEmpty) ||
+      (value is Map && value.isEmpty);
+
+  static bool _hasMissingPartnerValues(dynamic current, dynamic source) {
+    if (source is! Map) {
+      return _isMissingPartnerValue(current) &&
+          !_isMissingPartnerValue(source);
+    }
+    final currentMap = current is Map ? current : const <dynamic, dynamic>{};
+    for (final entry in source.entries) {
+      if (_isMissingPartnerValue(entry.value)) continue;
+      final currentValue = currentMap[entry.key];
+      if (_isMissingPartnerValue(currentValue) ||
+          (entry.value is Map &&
+              _hasMissingPartnerValues(currentValue, entry.value))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  static dynamic _mergeMissingPartnerValues(dynamic current, dynamic source) {
+    if (source is! Map) {
+      return _isMissingPartnerValue(current) ? source : current;
+    }
+    final merged = current is Map
+        ? Map<String, dynamic>.from(current)
+        : <String, dynamic>{};
+    for (final entry in source.entries) {
+      final key = entry.key.toString();
+      final sourceValue = entry.value;
+      if (_isMissingPartnerValue(sourceValue)) continue;
+      final currentValue = merged[key];
+      if (_isMissingPartnerValue(currentValue)) {
+        merged[key] = sourceValue;
+      } else if (sourceValue is Map) {
+        merged[key] = _mergeMissingPartnerValues(currentValue, sourceValue);
+      }
+    }
+    return merged;
+  }
+
+  static Map<String, dynamic> _stringMap(dynamic value) => value is Map
+      ? Map<String, dynamic>.from(value)
+      : <String, dynamic>{};
+
   static void _validateCustomerOwnership({
     required PartnerApplication application,
     required String uid,
@@ -1737,5 +2156,42 @@ class PartnerService {
     }
 
     return normalized;
+  }
+
+  static List<String> _splitContactNumbers(String? value) =>
+      (value ?? '').split(RegExp(r'[,;\n]'));
+
+  static List<String> _normalizedContactNumbers(
+    Iterable<String> values,
+    String? primaryNumber,
+  ) {
+    String normalize(String value) {
+      final compact = value.trim().replaceAll(RegExp(r'[\s().-]'), '');
+      if (RegExp(r'^\d{10}$').hasMatch(compact)) return '+91$compact';
+      return compact;
+    }
+
+    final primaryDigits = (primaryNumber ?? '').replaceAll(RegExp(r'\D'), '');
+    final result = <String>[];
+    for (final value in values) {
+      final normalized = normalize(value);
+      if (!RegExp(r'^\+\d{8,15}$').hasMatch(normalized)) continue;
+      final digits = normalized.replaceAll(RegExp(r'\D'), '');
+      if (digits == primaryDigits || result.any(
+        (item) => item.replaceAll(RegExp(r'\D'), '') == digits,
+      )) {
+        continue;
+      }
+      result.add(normalized);
+    }
+    return result;
+  }
+
+  static bool _sameContactNumbers(List<String> left, List<String> right) {
+    if (left.length != right.length) return false;
+    for (var index = 0; index < left.length; index++) {
+      if (left[index] != right[index]) return false;
+    }
+    return true;
   }
 }

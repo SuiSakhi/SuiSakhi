@@ -180,6 +180,12 @@ locationIds
 commercialProfileIds
 ```
 
+### 4.4 Common Partner profile experience and category extensions
+
+Use the shared Partner profile and workspace foundation across Partner categories. Common identity, contact, approval, KYC, operational status and profile identifiers stay in the common profile surface. Category-specific information appears as additional sections within that shared experience and is stored in the applicable category extension (for example, Measurement Partner capabilities, service-area PINs, schedule, capacity and notes).
+
+Do not create a duplicate profile page or a separate profile form solely because the Partner performs a different category of work. Keep the operational task queue as the Partner workspace landing screen, with the common profile reachable from the profile icon. This is a shared UX and data-extension rule; it does not change account ownership, profile approval or audit boundaries.
+
 ---
 
 ## 5. Partner Categories and Current Status
@@ -1121,6 +1127,20 @@ finalMeasurementMethod
 measurementConfirmationNotes
 ```
 
+### 18.1 Core tailoring order measurement flow — agreed 2026-10-09
+
+After the Customer's 50% advance payment finalizes the order, the assigned Tailor chooses the measurement method and provides any instructions the Customer or Measurement Partner needs. Supported paths include a Tailor home visit, an assigned Measurement Partner home visit, video measurement, previous measurements, or an old-garment reference. Measurement and inbound pickup may proceed in parallel; when the same person handles both, one physical visit may serve both tasks while each task keeps its own status and completion event.
+
+For a home visit or video appointment assigned to a Measurement Partner, the Tailor must explicitly select the Partner; the interface must not silently select the first candidate. The Partner receives an order-linked task and schedules the appointment, which the Customer sees in the order. The Dress / Shirt baseline chart is Neck, Over Bust, Bust, Under Bust, Waist, Hips, Neck to Heel, Neck to Above Knee, Above Knee to Ankle, Arm Length, Shoulder Seam, Arm Hole, Bicep, Fore Arm, Wrist, V Neck Cut, Shoulder to Waist, and Waist to Above Knee. After the visit, the Partner submits every displayed criterion in inches by default (centimeters are optional) and a required note for the Tailor. Store the selected unit with the submitted values. The Customer sees that collection is complete and that Tailor review is pending. The Tailor sees the submitted values and note, remains the final authority, and must confirm the measurement before production advances. The Tailor may re-initiate measurement on an active order whenever a correction or another confirmation is needed. Keep prior submissions and confirmations in measurement history; canceled orders cannot be reopened.
+
+Inbound pickup remains a separate task that can progress in parallel with measurement. After advance payment, route it to the assigned Tailor, then to the assigned Measurement Partner if pickup capability and service eligibility allow, then to an active Delivery Partner serving the order PIN. Show the Customer whether pickup is assigned, collected, or received at the Tailor. Completing a measurement visit must not silently mark the garment as picked up.
+
+For video measurement, the production direction is to create a unique Google Meet link for each appointment using the authorized SuiSakhi Workspace account, `connect@suisakhi.com`, then store and show the link with the order appointment. Enable the Meet API and authorize the least-privilege `meetings.space.created` OAuth scope. Keep any refresh token in Firebase Secret Manager; never expose OAuth secrets to the app or Firestore. Calendar events/invitations are optional and require Calendar API authorization and a Customer email address. Until Meet authorization is configured, the Partner may provide a secure HTTPS meeting link manually. WhatsApp may remain a manual coordination channel; it is not the source of the appointment's canonical video URL.
+
+### 18.2 Shared Measurement Partner profile
+
+The Measurement Partner uses the common Partner profile/workspace. Measurement-specific capabilities, service areas, availability/capacity and service notes are category-extension details inside that common experience. The assigned measurement task is separate from the Partner profile and from ownership of the tailoring order.
+
 ---
 
 ## 19. Capability Verification and Certification
@@ -1212,6 +1232,14 @@ Customer Request
 ```
 
 Payment is requested only after a valid Partner accepts.
+
+### 20.5 Core tailoring pickup and delivery assignment
+
+Every finalized core tailoring order requires pickup from the Customer, including orders where pickup occurs during the measurement visit. Keep inbound pickup, measurement, and outbound delivery as separate task records even when the same Partner performs more than one task.
+
+For both the inbound pickup and the post-production handover/delivery, first check the assigned Tailor, then the assigned Measurement Partner when that Partner is eligible and willing to handle Pickup & Delivery. If a Partner declines, continue to the next eligible option; if neither takes the work, automatically assign an active, approved Delivery Partner whose service area covers the order's delivery PIN. Start inbound assignment after the 50% advance and revisit it after the Tailor selects a Measurement Partner. Start outbound assignment only after Tailor QC and successful payment of the remaining balance.
+
+The Customer's order ID is one unique 12-digit reference generated when the order is confirmed after the 50% advance. Use the same reference on the manual pickup tag and later QR/RFID representation across all custody events. Do not request a separate OTP during initial pickup. Record later receipt/completion and every custody handover as a timestamped event with the acting Partner and the same order reference.
 
 ---
 
@@ -1422,6 +1450,8 @@ Return requirement and due date
 
 Loss, damage, delay, rework, dispute, and evidence corrections are never silently deleted. Corrections use auditable events.
 
+For core tailoring, the Customer-facing progress view must show pickup and handover milestones as a clear event-based stepper (the visible node treatment may use the requested `0` markers). Show independent measurement and inbound-pickup progress, then stitching, QC/ready, remaining payment, outbound handover, and delivery completion. Do not serialize measurement and pickup when separate Partners can work in parallel. Customers may see and call the assigned Partner phone numbers after confirmation, using fixed role labels only: “SuiSakhi Measurement Partner” with “for measurement communication” and “SuiSakhi Tailor Partner.” Do not reveal Partner names in customer-facing order screens. Admin has a complete Customer and Partner 360° view, including profiles, contacts, assignment, submitted measurement values and notes, payment/order state, and the timestamped order event history. Helpdesk can see the complete customer-support order flow and current status, with the contacts needed to resolve that order; Helpdesk cannot approve Partners, perform KYC, change rates, view bank details, or modify governed metadata. Live map location is not implied by this event-based tracking contract.
+
 ---
 
 ## 25. Security and Role Boundaries
@@ -1454,7 +1484,7 @@ Commercials
 Audit
 ```
 
-Helpdesk receives only the Service / Order 360 information required for support and cannot approve Partners, perform KYC, change rates, view bank details, or modify governed metadata.
+Helpdesk receives the complete customer-support order flow, current status, and the order-scoped Customer / Partner contact details needed to answer “where is my order?” Helpdesk cannot approve Partners, perform KYC, change rates, view bank details, or modify governed metadata. Admin retains the broader Customer and Partner 360° view.
 
 ---
 
@@ -1531,16 +1561,17 @@ Garment Care
 ### Current next implementation
 
 ```text
-QuickCare / Doorstep Services
+Complete and validate the core tailoring Measurement Partner flow and Google Meet link setup.
+Then implement automatic inbound pickup and outbound handover assignment, delivery tracking and customer-visible milestones.
 ```
 
 ### Then
 
 ```text
+QuickCare / Doorstep Services
 Fabric Supplier
 Rental Partner
 Printing Partner
-Delivery Partner
 ```
 
 ### Later dedicated operational program
@@ -1568,6 +1599,7 @@ ARCH-PP-011   Apply Again Creates a New Draft
 ARCH-PP-021   Controlled Post-Approval Partner Changes
 ARCH-PP-022   One Account May Hold Multiple Partner Profiles
 ARCH-FUL-001  One Simple Pickup & Delivery Available Capability
+ARCH-FUL-002  Core Order Pickup and Delivery Fallback by Assigned Partner and PIN
 ARCH-GC-001   Garment Care Consolidates Laundry / Press / Stain
 ARCH-QC-001   QuickCare Is a Capability-Driven Service Ecosystem
 ARCH-CAP-001  Allocation Is Capability-Driven, Not Category-Only
@@ -1575,6 +1607,10 @@ ARCH-EVT-001  Event / Wedding / Occasion Is Cross-Category
 ARCH-PRC-001  Standardized and Partner-Controlled Pricing Models
 ARCH-PILLAR-001 Tailoring, QuickCare and Garment Care Are Core Pillars
 ARCH-MEA-001  Assigned Tailor Is Final Measurement Authority
+ARCH-MEA-002  Tailor May Re-initiate Measurement on an Active Order
+ARCH-PP-002   Shared Partner Profile Experience with Category Extensions
+ARCH-ORD-001  One Order Reference Across Pickup, Handover and Tracking
+ARCH-VID-001  SuiSakhi-hosted Google Meet Appointment Link
 ```
 
 ---
@@ -1584,7 +1620,7 @@ ARCH-MEA-001  Assigned Tailor Is Final Measurement Authority
 The following consolidation decisions should be reviewed before renaming this document FINAL:
 
 1. Confirm Admin approval plus KYC verification as the governing activation model, replacing older wording that treated KYC verification alone as approval.
-2. Confirm separate Partner profiles per category under one account versus the older canonical single multi-category Partner Profile direction. Current implementation and recent frozen decisions use separate Partner applications/profiles.
+2. The Partner profile experience is resolved: use the shared common Partner profile/workspace with category-specific extensions, not duplicate profile pages per category. The underlying account/profile ownership and independent approval model in Section 4 remains unchanged by this UX decision.
 3. Confirm capability selection remains optional for Phase-1 submission or is only required for selected categories such as QuickCare. Save Draft remains optional in all cases.
 4. Confirm Tailor legacy pickup and delivery fields remain backward-compatible storage while the UI shows one `Pickup & Delivery Available` control.
 5. Confirm older Laundry and Pressing references are archived and all new work uses Garment Care.

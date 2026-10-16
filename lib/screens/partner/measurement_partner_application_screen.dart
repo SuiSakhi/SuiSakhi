@@ -83,6 +83,7 @@ class _MeasurementPartnerApplicationScreenState
   final _businessNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
+  final _additionalContactNumbersController = TextEditingController();
 
   // ==========================================================================
   // MEASUREMENT PARTNER EXTENSION: CAPACITY AND NOTES
@@ -367,6 +368,7 @@ class _MeasurementPartnerApplicationScreenState
           (_emailController.text.trim().isEmpty
               ? profileEmail
               : _emailController.text);
+      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
 
       // MEASUREMENT PARTNER EXTENSION:
       // Load the complete saved extension after common cross-category reuse.
@@ -385,8 +387,7 @@ class _MeasurementPartnerApplicationScreenState
       setState(() {
         _accountId = accountId;
         _customerProfileId = customerProfileId;
-        _application = application;
-        _loadingFoundation = false;
+        _application = application; _loadingFoundation = false;
         _foundationLoadError = null;
       });
     } catch (error) {
@@ -448,6 +449,11 @@ class _MeasurementPartnerApplicationScreenState
 
     if (_emailController.text.trim().isEmpty && existingEmail.isNotEmpty) {
       _emailController.text = existingEmail;
+    }
+    if (_additionalContactNumbersController.text.trim().isEmpty &&
+        application.additionalContactNumbers.isNotEmpty) {
+      _additionalContactNumbersController.text =
+          application.additionalContactNumbers.join(', ');
     }
 
     // TAILOR-SPECIFIC SOURCE ADAPTER:
@@ -557,6 +563,7 @@ class _MeasurementPartnerApplicationScreenState
     _businessNameController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
+    _additionalContactNumbersController.dispose();
 
     _measurementsPerDayController.dispose();
     _homeVisitsPerDayController.dispose();
@@ -1103,6 +1110,8 @@ class _MeasurementPartnerApplicationScreenState
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -1225,6 +1234,8 @@ class _MeasurementPartnerApplicationScreenState
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -1369,12 +1380,11 @@ class _MeasurementPartnerApplicationScreenState
         return;
       }
 
-      _application = newApplication;
-
-      _contactNameController.text = newApplication.contactName ?? '';
+      _application = newApplication; _contactNameController.text = newApplication.contactName ?? '';
       _businessNameController.text = newApplication.businessName ?? '';
       _mobileController.text = newApplication.mobileE164 ?? '';
       _emailController.text = newApplication.email ?? '';
+      _additionalContactNumbersController.text = newApplication.additionalContactNumbers.join(', ');
 
       setState(() {
         _saving = false;
@@ -1657,6 +1667,7 @@ class _MeasurementPartnerApplicationScreenState
               businessNameController: _businessNameController,
               mobileController: _mobileController,
               emailController: _emailController,
+                  additionalContactNumbersController: _additionalContactNumbersController,
               editable: _isEditable,
               description:
                   'These details will be used for the Measurement Partner '

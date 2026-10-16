@@ -28,14 +28,27 @@ class FirebaseStorageHelpers {
     Uint8List? bytes,
     File? file,
     required String contentType,
+    Map<String, String>? customMetadata,
   }) async {
     await _refreshIdToken();
 
     late final UploadTask task;
     if (!kIsWeb && file != null && await file.exists() && await file.length() > 0) {
-      task = ref.putFile(file, SettableMetadata(contentType: contentType));
+      task = ref.putFile(
+        file,
+        SettableMetadata(
+          contentType: contentType,
+          customMetadata: customMetadata,
+        ),
+      );
     } else if (bytes != null && bytes.isNotEmpty) {
-      task = ref.putData(bytes, SettableMetadata(contentType: contentType));
+      task = ref.putData(
+        bytes,
+        SettableMetadata(
+          contentType: contentType,
+          customMetadata: customMetadata,
+        ),
+      );
     } else {
       return null;
     }

@@ -221,6 +221,33 @@ class PartnerWorkspaceRegistry {
           order: 10,
         ),
       );
+    } else if (partnerType == 'measurementPartner') {
+      modules.add(
+        const PartnerWorkspaceModule(
+          code: 'measurement.assignments',
+          label: 'Measurement Assignments',
+          subtitle:
+              'Review Tailor instructions and schedule visits or video sessions',
+          icon: Icons.straighten_rounded,
+          section: operationsSection,
+          route: 'measurement-assignments',
+          state: PartnerWorkspaceModuleState.available,
+          order: 10,
+        ),
+      );
+    } else if (partnerType == 'brand' || partnerType == 'boutique') {
+      modules.add(
+        const PartnerWorkspaceModule(
+          code: 'store.products',
+          label: 'Store Listings',
+          subtitle: 'Add garments, fabrics and accessories to your store',
+          icon: Icons.storefront_outlined,
+          section: operationsSection,
+          route: 'store-products',
+          state: PartnerWorkspaceModuleState.available,
+          order: 10,
+        ),
+      );
     } else {
       modules.add(
         PartnerWorkspaceModule(

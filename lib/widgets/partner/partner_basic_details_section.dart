@@ -42,6 +42,7 @@ class PartnerBasicDetailsSection extends StatelessWidget {
     required this.contactNameController,
     required this.businessNameController,
     required this.mobileController,
+    required this.additionalContactNumbersController,
     required this.emailController,
     required this.editable,
     required this.description,
@@ -54,6 +55,7 @@ class PartnerBasicDetailsSection extends StatelessWidget {
   final TextEditingController contactNameController;
   final TextEditingController businessNameController;
   final TextEditingController mobileController;
+  final TextEditingController additionalContactNumbersController;
   final TextEditingController emailController;
 
   /// Whether applicant-maintained fields can currently be edited.
@@ -138,6 +140,31 @@ class PartnerBasicDetailsSection extends StatelessWidget {
               helperText:
                   'This mobile number is linked to your SuiSakhi account.',
             ),
+          ),
+          const SizedBox(height: 14),
+          TextFormField(
+            controller: additionalContactNumbersController,
+            readOnly: !editable,
+            keyboardType: TextInputType.phone,
+            maxLines: 2,
+            decoration: const InputDecoration(
+              labelText: 'Additional contact numbers (optional)',
+              hintText: '9876543210, +919876543210',
+              prefixIcon: Icon(Icons.contact_phone_outlined),
+              border: OutlineInputBorder(),
+              helperText: 'Separate numbers with commas. These are for Partner operations contact.',
+            ),
+            onChanged: (_) => onChanged?.call(),
+            validator: (value) {
+              final entries = (value ?? '').split(RegExp(r'[,;\n]'));
+              for (final entry in entries.where((item) => item.trim().isNotEmpty)) {
+                final compact = entry.trim().replaceAll(RegExp(r'[\s().-]'), '');
+                if (!RegExp(r'^(\d{10}|\+\d{8,15})$').hasMatch(compact)) {
+                  return 'Enter a 10-digit Indian mobile or an international number starting with +';
+                }
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 14),
           TextFormField(

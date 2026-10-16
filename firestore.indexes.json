@@ -1,0 +1,79 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "designs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "lifecycleStatus", "order": "ASCENDING"},
+        {"fieldPath": "publicationStatus", "order": "ASCENDING"},
+        {"fieldPath": "commercial.commercialType", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "assignmentVersion", "order": "ASCENDING"},
+        {"fieldPath": "orderDate", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "assignmentStatus", "order": "ASCENDING"},
+        {"fieldPath": "orderDate", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "inboundPickupPartnerAccountId", "order": "ASCENDING"},
+        {"fieldPath": "inboundPickupPartnerProfileId", "order": "ASCENDING"},
+        {"fieldPath": "inboundPickupStatus", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "store_products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "partnerAccountId", "order": "ASCENDING"},
+        {"fieldPath": "partnerProfileId", "order": "ASCENDING"},
+        {"fieldPath": "createdByUid", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "store_products",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "categoryCode", "order": "ASCENDING"}
+      ]
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "profiles",
+      "fieldPath": "partnerType",
+      "indexes": [
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "DESCENDING",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "arrayConfig": "CONTAINS",
+          "queryScope": "COLLECTION"
+        },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    }
+  ]
+}

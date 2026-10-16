@@ -1,3 +1,32 @@
+## 2026-10-09 — Partner Order Operations Track
+
+The user-approved measurement, video appointment, pickup, delivery handover and customer tracking decisions are recorded in:
+
+- `doc/SuiSakhi_PARTNER_MASTER_ARCHITECTURE_v2.0_FINAL.md`
+- `doc/SuiSakhi_AUTH_PARTNER_JOURNEY_IMPLEMENTATION_PLAN.md`
+
+Current implementation state:
+
+- Measurement arrangement, Partner appointment scheduling, and tailored Partner assignment screens are present. Google Meet link automation is still pending authorization for `connect@suisakhi.com`; a secure HTTPS link can still be entered manually.
+- A fresh Partner-assisted plan now requires the Tailor to choose a Measurement Partner explicitly; it no longer auto-selects the first candidate. The Partner assignment screen now follows the supplied 18-field Dress / Shirt chart, defaults to inches with centimeters optional, and requires a note to the Tailor. Pickup completion remains a separate action with its own timestamp. The Customer sees collection complete while the Tailor reviews and confirms the final measurements. Prior submissions/confirmations are retained in measurement history. These code changes are local and not yet deployed or device-validated.
+- Delivery routing code now assigns inbound pickup after the 50% advance and reevaluates it after a Measurement Partner is selected. It follows Tailor → eligible Measurement Partner → Delivery Partner by PIN, with a decline action to move to the next eligible Partner.
+- Outbound handover assignment starts after QC readiness and full payment. Tailor, Measurement Partner, and Delivery Partner workspaces can record the handover.
+- Customer orders now show a public milestone strip for confirmation, pickup, receipt at Tailor, stitching, handover, and delivery, with available appointment, measurement, pickup, and handover timestamps. An order-scoped callable now returns only assigned Tailor and Measurement Partner phone numbers to that order’s Customer, using SuiSakhi role labels and no Partner names.
+- Admin order details now include Measurement Partner assignment, submitted values/unit/note, and the timestamped order event history. The architecture records the broader Admin 360° and Helpdesk order-support view. No separate Helpdesk screen was found in the current app, so that role’s UI remains to be implemented/verified.
+- These delivery code changes are in the working tree and have not been deployed or validated on devices.
+
+Next sequence:
+
+1. Deploy the measurement submission/contact callables and app changes, then validate the home visit flow with a fresh order: explicit Partner choice, appointment, all 18 chart fields/note, pickup completion, Customer contacts/status, and Tailor final review.
+2. Validate inbound pickup assignment and status independently; confirm the Partner handling the measurement only receives pickup when their profile supports that task. Then test video measurement.
+3. Configure Google Meet authorization for `connect@suisakhi.com`, and continue delivery/handover validation. Extend physical custody evidence and optional QR/RFID when the manual handover flow is stable.
+
+Keep the shared Partner profile/workspace experience with category-specific extension details. The operational task queue remains the Partner landing page; the common profile is reachable from its profile icon. Earlier notes assigning every pickup manually to Admin or requiring a separate OTP at initial pickup are superseded by the 2026-10-09 addendum.
+
+The repository has staged and unstaged implementation changes from earlier work. This session did not stage, commit, or deploy changes; inspect status before any future Git staging.
+
+---
+
 ## Active Catalogue Correction Milestone
 
 The governed Catalogue now supports one to ten multi-view images

@@ -8,6 +8,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/measurement.dart';
+import '../../services/customer_measurement_history_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_card.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
@@ -31,8 +32,9 @@ class MeasurementDashboardScreen extends StatefulWidget {
       bool _loadingDraft = false;
       bool _loadingPersonMeasurements = false;
       
-      Map<String, dynamic>? _latestDraft;
-      BodyMeasurements? _selectedPersonMeasurements;
+  Map<String, dynamic>? _latestDraft;
+  BodyMeasurements? _selectedPersonMeasurements;
+  List<CustomerMeasurementRecord> _measurementHistory = const [];
       
     @override
   void initState() {
@@ -269,10 +271,11 @@ class MeasurementDashboardScreen extends StatefulWidget {
 
     if (person == null) return;
 
-    setState(() {
-      _loadingPersonMeasurements = true;
-      _selectedPersonMeasurements = null;
-    });
+      setState(() {
+        _loadingPersonMeasurements = true;
+        _selectedPersonMeasurements = null;
+        _measurementHistory = const [];
+      });
 
     try {
       final accountId = await _currentAccountId();
@@ -284,6 +287,29 @@ class MeasurementDashboardScreen extends StatefulWidget {
           _loadingPersonMeasurements = false;
         });
         return;
+      }
+
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      var history = const <CustomerMeasurementRecord>[];
+      BodyMeasurements? confirmedMeasurements;
+      if (uid != null) {
+        try {
+          history = await CustomerMeasurementHistoryService.loadHistory(
+            customerUid: uid,
+            accountId: accountId,
+            personId: person.id,
+            personName: person.name,
+            limit: 10,
+          );
+        } catch (_) {}
+        try {
+          confirmedMeasurements =
+              await CustomerMeasurementHistoryService.loadLatestTailorConfirmed(
+                customerUid: uid,
+                personId: person.id,
+                personName: person.name,
+              );
+        } catch (_) {}
       }
 
       final snap = await _db
@@ -320,9 +346,10 @@ class MeasurementDashboardScreen extends StatefulWidget {
         return 0;
       });
 
-      BodyMeasurements? loadedMeasurements;
+      BodyMeasurements? loadedMeasurements = confirmedMeasurements;
 
       for (final data in usableDocs) {
+        if (loadedMeasurements != null) break;
         final values = data['measurementValues'];
 
         if (values is Map<String, dynamic>) {
@@ -341,6 +368,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
 
       setState(() {
         _selectedPersonMeasurements = loadedMeasurements;
+        _measurementHistory = history;
         _loadingPersonMeasurements = false;
       });
     } catch (_) {
@@ -392,10 +420,10 @@ class MeasurementDashboardScreen extends StatefulWidget {
                     const LinearProgressIndicator(),
                     const SizedBox(height: 20),
                   ],
-                  if (measurements == null) ...[
+                  if (measurements == null && _measurementHistory.isEmpty) ...[
                     _buildNoMeasurementState(context),
                     const SizedBox(height: 28),
-                  ] else ...[
+                  ] else if (measurements != null) ...[
                     _buildMeasurementSummaryCard(measurements, unit),
                     const SizedBox(height: 28),
                     Text('Body Measurements', style: AppTextStyles.headlineMedium),
@@ -408,47 +436,30 @@ class MeasurementDashboardScreen extends StatefulWidget {
                     _buildGrid(measurements, unit),
                     const SizedBox(height: 28),
                   ],
-                   PrimaryButton(
+                  if (_measurementHistory.isNotEmpty) ...[
+                    _buildMeasurementHistory(),
+                    const SizedBox(height: 24),
+                  ],
+                  PrimaryButton(
                     label: 'Start New Measurement',
                     icon: Icons.add_circle_outline_rounded,
-                    onTap: () {
+                    onTap: () async {
                       final person = _selectedPerson;
 
                       if (person == null) {
-                        context.push('/measurement-context');
-                        return;
-                      }
-
-                      context.push(
-                        '/measurement-context'
-                        '?clientName=${Uri.encodeComponent(person.name)}'
-                        '&personId=${Uri.encodeComponent(person.id)}'
-                        '&relationship=${Uri.encodeComponent(person.relationship)}',
-                      );
-                    },
-                  ),
-                  if (measurements != null) ...[
-                    const SizedBox(height: 12),
-                    SecondaryButton(
-                      label: 'Design a Dress with These',
-                      icon: Icons.design_services_rounded,
-                      onTap: () {
-                        final person = _selectedPerson;
-
-                        if (person == null) {
-                          context.push('/designer');
-                          return;
-                        }
-
-                        context.push(
-                          '/designer'
+                        await context.push('/measurement-context');
+                      } else {
+                        await context.push(
+                          '/measurement-context'
                           '?clientName=${Uri.encodeComponent(person.name)}'
                           '&personId=${Uri.encodeComponent(person.id)}'
                           '&relationship=${Uri.encodeComponent(person.relationship)}',
                         );
-                      },
-                    ),
-                  ],
+                      }
+                      if (!mounted) return;
+                      await _loadLatestPersonMeasurements();
+                    },
+                  ),
               ],
             ),
           ),
@@ -730,16 +741,158 @@ class MeasurementDashboardScreen extends StatefulWidget {
           ),
           const SizedBox(height: 10),
           Text(
-            'No saved measurements are available for $personName yet.',
+            'No saved measurement history is available for $personName yet.',
             style: AppTextStyles.bodyMedium,
           ),
           const SizedBox(height: 6),
           Text(
-            'Start a new measurement using AI Camera or another supported measurement method before designing a dress.',
+            'You can add a customer reference at any time. The Tailor or measurement partner will confirm the final measurements for an order.',
             style: AppTextStyles.bodySmall.copyWith(
               color: AppColors.textHint,
               height: 1.35,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMeasurementHistory() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Measurement History', style: AppTextStyles.headlineMedium),
+        const SizedBox(height: 4),
+        Text(
+          'Showing the latest ${_measurementHistory.length} records. Customer references do not replace tailor-confirmed measurements.',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+        ),
+        const SizedBox(height: 12),
+        for (final record in _measurementHistory)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(16),
+              onTap: () => _showMeasurementRecord(record),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: AppColors.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: AppColors.divider),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            record.title,
+                            style: AppTextStyles.titleMedium,
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: record.isCustomerReference
+                                ? AppColors.accent.withValues(alpha: .1)
+                                : AppColors.success.withValues(alpha: .1),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            _measurementStatusLabel(record),
+                            style: AppTextStyles.bodySmall.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '${_formatMeasurementDate(record.capturedAt)} · ${record.values.length} fields',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textHint,
+                      ),
+                    ),
+                    if (record.values.isNotEmpty) ...[
+                      const SizedBox(height: 7),
+                      Text(
+                        record.values.entries
+                            .take(3)
+                            .map((entry) => '${_measurementLabel(entry.key)}: ${entry.value} ${record.unit}')
+                            .join('   ·   '),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodySmall,
+                      ),
+                    ],
+                    if (record.referenceImageUrl?.isNotEmpty == true) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: Image.network(
+                          record.referenceImageUrl!,
+                          height: 110,
+                          width: double.infinity,
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _showMeasurementRecord(CustomerMeasurementRecord record) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(record.title),
+        content: SizedBox(
+          width: 420,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '${_formatMeasurementDate(record.capturedAt)} · ${_measurementStatusLabel(record)}',
+                  style: AppTextStyles.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                for (final entry in record.values.entries)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 7),
+                    child: Text(
+                      '${entry.key}: ${entry.value} ${record.unit}',
+                      style: AppTextStyles.bodyMedium,
+                    ),
+                  ),
+                if (record.values.isEmpty)
+                  const Text('This saved garment reference has no measurement values.'),
+                if (record.note?.isNotEmpty == true) ...[
+                  const SizedBox(height: 10),
+                  Text(record.note!, style: AppTextStyles.bodySmall),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
           ),
         ],
       ),
@@ -877,4 +1030,19 @@ class _MeasurementDashboardPerson {
     required this.name,
     required this.relationship,
   });
+}
+
+String _formatMeasurementDate(DateTime date) =>
+    '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+String _measurementLabel(String key) => key.replaceFirst(
+      RegExp(r'^\s*\d+\s*[·.\-:]?\s*'),
+      '',
+    );
+
+String _measurementStatusLabel(CustomerMeasurementRecord record) {
+  if (record.isCustomerReference) return 'Your reference';
+  if (record.source == 'partner_confirmed') return 'Tailor confirmed';
+  if (record.source == 'ai_camera') return 'AI estimate · review needed';
+  return 'Needs confirmation';
 }

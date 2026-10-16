@@ -8,6 +8,7 @@ import 'screens/profile/customer_account_center_screen.dart';
 import 'screens/profile/customer_addresses_screen.dart';
 import 'screens/profile/customer_profile_screen.dart';
 import 'screens/profile/customer_edit_profile_screen.dart';
+import 'screens/profile/customer_help_support_screen.dart';
 import 'screens/profile/family_members_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
@@ -18,14 +19,22 @@ import 'screens/measurements/camera_measurement_screen.dart';
 import 'screens/measurements/measurement_result_screen.dart';
 import 'screens/catalog/dress_catalog_screen.dart';
 import 'screens/catalog/dress_detail_screen.dart';
+import 'screens/catalog/customer_wishlist_screen.dart';
+import 'screens/catalog/smart_style_ideas_screen.dart';
 import 'screens/designer/dress_designer_screen.dart';
 import 'screens/orders/orders_screen.dart';
+import 'screens/orders/garment_record_screen.dart';
+import 'screens/orders/order_tag_lookup_screen.dart';
 import 'screens/prd/tailor_style_hub_screen.dart';
 import 'screens/prd/quick_fix_screen.dart';
 import 'screens/prd/bulk_orders_screen.dart';
 import 'screens/prd/shop_explore_screen.dart';
+import 'screens/prd/fashion_store_screen.dart';
 import 'screens/prd/offers_membership_screen.dart';
+import 'screens/prd/customer_fabric_help_screen.dart';
 import 'screens/owner/owner_dashboard_screen.dart';
+import 'screens/owner/owner_support_inbox_screen.dart';
+import 'screens/owner/owner_order_routing_screen.dart';
 import 'screens/owner/owner_design_templates_screen.dart';
 import 'screens/owner/owner_partner_applications_screen.dart';
 import 'screens/owner/owner_partner_application_review_screen.dart';
@@ -53,10 +62,13 @@ import 'screens/partner/partner_workspace_screen.dart';
 import 'screens/partner/partner_profile_view_screen.dart';
 import 'screens/partner/partner_business_details_screen.dart';
 import 'screens/partner/partner_addresses_view_screen.dart';
+import 'screens/partner/measurement_partner_assignments_screen.dart';
+import 'screens/partner/store_product_management_screen.dart';
 import 'screens/owner/owner_catalogue_upload_screen.dart';
 import 'screens/partner/designer_catalogue_upload_screen.dart';
 import 'screens/owner/owner_catalogue_screen.dart';
 import 'screens/owner/owner_catalogue_review_screen.dart';
+import 'screens/owner/customer_home_configuration_screen.dart';
 import 'screens/owner/catalogue_correction_screen.dart';
 import 'screens/partner/designer_catalogue_screen.dart';
 import 'screens/partner/designer_catalogue_details_screen.dart';
@@ -84,6 +96,20 @@ final _router = GoRouter(
   redirect: (BuildContext context, GoRouterState state) {
     final scheme = state.uri.scheme.toLowerCase();
     if (scheme.isEmpty) return null;
+    if (scheme == 'suisakhi' && state.uri.host == 'garment-record') {
+      final segments = state.uri.pathSegments;
+      if (segments.length == 1 && segments.single.isNotEmpty) {
+        return '/garment-record/${Uri.encodeComponent(segments.single)}';
+      }
+      return '/orders';
+    }
+    if (scheme == 'suisakhi' && state.uri.host == 'order-tag') {
+      final segments = state.uri.pathSegments;
+      if (segments.length == 1 && segments.single.isNotEmpty) {
+        return '/order-tag/${Uri.encodeComponent(segments.single)}';
+      }
+      return '/orders';
+    }
     if (scheme == 'http' || scheme == 'https' || scheme == 'file') {
       return null;
     }
@@ -196,10 +222,35 @@ final _router = GoRouter(
       ),
     ),
     GoRoute(
+      path: '/partner/account',
+      builder: (context, state) => PartnerWorkspaceScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        partnerProfileId: state.uri.queryParameters['profileId'] ?? '',
+        partnerCategoryCode: state.uri.queryParameters['category'],
+        showAccountCenter: true,
+      ),
+    ),
+    GoRoute(
       path: '/partner/profile',
       builder: (context, state) => PartnerProfileViewScreen(
         accountId: state.uri.queryParameters['accountId'] ?? '',
         profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/measurement/assignments',
+      builder: (context, state) => MeasurementPartnerAssignmentsScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/store',
+      builder: (context, state) => StoreProductManagementScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+        partnerType: state.uri.queryParameters['partnerType'] ?? '',
+        sellerName: state.uri.queryParameters['sellerName'] ?? '',
       ),
     ),
     GoRoute(
@@ -282,6 +333,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerAddressesScreen(),
     ),
     GoRoute(
+      path: '/customer-help-support',
+      builder: (ctx, state) => const CustomerHelpSupportScreen(),
+    ),
+    GoRoute(
       path: '/profile-setup',
       builder: (ctx, state) => const ProfileSetupScreen(),
     ),
@@ -290,6 +345,18 @@ final _router = GoRouter(
     GoRoute(
       path: '/owner',
       builder: (ctx, state) => const OwnerDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/owner/support-requests',
+      builder: (ctx, state) => const OwnerSupportInboxScreen(),
+    ),
+    GoRoute(
+      path: '/owner/order-routing',
+      builder: (ctx, state) => const OwnerOrderRoutingScreen(),
+    ),
+    GoRoute(
+      path: '/owner/customer-home',
+      builder: (ctx, state) => const CustomerHomeConfigurationScreen(),
     ),
     GoRoute(
       path: '/owner/rates',
@@ -412,8 +479,19 @@ final _router = GoRouter(
           DressDetailScreen(dressId: state.pathParameters['id']!),
     ),
     GoRoute(
+      path: '/wishlist',
+      builder: (ctx, state) => const CustomerWishlistScreen(),
+    ),
+    GoRoute(
+      path: '/smart-style-ideas',
+      builder: (ctx, state) => const SmartStyleIdeasScreen(),
+    ),
+    GoRoute(
       path: '/designer',
       builder: (ctx, state) {
+        if (state.uri.queryParameters['entry'] == 'ideas') {
+          return const SmartStyleIdeasScreen();
+        }
         final occasion = state.uri.queryParameters['occasion'];
         final kids = state.uri.queryParameters['kids'] == '1';
 
@@ -426,6 +504,7 @@ final _router = GoRouter(
         return DressDesignerScreen(
           initialOccasionId: occasion,
           isKidsFlow: kids,
+          startInBrowseMode: state.uri.queryParameters['entry'] == 'ideas',
           initialClientName: clientName,
           initialPersonId: personId,
           initialRelationship: relationship,
@@ -448,12 +527,46 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/shop-explore',
-      builder: (ctx, state) => const ShopExploreScreen(),
+      builder: (ctx, state) {
+        final category = state.uri.queryParameters['category'];
+        const storeCategories = {
+          'ready_to_wear',
+          'fabric',
+          'accessories',
+          'kids_fashion',
+        };
+        if (category == null || storeCategories.contains(category)) {
+          return FashionStoreScreen(initialCategoryCode: category);
+        }
+        return ShopExploreScreen(initialCategoryId: category);
+      },
     ),
     GoRoute(
       path: '/offers',
       builder: (ctx, state) => const OffersMembershipScreen(),
     ),
-    GoRoute(path: '/orders', builder: (ctx, state) => const OrdersScreen()),
+    GoRoute(
+      path: '/fabric-help',
+      builder: (ctx, state) => CustomerFabricHelpScreen(
+        orderId: state.uri.queryParameters['orderId'],
+      ),
+    ),
+    GoRoute(
+      path: '/orders',
+      builder: (ctx, state) => OrdersScreen(
+        initialFilter: state.uri.queryParameters['filter'],
+      ),
+    ),
+    GoRoute(
+      path: '/garment-record/:orderId',
+      builder: (context, state) =>
+          GarmentRecordScreen(orderId: state.pathParameters['orderId'] ?? ''),
+    ),
+    GoRoute(
+      path: '/order-tag/:trackingId',
+      builder: (context, state) => OrderTagLookupScreen(
+        trackingId: state.pathParameters['trackingId'] ?? '',
+      ),
+    ),
   ],
 );

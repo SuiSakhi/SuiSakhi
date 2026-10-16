@@ -6,6 +6,8 @@ class FabricEstimate {
     required this.formulaVersion,
     required this.confidence,
     required this.notes,
+    this.fabricWidthCm,
+    this.allowancePercent = 18,
   });
 
   final String dressType;
@@ -25,4 +27,17 @@ class FabricEstimate {
 
   /// Customer/tailor friendly notes explaining the estimate.
   final List<String> notes;
+  final double? fabricWidthCm;
+  final int allowancePercent;
+
+  Map<String, dynamic> toMap() => {
+    'dressType': dressType,
+    'fabricName': fabricName,
+    'estimatedMeters': estimatedMeters,
+    'formulaVersion': formulaVersion,
+    'confidence': confidence,
+    'notes': notes,
+    if (fabricWidthCm != null) 'fabricWidthCm': fabricWidthCm,
+    'allowancePercent': allowancePercent,
+  };
 }

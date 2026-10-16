@@ -67,10 +67,33 @@ class _OwnerCatalogueUploadScreenState
         version: version,
         views: uploadedViews,
       );
+      // SuiSakhi-owned uploads are curated by an Admin, so they can go
+      // directly to the customer catalogue. Designer-partner submissions
+      // continue through the separate Admin review queue.
+      await CatalogueDesignService.submitForReview(designId);
+      await CatalogueDesignService.approve(
+        designId: designId,
+        approvedDesignCharge: value.approvedDesignCharge,
+      );
+      final hasFront = uploadedViews.any(
+        (view) => view.viewType == CatalogueDesignViewType.front,
+      );
+      final hasBack = uploadedViews.any(
+        (view) => view.viewType == CatalogueDesignViewType.back,
+      );
+      final hasCombined = uploadedViews.any(
+        (view) => view.viewType == CatalogueDesignViewType.combinedFrontBack,
+      );
+      final awaitingCounterpart = !hasCombined && hasFront != hasBack;
+      if (!awaitingCounterpart) {
+        await CatalogueDesignService.publish(designId);
+      }
       if (!mounted) return;
       setState(() => _saving = false);
       _message(
-        'Original uploaded. Structured conversion is queued for processing.',
+        awaitingCounterpart
+            ? 'Design approved. AI is preparing counterpart-view candidates; select one in Catalogue Review before publishing.'
+            : 'Design approved and published. Structured conversion is queued for processing.',
       );
       context.pop();
     } catch (error) {

@@ -109,6 +109,115 @@ service cloud.firestore {
         ).data.adminUids;
     }
 
+    // Authorizes support staff only when their UID is explicitly configured.
+    function isConfiguredSupportAgent() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/config/support)
+        && 'supportUids' in get(
+          /databases/$(database)/documents/config/support
+        ).data
+        && get(
+          /databases/$(database)/documents/config/support
+        ).data.supportUids is list
+        && request.auth.uid in get(
+          /databases/$(database)/documents/config/support
+        ).data.supportUids;
+    }
+
+    // =====================================================
+    // RULE-ID: FN-CATALOGUE-APPROVED-DESIGNER
+    // ACTOR: Rules engine
+    // RESOURCE: Designer Partner profile
+    // OPERATION: Verify catalogue submission identity
+    // PURPOSE: Allows catalogue creation only for the signed-in account's active,
+    //          approved, KYC-verified Designer profile.
+    // =====================================================
+    function isApprovedCatalogueDesigner(accountId, profileId) {
+      return hasAuthenticatedPhone()
+        && accountId is string
+        && accountId.size() > 0
+        && profileId is string
+        && profileId.size() > 0
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+        ).data.mobileE164 == request.auth.token.phone_number
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.role == 'partner'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.partnerType == 'designer'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.status == 'active'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.operationalStatus == 'active'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.activationStatus == 'active'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.approvalStatus == 'approved'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.kycStatus == 'verified';
+    }
+
+    // =====================================================
+    // RULE-ID: FN-APPROVED-FASHION-STORE-PARTNER
+    // ACTOR: Rules engine
+    // RESOURCE: Brand or Boutique Partner profile
+    // OPERATION: Verify store listing ownership
+    // PURPOSE: Allows only the signed-in account's active, approved,
+    //          KYC-verified Brand/Boutique profile to manage its listings.
+    // =====================================================
+    function isApprovedFashionStorePartner(accountId, profileId) {
+      return hasAuthenticatedPhone()
+        && accountId is string
+        && accountId.size() > 0
+        && profileId is string
+        && profileId.size() > 0
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+        ).data.mobileE164 == request.auth.token.phone_number
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.role == 'partner'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.partnerType in ['brand', 'boutique']
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.status == 'active'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.operationalStatus == 'active'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.activationStatus == 'active'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.approvalStatus == 'approved'
+        && get(
+          /databases/$(database)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.kycStatus == 'verified';
+    }
+
     // Profile + phone lookup field (used after first successful save)
     // =====================================================
     // RULE-ID: COLL-USERS
@@ -306,6 +415,17 @@ service cloud.firestore {
           && request.resource.data.profileId == resource.data.profileId;
 
         allow delete: if false;
+
+        // Server-issued, profile-scoped Tailor offers. The account/profile path
+        // scopes reads; callable Functions alone create or change offer state.
+        match /order_offers/{offerId} {
+          allow read: if ownsExistingAccount(accountId)
+            && get(
+              /databases/$(database)/documents/accounts/$(accountId)
+                /profiles/$(profileId)
+            ).data.partnerType == 'tailor';
+          allow write: if false;
+        }
 
         // Family members belong to the owning Customer profile.
         // Archived members remain available for historical records but
@@ -924,6 +1044,7 @@ service cloud.firestore {
                 'businessName',
                 'contactName',
                 'mobileE164',
+                'additionalContactNumbers',
                 'email',
                 'updatedAt'
               ]);
@@ -1028,6 +1149,7 @@ service cloud.firestore {
                 'businessName',
                 'contactName',
                 'mobileE164',
+                'additionalContactNumbers',
                 'email',
                 'updatedAt'
               ])
@@ -1417,7 +1539,7 @@ service cloud.firestore {
     // =====================================================
     match /rates/{docId} {
       allow read: if signedIn();
-      allow write: if signedIn();
+      allow write: if isConfiguredAdmin();
     }
 
     // =====================================================
@@ -1425,13 +1547,191 @@ service cloud.firestore {
     // ACTOR: Authenticated user
     // RESOURCE: Order
     // OPERATION: Create, read, update, or delete order
-    // PURPOSE: Retains current order authorization behavior; customer creates require matching customerId.
+    // PURPOSE: Customer creates must match their UID; production order updates are server-owned while legacy test orders retain current access.
     // =====================================================
     match /orders/{orderId} {
       allow read: if signedIn();
       allow create: if signedIn()
-          && request.resource.data.customerId == request.auth.uid;
-      allow update, delete: if signedIn();
+          && request.resource.data.customerId == request.auth.uid
+          && (request.resource.data.orderModuleType != 'coreTailoring'
+            || (request.resource.data.assignmentVersion == 'v1'
+              && request.resource.data.assignmentStatus == 'searching'
+              && request.resource.data.paymentStatus == 'unpaid'
+              && request.resource.data.advancePercent == 50
+              && request.resource.data.advanceAmount == 0
+              && request.resource.data.status == 'pending'
+              && !request.resource.data.keys().hasAny([
+                'assignedTailorAccountId',
+                'assignedTailorProfileId',
+                'assignedTailorName',
+                'tailorName',
+                'assignmentAcceptedAt',
+                'customerDecisionExpiresAt',
+                'orderFinalizedAt',
+                'orderTrackingId',
+                'orderQrPayload',
+                'measurementStatus',
+                'measurementMethod',
+                'measurementPartnerAccountId',
+                'measurementPartnerProfileId',
+                'measurementPartnerName',
+                'measurementAppointmentAt',
+                'measurementAppointmentLink',
+                'measurementAppointmentScheduledAt',
+                'measurementNotes',
+                'measurementConfirmedAt',
+                'measurementConfirmedByAccountId',
+                'measurementConfirmedByProfileId',
+                'measurementSubmissionStatus',
+                'measurementSubmittedValues',
+                'measurementSubmittedUnit',
+                'measurementHistory',
+                'measurementPartnerCompletionNote',
+                'measurementPartnerCompletedAt',
+                'measurementPartnerCompletedByAccountId',
+                'measurementPartnerCompletedByProfileId',
+                'inboundPickupStatus',
+                'inboundPickupRequired',
+                'inboundPickupPartnerType',
+                'inboundPickupPartnerAccountId',
+                'inboundPickupPartnerProfileId',
+                'inboundPickupAssignedAt',
+                'inboundPickupAssignedBy',
+                'inboundPickupCollectedAt',
+                'inboundPickupCollectedByAccountId',
+                'inboundPickupCollectedByProfileId',
+                'inboundPickupPhotoPath',
+                'inboundPickupPhotoAttachedAt',
+                'inboundPickupPhotoAttachedByAccountId',
+                'inboundPickupPhotoAttachedByProfileId',
+                'inboundPickupReceivedAt',
+                'inboundPickupReceivedByAccountId',
+                'inboundPickupReceivedByProfileId',
+                'inboundPickupDeclinedPartnerKeys',
+                'outboundHandoverStatus',
+                'outboundHandoverPartnerType',
+                'outboundHandoverPartnerAccountId',
+                'outboundHandoverPartnerProfileId',
+                'outboundHandoverAssignedAt',
+                'outboundHandoverAcceptedAt',
+                'outboundHandoverDeliveredAt',
+                'outboundHandoverDeclinedPartnerKeys',
+                'deliveryPartnerId',
+                'deliveryPartnerType',
+                'deliveryPartnerAccountId',
+                'deliveryPartnerProfileId',
+                'deliveryAcceptedAt',
+                'deliveryPinHash',
+                'deliveryPinGeneratedAt',
+                'deliveryPinUsedAt',
+                'deliveredAt',
+                'warrantyClaimStatus',
+                'warrantyIssueDescription',
+                'warrantyIssueReportedAt',
+                'warrantyCustomerPhone',
+                'warrantyResolution',
+                'warrantyResolvedAt',
+                'warrantyResolvedByUid',
+                'warrantyResolvedByRole',
+                'atTailorAt',
+                'adminQueueReason',
+                'adminQueueUpdatedAt',
+                'nextDispatchAt',
+                'amountPaid',
+                'paidAt',
+                'paymentMethod',
+                'paymentProvider',
+                'payoutLedger'
+              ])));
+      // Production orders are immutable to clients after submission. The
+      // Admin SDK in trusted Cloud Functions owns assignment/payment changes;
+      // existing non-production test orders retain their current behavior.
+      allow update: if signedIn() && resource.data.assignmentVersion != 'v1';
+      allow delete: if signedIn() && resource.data.assignmentVersion != 'v1';
+
+      match /events/{eventId} {
+        allow read: if signedIn();
+        allow write: if false;
+      }
+
+      // Delivery verification PINs are read only by trusted Cloud Functions.
+      match /private/{privateDocumentId} {
+        allow read, write: if false;
+      }
+    }
+
+    // Customer-owned design references. Catalogue images remain in their
+    // canonical design/version documents and are never copied into a wishlist.
+    match /customer_wishlists/{userId}/items/{itemId} {
+      allow read, delete: if signedIn() && request.auth.uid == userId;
+      allow create, update: if signedIn()
+          && request.auth.uid == userId
+          && request.resource.data.designId is string
+          && request.resource.data.designId.size() > 0
+          && request.resource.data.catalogueVersionId is string
+          && request.resource.data.catalogueVersionId.size() > 0
+          && request.resource.data.keys().hasOnly([
+            'designId', 'catalogueVersionId', 'savedAt',
+            'fabricPhotoStoragePath', 'fabricPreviewStoragePath',
+            'fabricMetadata'
+          ]);
+    }
+
+    // Drafts remain editable by their owning Customer and readable by that
+    // Customer's owned account so the existing account-scoped draft list works.
+    match /order_drafts/{draftId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid
+            || (resource.data.accountId is string
+              && ownsExistingAccount(resource.data.accountId)));
+      allow create: if signedIn()
+          && request.resource.data.customerUid == request.auth.uid
+          && request.resource.data.accountId is string
+          && request.resource.data.customerProfileId is string
+          && ownsActiveCustomerProfile(
+            request.resource.data.accountId,
+            request.resource.data.customerProfileId
+          );
+      allow update: if signedIn()
+          && (resource.data.customerUid == request.auth.uid
+            || (resource.data.accountId is string
+              && ownsExistingAccount(resource.data.accountId)))
+          && request.resource.data.customerUid == request.auth.uid
+          && request.resource.data.accountId == resource.data.accountId
+          && request.resource.data.customerProfileId is string
+          && ownsActiveCustomerProfile(
+            request.resource.data.accountId,
+            request.resource.data.customerProfileId
+          );
+      allow delete: if signedIn()
+          && (resource.data.customerUid == request.auth.uid
+            || (resource.data.accountId is string
+              && ownsExistingAccount(resource.data.accountId)));
+    }
+
+    // Help requests and generated consultation links are written by the trusted
+    // backend; customers can read only their own requests and Admin can review.
+    match /customer_consultations/{userId}/requests/{requestId} {
+      allow read: if signedIn()
+          && (request.auth.uid == userId || isConfiguredAdmin());
+      allow write: if false;
+    }
+
+    // Assignment candidate lists and capacity reservations are server-only.
+    match /order_assignment_state/{orderId} {
+      allow read, write: if false;
+    }
+    match /order_tracking_codes/{trackingId} {
+      allow read, write: if false;
+    }
+    match /tailor_capacity/{capacityId} {
+      allow read, write: if false;
+    }
+    match /tailor_capacity_reservations/{orderId} {
+      allow read, write: if false;
+    }
+    match /tailor_routing_priorities/{areaId} {
+      allow read, write: if false;
     }
 
     // =====================================================
@@ -1446,6 +1746,266 @@ service cloud.firestore {
       allow create: if signedIn();
       allow update, delete: if signedIn()
           && resource.data.createdBy == request.auth.uid;
+    }
+
+    // Governed monochrome catalogue designs. Partner drafts are private to the
+    // submitting UID; customers can read only approved, published catalogue
+    // records. Admin review and publication use the configured Admin UID list.
+    // =====================================================
+    // RULE-ID: COLL-CATALOGUE-DESIGNS
+    // ACTOR: Approved Designer Partner, configured Admin, or signed-in customer
+    // RESOURCE: Catalogue design, version, source view, and review event
+    // OPERATION: Create/read/update governed catalogue content
+    // PURPOSE: Protects immutable ownership and the Admin publication gate.
+    // =====================================================
+    match /designs/{designId} {
+      allow get, list: if signedIn()
+        && (
+          isConfiguredAdmin()
+          || resource.data.submittedByUid == request.auth.uid
+          || (
+            resource.data.lifecycleStatus == 'approved'
+            && resource.data.publicationStatus == 'published'
+            && resource.data.commercial is map
+            && resource.data.commercial.commercialType in [
+              'free', 'paid', 'premium'
+            ]
+          )
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.designId == designId
+        && request.resource.data.submittedByUid == request.auth.uid
+        && request.resource.data.lifecycleStatus == 'draft'
+        && request.resource.data.publicationStatus == 'unpublished'
+        && request.resource.data.activeVersionId == null
+        && (
+          (
+            isConfiguredAdmin()
+            && request.resource.data.ownerType == 'suisakhi'
+          )
+          || (
+            request.resource.data.ownerType == 'designer'
+            && request.resource.data.ownerAccountId is string
+            && request.resource.data.ownerProfileId is string
+            && isApprovedCatalogueDesigner(
+              request.resource.data.ownerAccountId,
+              request.resource.data.ownerProfileId
+            )
+            && request.resource.data.catalogueAgreement is map
+            && request.resource.data.catalogueAgreement.acceptedByUid
+              == request.auth.uid
+            && request.resource.data.catalogueAgreement.actorType
+              == 'designerPartner'
+            && request.resource.data.catalogueAgreement.partnerProfileId
+              == request.resource.data.ownerProfileId
+            && request.resource.data.catalogueAgreement.agreementCode is string
+            && request.resource.data.catalogueAgreement.agreementCode.size() > 0
+            && request.resource.data.catalogueAgreement.agreementVersion is string
+            && request.resource.data.catalogueAgreement.agreementVersion.size() > 0
+            && request.resource.data.rightsDeclaration is map
+            && request.resource.data.rightsDeclaration.acceptedByUid
+              == request.auth.uid
+            && request.resource.data.rightsDeclaration.originalWorkDeclared
+              == true
+            && request.resource.data.rightsDeclaration.rightsConfirmed == true
+          )
+        );
+
+      allow update: if isConfiguredAdmin()
+        || (
+          signedIn()
+          && resource.data.ownerType == 'designer'
+          && resource.data.submittedByUid == request.auth.uid
+          && request.resource.data.designId == resource.data.designId
+          && request.resource.data.ownerType == resource.data.ownerType
+          && request.resource.data.ownerAccountId == resource.data.ownerAccountId
+          && request.resource.data.ownerProfileId == resource.data.ownerProfileId
+          && request.resource.data.submittedByUid == resource.data.submittedByUid
+          && request.resource.data.publicationStatus == resource.data.publicationStatus
+          && request.resource.data.get('publishedByUid', null)
+            == resource.data.get('publishedByUid', null)
+          && request.resource.data.get('publishedAt', null)
+            == resource.data.get('publishedAt', null)
+          && request.resource.data.commercial.approvedDesignCharge
+            == resource.data.commercial.approvedDesignCharge
+          && request.resource.data.lifecycleStatus in [
+            'draft', 'uploaded', 'readyForReview', 'changesRequested'
+          ]
+          && (
+            (
+              resource.data.lifecycleStatus in ['draft', 'uploaded']
+              && request.resource.data.lifecycleStatus in [
+                'draft', 'uploaded', 'readyForReview'
+              ]
+            )
+            || (
+              resource.data.lifecycleStatus == 'changesRequested'
+              && request.resource.data.lifecycleStatus in [
+                'changesRequested', 'readyForReview'
+              ]
+            )
+          )
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'title',
+            'description',
+            'garmentTypeCodes',
+            'occasionCodes',
+            'styleCodes',
+            'fabricCompatibilityCodes',
+            'eventCapabilityTags',
+            'constructionMetadata',
+            'commercial',
+            'activeVersionId',
+            'lifecycleStatus',
+            'processingStatus',
+            'reviewNotes',
+            'rejectionReason',
+            'submittedAt',
+            'updatedAt',
+            'reviewedVersionId',
+            'latestReviewEventId',
+            'changeRequestScope',
+            'affectedViewIds',
+            'correctionDraftVersionId'
+          ])
+        );
+
+      allow delete: if false;
+
+      match /versions/{versionId} {
+        function parentDesign() {
+          return get(
+            /databases/$(database)/documents/designs/$(designId)
+          ).data;
+        }
+
+        function canReadCatalogueVersion() {
+          return signedIn()
+            && (
+              isConfiguredAdmin()
+              || parentDesign().submittedByUid == request.auth.uid
+              || (
+                parentDesign().lifecycleStatus == 'approved'
+                && parentDesign().publicationStatus == 'published'
+                && parentDesign().commercial is map
+                && parentDesign().commercial.commercialType in [
+                  'free', 'paid', 'premium'
+                ]
+              )
+            );
+        }
+
+        function canWriteCatalogueVersion() {
+          return signedIn()
+            && (
+              isConfiguredAdmin()
+              || (
+                parentDesign().ownerType == 'designer'
+                && parentDesign().submittedByUid == request.auth.uid
+                && parentDesign().publicationStatus != 'published'
+                && parentDesign().lifecycleStatus in [
+                  'draft', 'uploaded', 'changesRequested'
+                ]
+              )
+            );
+        }
+
+        allow read: if canReadCatalogueVersion();
+        allow create: if canWriteCatalogueVersion()
+          && request.resource.data.designId == designId
+          && request.resource.data.versionId == versionId
+          && request.resource.data.submittedByUid == request.auth.uid;
+        allow update: if isConfiguredAdmin()
+          || (
+            canWriteCatalogueVersion()
+            && request.resource.data.designId == resource.data.designId
+            && request.resource.data.versionId == resource.data.versionId
+            && request.resource.data.submittedByUid == request.auth.uid
+            && request.resource.data.get('versionStatus', 'draft')
+              in ['draft', 'submitted']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'primaryViewId',
+              'viewCount',
+              'processing',
+              'updatedAt',
+              'versionStatus',
+              'submittedByUid',
+              'submittedAt'
+            ])
+          );
+        allow delete: if false;
+
+        match /views/{viewId} {
+          allow read: if canReadCatalogueVersion();
+          allow create: if canWriteCatalogueVersion()
+            && request.resource.data.designId == designId
+            && request.resource.data.versionId == versionId
+            && request.resource.data.viewId == viewId
+            && request.resource.data.originalAsset is map
+            && request.resource.data.originalAsset.storagePath is string
+            && request.resource.data.originalAsset.mimeType in [
+              'image/jpeg', 'image/png', 'image/webp'
+            ]
+            && request.resource.data.originalAsset.byteSize is int
+            && request.resource.data.originalAsset.byteSize > 0
+            && request.resource.data.originalAsset.byteSize <= 12 * 1024 * 1024;
+          allow update: if isConfiguredAdmin()
+            || (
+              canWriteCatalogueVersion()
+              && request.resource.data.designId == resource.data.designId
+              && request.resource.data.versionId == resource.data.versionId
+              && request.resource.data.viewId == resource.data.viewId
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'viewType',
+                'isPrimary',
+                'excludedFromVersion',
+                'replacedByViewId',
+                'updatedAt'
+              ])
+            );
+          allow delete: if false;
+        }
+
+        match /generated_view_candidates/{candidateId} {
+          allow read: if signedIn()
+            && (
+              isConfiguredAdmin()
+              || parentDesign().submittedByUid == request.auth.uid
+            );
+          allow write: if false;
+        }
+
+        match /view_reconstruction_runs/{runId} {
+          allow read: if signedIn()
+            && (
+              isConfiguredAdmin()
+              || parentDesign().submittedByUid == request.auth.uid
+            );
+          allow write: if false;
+        }
+      }
+
+      match /review_events/{eventId} {
+        allow read: if isConfiguredAdmin()
+          || (
+            signedIn()
+            && get(
+              /databases/$(database)/documents/designs/$(designId)
+            ).data.submittedByUid == request.auth.uid
+          );
+        allow create: if signedIn()
+          && request.resource.data.eventId == eventId
+          && request.resource.data.designId == designId
+          && request.resource.data.actorUid == request.auth.uid
+          && (
+            isConfiguredAdmin()
+            || get(
+              /databases/$(database)/documents/designs/$(designId)
+            ).data.submittedByUid == request.auth.uid
+          );
+        allow update, delete: if false;
+      }
     }
 
     // Private, profile-owned customer design references.
@@ -1479,6 +2039,306 @@ service cloud.firestore {
               == resource.data.profileId
           && request.resource.data.visibility
               == resource.data.visibility;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
+    // RULE-ID: COLL-SUPPORT-TICKETS
+    // ACTOR: Ticket owner, configured support agent, or configured Admin
+    // RESOURCE: Customer support ticket
+    // OPERATION: Create, read, or update support request lifecycle
+    // PURPOSE: Customers can submit and read their own requests; only configured support staff/Admin can see all requests and change status.
+    // =====================================================
+    match /support_tickets/{ticketId} {
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'customerUid',
+          'customerName',
+          'category',
+          'subject',
+          'message',
+          'linkedOrderId',
+          'assignedTeam',
+          'status',
+          'source',
+          'languageCode',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'customerUid',
+          'customerName',
+          'category',
+          'subject',
+          'message',
+          'linkedOrderId',
+          'assignedTeam',
+          'status',
+          'source',
+          'languageCode',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.customerUid == request.auth.uid
+        && request.resource.data.customerName is string
+        && request.resource.data.customerName.size() <= 100
+        && request.resource.data.category in [
+          'Order Issue',
+          'Measurement Issue',
+          'Fabric Issue',
+          'Designer Issue',
+          'Payment Issue',
+          'Garment Care Issue',
+          'Delivery Issue',
+          'Other'
+        ]
+        && request.resource.data.subject is string
+        && request.resource.data.subject.size() > 0
+        && request.resource.data.subject.size() <= 100
+        && request.resource.data.message is string
+        && request.resource.data.message.size() >= 5
+        && request.resource.data.message.size() <= 2000
+        && (
+          request.resource.data.linkedOrderId == null
+          || (
+            request.resource.data.linkedOrderId is string
+            && exists(
+              /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+            )
+            && get(
+              /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+            ).data.customerId == request.auth.uid
+          )
+        )
+        && request.resource.data.assignedTeam in [
+          'orders',
+          'measurements',
+          'design_and_fabric',
+          'payments',
+          'garment_care',
+          'delivery',
+          'customer_support'
+        ]
+        && request.resource.data.status == 'Open'
+        && request.resource.data.source == 'customer_helpdesk'
+        && request.resource.data.languageCode == 'en'
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow read: if signedIn()
+        && (
+          resource.data.customerUid == request.auth.uid
+          || isConfiguredSupportAgent()
+          || isConfiguredAdmin()
+        );
+
+      allow update: if (isConfiguredSupportAgent() || isConfiguredAdmin())
+        && request.resource.data.customerUid == resource.data.customerUid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'assignedTeam',
+          'response',
+          'updatedAt',
+          'resolvedAt'
+        ])
+        && request.resource.data.status in [
+          'Open',
+          'In Progress',
+          'Waiting Customer',
+          'Resolved',
+          'Closed'
+        ]
+        && request.resource.data.updatedAt == request.time;
+
+      allow delete: if false;
+    }
+
+    // =====================================================
+    // RULE-ID: COLL-STORE-PRODUCTS
+    // ACTOR: Store Customer, Brand/Boutique Partner, or configured Admin
+    // RESOURCE: Fashion Store product listing
+    // OPERATION: Read published listings or manage owned Partner listings
+    // PURPOSE: Keeps unpublished listings private and scopes all Partner
+    //          writes to the approved Brand/Boutique profile that created them.
+    // =====================================================
+    match /store_products/{productId} {
+      allow get, list: if isConfiguredAdmin()
+        || resource.data.status == 'published'
+        || (
+          resource.data.partnerAccountId is string
+          && resource.data.partnerProfileId is string
+          && resource.data.createdByUid == request.auth.uid
+          && isApprovedFashionStorePartner(
+            resource.data.partnerAccountId,
+            resource.data.partnerProfileId
+          )
+        );
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly([
+          'partnerAccountId',
+          'partnerProfileId',
+          'partnerType',
+          'sellerName',
+          'name',
+          'description',
+          'categoryCode',
+          'categoryLabel',
+          'subcategory',
+          'priceInr',
+          'discountPriceInr',
+          'stockQuantity',
+          'status',
+          'brandName',
+          'unit',
+          'fabricComposition',
+          'fabricWidth',
+          'minimumQuantity',
+          'sizes',
+          'colors',
+          'images',
+          'createdByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'partnerAccountId',
+          'partnerProfileId',
+          'partnerType',
+          'sellerName',
+          'name',
+          'description',
+          'categoryCode',
+          'categoryLabel',
+          'subcategory',
+          'priceInr',
+          'discountPriceInr',
+          'stockQuantity',
+          'status',
+          'brandName',
+          'unit',
+          'fabricComposition',
+          'fabricWidth',
+          'minimumQuantity',
+          'sizes',
+          'colors',
+          'images',
+          'createdByUid',
+          'createdAt',
+          'updatedAt'
+        ])
+        && isApprovedFashionStorePartner(
+          request.resource.data.partnerAccountId,
+          request.resource.data.partnerProfileId
+        )
+        && request.resource.data.partnerType in ['brand', 'boutique']
+        && request.resource.data.createdByUid == request.auth.uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 120
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 3000
+        && request.resource.data.categoryCode in [
+          'ready_to_wear', 'fabric', 'accessories', 'kids_fashion'
+        ]
+        && request.resource.data.subcategory is string
+        && request.resource.data.subcategory.size() > 0
+        && request.resource.data.subcategory.size() <= 100
+        && request.resource.data.priceInr is number
+        && request.resource.data.priceInr > 0
+        && (
+          request.resource.data.discountPriceInr == null
+          || (
+            request.resource.data.discountPriceInr is number
+            && request.resource.data.discountPriceInr > 0
+            && request.resource.data.discountPriceInr
+                < request.resource.data.priceInr
+          )
+        )
+        && request.resource.data.stockQuantity is int
+        && request.resource.data.stockQuantity >= 0
+        && request.resource.data.status in ['draft', 'published', 'paused']
+        && request.resource.data.unit in ['piece', 'metre']
+        && request.resource.data.minimumQuantity is int
+        && request.resource.data.minimumQuantity > 0
+        && request.resource.data.sizes is list
+        && request.resource.data.colors is list
+        && request.resource.data.images is list
+        && request.resource.data.images.size() <= 5
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+
+      allow update: if isConfiguredAdmin()
+        || (
+          signedIn()
+          && resource.data.createdByUid == request.auth.uid
+          && isApprovedFashionStorePartner(
+            resource.data.partnerAccountId,
+            resource.data.partnerProfileId
+          )
+          && request.resource.data.partnerAccountId
+              == resource.data.partnerAccountId
+          && request.resource.data.partnerProfileId
+              == resource.data.partnerProfileId
+          && request.resource.data.partnerType == resource.data.partnerType
+          && request.resource.data.createdByUid == resource.data.createdByUid
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'sellerName',
+            'name',
+            'description',
+            'categoryCode',
+            'categoryLabel',
+            'subcategory',
+            'priceInr',
+            'discountPriceInr',
+            'stockQuantity',
+            'status',
+            'brandName',
+            'unit',
+            'fabricComposition',
+            'fabricWidth',
+            'minimumQuantity',
+            'sizes',
+            'colors',
+            'images',
+            'updatedAt'
+          ])
+          && request.resource.data.name is string
+          && request.resource.data.name.size() > 0
+          && request.resource.data.name.size() <= 120
+          && request.resource.data.description is string
+          && request.resource.data.description.size() <= 3000
+          && request.resource.data.categoryCode in [
+            'ready_to_wear', 'fabric', 'accessories', 'kids_fashion'
+          ]
+          && request.resource.data.subcategory is string
+          && request.resource.data.subcategory.size() > 0
+          && request.resource.data.subcategory.size() <= 100
+          && request.resource.data.priceInr is number
+          && request.resource.data.priceInr > 0
+          && (
+            request.resource.data.discountPriceInr == null
+            || (
+              request.resource.data.discountPriceInr is number
+              && request.resource.data.discountPriceInr > 0
+              && request.resource.data.discountPriceInr
+                  < request.resource.data.priceInr
+            )
+          )
+          && request.resource.data.stockQuantity is int
+          && request.resource.data.stockQuantity >= 0
+          && request.resource.data.status in ['draft', 'published', 'paused']
+          && request.resource.data.unit in ['piece', 'metre']
+          && request.resource.data.minimumQuantity is int
+          && request.resource.data.minimumQuantity > 0
+          && request.resource.data.sizes is list
+          && request.resource.data.colors is list
+          && request.resource.data.images is list
+          && request.resource.data.images.size() <= 5
+          && request.resource.data.updatedAt == request.time
+        );
 
       allow delete: if false;
     }

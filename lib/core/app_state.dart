@@ -1161,6 +1161,12 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
   }
 
   Future<void> updateRate(String dressType, double price, {String? notes}) async {
+    await _db.collection('rates').doc(_rateDocId(dressType)).set({
+      'dressType': dressType,
+      'basePrice': price,
+      'notes': notes,
+    }, SetOptions(merge: true));
+
     final idx = _rates.indexWhere((r) => r.dressType == dressType);
     if (idx != -1) {
       _rates[idx].basePrice = price;
@@ -1169,11 +1175,6 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
       _rates.add(StitchingRate(dressType: dressType, basePrice: price, notes: notes));
     }
     notifyListeners();
-    await _db.collection('rates').doc(_rateDocId(dressType)).set({
-      'dressType': dressType,
-      'basePrice': price,
-      'notes': notes,
-    }, SetOptions(merge: true));
   }
 
   Future<void> deleteRate(String dressType) async {

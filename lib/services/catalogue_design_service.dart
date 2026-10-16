@@ -2,6 +2,7 @@ import 'dart:io' show File;
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -14,8 +15,28 @@ import '../models/catalogue_design_asset.dart';
 import '../models/catalogue_design_version.dart';
 import '../models/catalogue_design_view.dart';
 import '../models/catalogue_processing_status.dart';
+import '../models/catalogue_view_candidate.dart';
 import 'catalogue_upload_policy.dart';
 import 'firebase_storage_helpers.dart';
+
+class PublishedCatalogueBundle {
+  const PublishedCatalogueBundle({required this.version, required this.views});
+
+  final CatalogueDesignVersion version;
+  final List<CatalogueDesignView> views;
+
+  CatalogueDesignView? get primaryView {
+    if (views.isEmpty) return null;
+    final primaryId = version.primaryViewId?.trim() ?? '';
+    for (final view in views) {
+      if (view.viewId == primaryId) return view;
+    }
+    for (final view in views) {
+      if (view.isPrimary) return view;
+    }
+    return views.first;
+  }
+}
 
 class CatalogueDesignService {
   CatalogueDesignService._();
@@ -24,6 +45,7 @@ class CatalogueDesignService {
   static final FirebaseStorage _storage = FirebaseStorage.instanceFor(
     app: Firebase.app(),
   );
+  static final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
   static CollectionReference<Map<String, dynamic>> get _designs =>
       _db.collection('designs');
@@ -34,19 +56,158 @@ class CatalogueDesignService {
   }) {
     Query<Map<String, dynamic>> query = _designs
         .where('lifecycleStatus', isEqualTo: 'approved')
-        .where('publicationStatus', isEqualTo: 'published');
+        .where('publicationStatus', isEqualTo: 'published')
+        .where(
+          'commercial.commercialType',
+          whereIn: const ['free', 'paid', 'premium'],
+        );
     final garment = garmentTypeCode?.trim() ?? '';
     if (garment.isNotEmpty) {
       query = query.where('garmentTypeCodes', arrayContains: garment);
     }
     return query.snapshots().map((snapshot) {
-      final designs = snapshot.docs.map(CatalogueDesign.fromDoc).toList();
+      final designs = snapshot.docs
+          .map(CatalogueDesign.fromDoc)
+          .where(
+            (design) =>
+                design.commercial.commercialType ==
+                    CatalogueCommercialType.free ||
+                design.commercial.commercialType ==
+                    CatalogueCommercialType.paid ||
+                design.commercial.commercialType ==
+                    CatalogueCommercialType.premium,
+          )
+          .toList();
       final occasion = occasionCode?.trim() ?? '';
       if (occasion.isEmpty) return designs;
       return designs
           .where((design) => design.occasionCodes.contains(occasion))
           .toList();
     });
+  }
+
+  /// Returns the version and views a Customer is allowed to preview.
+  /// The public catalogue always resolves the published version, never a draft.
+  static Future<PublishedCatalogueBundle?> getPublishedBundle(
+    CatalogueDesign design,
+  ) async {
+    if (!design.isPublished ||
+        (design.commercial.commercialType != CatalogueCommercialType.free &&
+            design.commercial.commercialType != CatalogueCommercialType.paid &&
+            design.commercial.commercialType !=
+                CatalogueCommercialType.premium)) {
+      return null;
+    }
+    final versionId = design.activeVersionId?.trim() ?? '';
+    if (versionId.isEmpty) return null;
+    final versionRef = _designs
+        .doc(design.designId)
+        .collection('versions')
+        .doc(versionId);
+    final versionDoc = await versionRef.get();
+    if (!versionDoc.exists) return null;
+    final version = CatalogueDesignVersion.fromMap(versionDoc.data()!);
+    final viewSnapshot = await versionRef
+        .collection('views')
+        .orderBy('displayOrder')
+        .get();
+    final views = viewSnapshot.docs
+        .where((document) => document.data()['excludedFromVersion'] != true)
+        .map((document) => CatalogueDesignView.fromMap(document.data()))
+        .toList(growable: false);
+    final publishedViews = views.isNotEmpty
+        ? views
+        : version.legacyView == null
+        ? const <CatalogueDesignView>[]
+        : <CatalogueDesignView>[version.legacyView!];
+    if (publishedViews.isEmpty) return null;
+    return PublishedCatalogueBundle(version: version, views: publishedViews);
+  }
+
+  static Stream<List<CatalogueViewCandidate>> watchViewCandidates({
+    required String designId,
+    required String versionId,
+  }) {
+    return _designs
+        .doc(designId.trim())
+        .collection('versions')
+        .doc(versionId.trim())
+        .collection('generated_view_candidates')
+        .orderBy('candidateIndex')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(CatalogueViewCandidate.fromDoc)
+              .where((candidate) => candidate.status == 'pendingSelection')
+              .toList(growable: false),
+        );
+  }
+
+  static Stream<List<CatalogueViewReconstructionRun>>
+  watchViewReconstructionRuns({
+    required String designId,
+    required String versionId,
+  }) {
+    return _designs
+        .doc(designId.trim())
+        .collection('versions')
+        .doc(versionId.trim())
+        .collection('view_reconstruction_runs')
+        .snapshots()
+        .map(
+          (snapshot) => snapshot.docs
+              .map(CatalogueViewReconstructionRun.fromDoc)
+              .toList(growable: false),
+        );
+  }
+
+  static Future<void> selectViewCandidate(
+    CatalogueViewCandidate candidate,
+  ) async {
+    await _functions.httpsCallable('selectCatalogueViewCandidate').call({
+      'designId': candidate.designId,
+      'versionId': candidate.versionId,
+      'candidateId': candidate.candidateId,
+    });
+  }
+
+  static Future<void> retryViewReconstruction({
+    required String designId,
+    required String versionId,
+    String? sourceViewType,
+  }) async {
+    await _functions.httpsCallable('retryCatalogueViewReconstruction').call({
+      'designId': designId,
+      'versionId': versionId,
+      'sourceViewType': ?sourceViewType,
+    });
+  }
+
+  static Future<List<Map<String, String>>> generateFabricPreviews({
+    required String designId,
+    required String versionId,
+    required String fabricImageBase64,
+    required String fabricMimeType,
+  }) async {
+    final result = await _functions
+        .httpsCallable('generateCatalogueFabricPreviews')
+        .call({
+          'designId': designId,
+          'versionId': versionId,
+          'fabricImageBase64': fabricImageBase64,
+          'fabricMimeType': fabricMimeType,
+        });
+    final data = result.data;
+    final previews = data is Map ? data['previews'] : null;
+    if (previews is! List) return const [];
+    return previews
+        .whereType<Map>()
+        .map(
+          (preview) => preview.map(
+            (key, value) => MapEntry(key.toString(), value.toString()),
+          ),
+        )
+        .toList(growable: false);
   }
 
   static Stream<List<CatalogueDesign>> watchMySubmissions() {
@@ -273,7 +434,7 @@ class CatalogueDesignService {
     final primaryView = primaryViews.single;
     if (!primaryView.viewType.canBePrimary) {
       throw StateError(
-        'Primary View must be Front, Combined Front + Back, or Single View.',
+        'Primary View must be Front, Back, Combined Front + Back, or Single View.',
       );
     }
     final normalizedDesignId = designId.trim();
@@ -436,6 +597,13 @@ class CatalogueDesignService {
       final snapshot = await transaction.get(ref);
       if (!snapshot.exists) throw StateError('Catalogue design not found.');
       final design = CatalogueDesign.fromDoc(snapshot);
+      if (design.commercial.commercialType != CatalogueCommercialType.free &&
+          design.commercial.commercialType != CatalogueCommercialType.paid &&
+          design.commercial.commercialType != CatalogueCommercialType.premium) {
+        throw StateError(
+          'Only Free, Paid, or Premium designs can be approved for the Customer catalogue.',
+        );
+      }
       final commercial = CatalogueDesignCommercial(
         commercialType: design.commercial.commercialType,
         currency: design.commercial.currency,
@@ -451,6 +619,44 @@ class CatalogueDesignService {
         'rejectionReason': null,
         'reviewedByUid': _requireUid(),
         'reviewedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+    });
+  }
+
+  static Future<void> updateApprovedDesignCharge({
+    required String designId,
+    required double approvedDesignCharge,
+  }) async {
+    if (!approvedDesignCharge.isFinite || approvedDesignCharge < 0) {
+      throw StateError('Enter a valid non-negative design rate.');
+    }
+    final ref = _designs.doc(designId.trim());
+    await _db.runTransaction((transaction) async {
+      final snapshot = await transaction.get(ref);
+      if (!snapshot.exists) throw StateError('Catalogue design not found.');
+      final design = CatalogueDesign.fromDoc(snapshot);
+      if (design.lifecycleStatus != CatalogueDesignLifecycleStatus.approved) {
+        throw StateError('Only an approved design can have its rate adjusted.');
+      }
+      if (design.commercial.commercialType != CatalogueCommercialType.paid &&
+          design.commercial.commercialType != CatalogueCommercialType.premium) {
+        throw StateError('Only Paid or Premium designs have a rate.');
+      }
+      final currentVersion =
+          double.tryParse(design.commercial.commercialVersion ?? '') ?? 1.0;
+      final commercial = CatalogueDesignCommercial(
+        commercialType: design.commercial.commercialType,
+        currency: design.commercial.currency,
+        designerExpectedPrice: design.commercial.designerExpectedPrice,
+        approvedDesignCharge: approvedDesignCharge,
+        royaltyRuleId: design.commercial.royaltyRuleId,
+        commercialVersion: (currentVersion + 0.1).toStringAsFixed(1),
+      );
+      transaction.update(ref, {
+        'commercial': commercial.toMap(),
+        'priceUpdatedByUid': _requireUid(),
+        'priceUpdatedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
       });
     });
@@ -482,6 +688,13 @@ class CatalogueDesignService {
       final design = CatalogueDesign.fromDoc(snapshot);
       if (design.lifecycleStatus != CatalogueDesignLifecycleStatus.approved) {
         throw StateError('Only an approved Catalogue design can be published.');
+      }
+      if (design.commercial.commercialType != CatalogueCommercialType.free &&
+          design.commercial.commercialType != CatalogueCommercialType.paid &&
+          design.commercial.commercialType != CatalogueCommercialType.premium) {
+        throw StateError(
+          'Only Free, Paid, or Premium designs can be published to Customers.',
+        );
       }
       transaction.update(ref, {
         'publicationStatus': CataloguePublicationStatus.published.name,

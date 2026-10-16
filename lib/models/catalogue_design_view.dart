@@ -15,6 +15,7 @@ enum CatalogueDesignViewType {
 extension CatalogueDesignViewTypeX on CatalogueDesignViewType {
   bool get canBePrimary =>
       this == CatalogueDesignViewType.front ||
+      this == CatalogueDesignViewType.back ||
       this == CatalogueDesignViewType.combinedFrontBack ||
       this == CatalogueDesignViewType.singleView;
 

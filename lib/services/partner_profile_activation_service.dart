@@ -128,6 +128,7 @@ class PartnerProfileActivationService {
         'shopName': application.businessName,
         'contactName': application.contactName,
         'mobileE164': application.mobileE164,
+        'additionalContactNumbers': application.additionalContactNumbers,
         'email': application.email,
 
         'status': 'active',
@@ -142,6 +143,8 @@ class PartnerProfileActivationService {
         'sourceApplicationId': application.id,
         'approvedByUid': user.uid,
         'approvedAt': FieldValue.serverTimestamp(),
+        if (application.partnerType == PartnerType.tailor)
+          'registeredAt': Timestamp.fromDate(application.createdAt),
 
         // Approved business-specific operational snapshot.
         'partnerData': application.onboardingData,

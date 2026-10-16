@@ -7,12 +7,17 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/metadata/india_address_metadata.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/design_template.dart';
+import '../../models/catalogue_design.dart';
+import '../../models/catalogue_design_version.dart';
+import '../../models/catalogue_design_view.dart';
 //Design MetadataService is used to fetch the design metadata for the selected template, which includes information like the design title and occasion category. This metadata is then used to calculate the garment measurements and ease based on the selected fit preference and context.
 import '../../services/design_metadata_service.dart';
 import '../../services/occasion_metadata_service.dart';
 import '../../models/fabric_metadata.dart';
+import '../../models/occasion_metadata.dart';
 import '../../services/fabric_metadata_service.dart';
 import '../../models/fabric_estimate.dart';
 import '../../services/fabric_estimation_service.dart';
@@ -23,16 +28,33 @@ import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/claude_smart_assistant_service.dart';
 import '../../services/design_template_service.dart';
+import '../../services/catalogue_design_service.dart';
+import '../../services/customer_wishlist_service.dart';
+import '../../services/customer_fabric_asset_service.dart';
 import '../../models/design_metadata.dart';
 import '../../services/order_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
 import '../../services/order_draft_service.dart';
 import '../../services/garment_measurement_engine.dart';
+import '../../services/customer_measurement_history_service.dart';
 import 'package:image_picker/image_picker.dart';
+import '../../widgets/catalogue/catalogue_fabric_preview_button.dart';
 
 import '../../models/customer_design.dart';
 import '../../services/customer_design_service.dart';
+
+class _DressFitSuggestion {
+  const _DressFitSuggestion({
+    required this.field,
+    required this.value,
+    required this.reason,
+  });
+
+  final String field;
+  final String value;
+  final String reason;
+}
 
 class DressDesignerScreen extends StatefulWidget {
   const DressDesignerScreen({
@@ -44,6 +66,7 @@ class DressDesignerScreen extends StatefulWidget {
     this.initialRelationship,
     this.initialMeasurementDraftId,
     this.initialOrderDraftId,
+    this.startInBrowseMode = false,
   });
 
   /// [OccasionCategory.name] from PRD Step 2, e.g. `dailyWear`.
@@ -56,12 +79,15 @@ class DressDesignerScreen extends StatefulWidget {
   final String? initialRelationship;
   final String? initialMeasurementDraftId;
   final String? initialOrderDraftId;
+  final bool startInBrowseMode;
 
   @override
   State<DressDesignerScreen> createState() => _DressDesignerScreenState();
 }
 
 class _DressDesignerScreenState extends State<DressDesignerScreen> {
+  late bool _showOrderForm;
+  bool _orderContextInitialized = false;
   String? _occasionId;
   String _selectedDressType = 'Kurti';
   final bool _autoFillFromScan = true;
@@ -70,6 +96,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   final List<_OrderPerson> _orderPeople = [];
   BodyMeasurements? _latestBodyMeasurementsForSuggestion;
+  CustomerMeasurementRecord? _customerMeasurementReference;
   String? _selectedOrderPersonId;
   String? _resumeDraftPersonName;
   String? _resumeDraftRelationship;
@@ -92,11 +119,17 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   final _deliveryAddressController = TextEditingController();
   GarmentMeasurementEstimate? _garmentMeasurementEstimate;
   FabricEstimate? _fabricEstimate;
+  CustomerFabricPreviewSelection? _pendingCustomerFabricSelection;
+  _SavedWishlistFabricSelection? _selectedWishlistFabricSelection;
   PriceEstimate? _priceEstimate;
 
-  /// null | 'fabric' | 'polish'
+  /// null | 'fit' | 'fabric' | 'polish'
   String? _smartAssistBusy;
   String? _fabricStyleAiText;
+  String? _fabricStyleContextKey;
+  String? _fitAssistantContextKey;
+  String? _fitAssistantSummary;
+  List<_DressFitSuggestion> _fitAssistantSuggestions = const [];
 
   final _measurementFields = {
     'Chest': TextEditingController(text: '0'),
@@ -193,7 +226,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   String? _currentOrderDraftId;
 
   /// PRD Step 11 — advance 30–50%.
-  int _advancePercent = 40;
+  int _advancePercent = 50;
 
   DesignTemplate? _selectedTemplate;
   String? _fabricChoice;
@@ -855,7 +888,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       final measurements = _measurementsInCmForOrders();
 
       final designSource = _selectedTemplate != null
-          ? 'design_template'
+          ? (_selectedTemplate!.catalogueVersionId == null
+                ? 'design_template'
+                : 'catalogue_design')
           : 'manual_design_details';
 
       final draftId = await OrderDraftService.saveDraft(
@@ -880,10 +915,20 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         designTemplateId: _selectedTemplate?.id,
         designTemplateTitle: _selectedTemplate?.title,
         designImageUrl: _selectedTemplate?.imageUrl,
+        catalogueVersionId: _selectedTemplate?.catalogueVersionId,
+        catalogueCommercialType: _selectedTemplate?.catalogueCommercialType,
+        approvedDesignCharge: _selectedTemplate?.catalogueVersionId == null
+            ? null
+            : _approvedCatalogueDesignCharge,
         designSource: designSource,
         advancePercent: _advancePercent,
         occasionCategory: _occasionId,
         kidsFlow: widget.isKidsFlow,
+        fabricPurchaseEstimate: _fabricEstimate?.toMap(),
+        fabricPreviewSelection: _pendingCustomerFabricSelection,
+        customerFabricAssets: _pendingCustomerFabricSelection == null
+            ? _matchingSavedWishlistFabricSelection?.customerFabricAssets
+            : null,
       );
 
       if (!mounted) return;
@@ -913,10 +958,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   void initState() {
     super.initState();
 
+    _showOrderForm = !widget.startInBrowseMode;
     _occasionId = widget.initialOccasionId ?? OccasionCategory.dailyWear.name;
+    if (_showOrderForm) _initializeOrderContext();
+  }
 
+  void _initializeOrderContext() {
+    if (_orderContextInitialized) return;
+    _orderContextInitialized = true;
     unawaited(_initializeDesignerScreen());
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _fieldsUnit = AppState.instance.measurementUnit;
@@ -926,6 +976,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       _hydrateMeasurementFields();
       _measurementHydrationSignature = _measurementDataSignature();
     });
+  }
+
+  void _openOrderForm() {
+    if (!_showOrderForm) setState(() => _showOrderForm = true);
+    _initializeOrderContext();
   }
 
   Future<void> _initializeDesignerScreen() async {
@@ -1095,7 +1150,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     }
 
     try {
-      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+      final user = FirebaseAuth.instance.currentUser;
+      final phone = user?.phoneNumber;
       if (phone == null || phone.trim().isEmpty) {
         _clearDesignerMeasurementFields();
         if (mounted) setState(() {});
@@ -1112,52 +1168,66 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         return;
       }
 
-      final snap = await _db
-          .collection('measurements')
-          .where('accountId', isEqualTo: accountId)
-          .where('personId', isEqualTo: selectedPerson.id)
-          .get();
-
-      final usableDocs = snap.docs
-          .map((doc) => {'id': doc.id, ...doc.data()})
-          .where((data) {
-            final status = (data['status'] ?? '').toString();
-
-            return status == 'ai_estimated' ||
-                status == 'customer_review_required' ||
-                status == 'partner_review_required' ||
-                status == 'verified' ||
-                status == 'accepted' ||
-                status == 'order_created';
-          })
-          .toList();
-
-      usableDocs.sort((a, b) {
-        final aTime = a['updatedAt'];
-        final bTime = b['updatedAt'];
-
-        if (aTime is Timestamp && bTime is Timestamp) {
-          return bTime.compareTo(aTime);
-        }
-
-        return 0;
-      });
-
       BodyMeasurements? loadedMeasurements;
-
-      for (final data in usableDocs) {
-        final values = data['measurementValues'];
-
-        if (values is Map<String, dynamic>) {
-          loadedMeasurements = _bodyMeasurementsFromFirestoreValues(values);
-        } else if (values is Map) {
-          loadedMeasurements = _bodyMeasurementsFromFirestoreValues(
-            Map<String, dynamic>.from(values),
-          );
+      final customerUid = user?.uid;
+      if (customerUid != null && customerUid.isNotEmpty) {
+        try {
+          loadedMeasurements =
+              await CustomerMeasurementHistoryService.loadLatestTailorConfirmed(
+                customerUid: customerUid,
+                personId: selectedPerson.id,
+                personName: selectedPerson.name,
+              );
+        } catch (_) {
+          // Keep the existing measurement-record lookup as a fallback if
+          // historical orders are temporarily unavailable.
         }
+      }
 
-        if (loadedMeasurements != null) {
-          break;
+      if (loadedMeasurements == null) {
+        final snap = await _db
+            .collection('measurements')
+            .where('accountId', isEqualTo: accountId)
+            .where('personId', isEqualTo: selectedPerson.id)
+            .get();
+
+        final usableDocs = snap.docs
+            .map((doc) => {'id': doc.id, ...doc.data()})
+            .where((data) {
+              final status = (data['status'] ?? '').toString();
+
+              return status == 'ai_estimated' ||
+                  status == 'customer_review_required' ||
+                  status == 'partner_review_required' ||
+                  status == 'verified' ||
+                  status == 'accepted' ||
+                  status == 'order_created';
+            })
+            .toList();
+
+        usableDocs.sort((a, b) {
+          final aTime = a['updatedAt'];
+          final bTime = b['updatedAt'];
+
+          if (aTime is Timestamp && bTime is Timestamp) {
+            return bTime.compareTo(aTime);
+          }
+
+          return 0;
+        });
+
+        for (final data in usableDocs) {
+          final values = data['measurementValues'];
+
+          if (values is Map<String, dynamic>) {
+            loadedMeasurements = _bodyMeasurementsFromFirestoreValues(values);
+          } else if (values is Map) {
+            loadedMeasurements = _bodyMeasurementsFromFirestoreValues(
+              Map<String, dynamic>.from(values),
+            );
+          }
+
+          if (loadedMeasurements != null) break;
         }
       }
 
@@ -1322,6 +1392,18 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     if (_notesController.text.trim().isNotEmpty) {
       parts.add(_notesController.text.trim());
     }
+    final customerReference = _customerMeasurementReference;
+    if (customerReference != null) {
+      final values = customerReference.values.entries
+          .map((entry) => '${entry.key}: ${entry.value} ${customerReference.unit}')
+          .join(', ');
+      final sourceOrderId = customerReference.sourceOrderId?.trim();
+      parts.add(
+        'Customer measurement reference (for Tailor review; not final or partner-confirmed): ${customerReference.title}'
+        '${sourceOrderId?.isNotEmpty == true ? ' · Previous order $sourceOrderId' : ''}'
+        '${values.isEmpty ? '' : ' — $values'}',
+      );
+    }
     if (_selectedTemplate != null) {
       parts.add('Design flat: ${_selectedTemplate!.title}');
     }
@@ -1332,6 +1414,84 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       parts.add('Accent colour: ${_colorHexRgb(_accentColor)}');
     }
     return parts.join('\n');
+  }
+
+  Future<void> _chooseSavedMeasurementReference() async {
+    final person = _selectedOrderPerson();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+    if (person == null || uid == null || phone == null || phone.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Select a customer profile first.')),
+      );
+      return;
+    }
+    try {
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        phone.trim(),
+      );
+      if (accountId == null || accountId.isEmpty) {
+        throw StateError('Customer account was not found');
+      }
+      final records = await CustomerMeasurementHistoryService.loadHistory(
+        customerUid: uid,
+        accountId: accountId,
+        personId: person.id,
+        personName: person.name,
+        limit: 10,
+      );
+      if (!mounted) return;
+      if (records.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No saved measurement references found.')),
+        );
+        return;
+      }
+      final selected = await showModalBottomSheet<CustomerMeasurementRecord>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: AppColors.background,
+        builder: (sheetContext) => SizedBox(
+          height: MediaQuery.of(sheetContext).size.height * .78,
+          child: ListView(
+            padding: const EdgeInsets.all(18),
+            children: [
+              Text(
+                'Choose a measurement reference',
+                style: AppTextStyles.headlineMedium,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'This will be added to the Tailor instructions as a customer reference. It will not replace order measurements or partner confirmation.',
+                style: AppTextStyles.bodySmall,
+              ),
+              const SizedBox(height: 12),
+              for (final record in records)
+                Card(
+                  color: AppColors.surface,
+                  child: ListTile(
+                    title: Text(record.title),
+                    subtitle: Text(
+                      '${record.isCustomerReference ? 'Customer reference' : 'Tailor confirmed'} · ${record.values.length} fields · ${_shortMeasurementDate(record.capturedAt)}',
+                    ),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.of(sheetContext).pop(record),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      );
+      if (selected != null && mounted) {
+        setState(() => _customerMeasurementReference = selected);
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to load measurement history. Please try again.')),
+      );
+    }
   }
 
   String? _occasionLabel() {
@@ -1357,6 +1517,81 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     return 350;
   }
 
+  double get _approvedCatalogueDesignCharge {
+    final template = _selectedTemplate;
+    if (template?.catalogueVersionId == null ||
+        template?.catalogueCommercialType == 'free') {
+      return 0;
+    }
+    return template?.priceInr ?? 0;
+  }
+
+  double get _orderTotalFromRates =>
+      _defaultPriceFromRates() + _approvedCatalogueDesignCharge;
+
+  Future<bool> _confirmOrderOutsideBusinessHours() async {
+    var startHour = 9;
+    var endHour = 21;
+    var timeZone = 'Asia/Kolkata';
+    try {
+      final snapshot = await _db
+          .collection('config')
+          .doc('order_assignment')
+          .get();
+      final config = snapshot.data() ?? const <String, dynamic>{};
+      timeZone = config['dispatchTimeZone']?.toString() ?? timeZone;
+      final configuredStart = config['dispatchStartHour'];
+      final configuredEnd = config['dispatchEndHour'];
+      if (configuredStart is num) {
+        startHour = configuredStart.toInt().clamp(0, 23).toInt();
+      }
+      if (configuredEnd is num) {
+        endHour = configuredEnd.toInt().clamp(1, 24).toInt();
+      }
+    } catch (_) {
+      // Keep order placement available if the optional hours read fails.
+    }
+
+    final localNow = DateTime.now();
+    final businessNow = timeZone == 'Asia/Kolkata'
+        ? DateTime.now().toUtc().add(const Duration(hours: 5, minutes: 30))
+        : localNow;
+    final now = TimeOfDay(hour: businessNow.hour, minute: businessNow.minute);
+    final minuteOfDay = now.hour * 60 + now.minute;
+    if (minuteOfDay >= startHour * 60 && minuteOfDay < endHour * 60) {
+      return true;
+    }
+    if (!mounted) return false;
+
+    final openingTime = TimeOfDay(hour: startHour, minute: 0).format(context);
+    final closingTime = endHour == 24
+        ? '12:00 AM'
+        : TimeOfDay(hour: endHour, minute: 0).format(context);
+    return await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) => AlertDialog(
+            title: const Text('Outside customer ordering hours'),
+            content: Text(
+              'The customer ordering window is $openingTime–$closingTime. '
+              'You can still place this order now. A PIN-matched Tailor can '
+              'review it when available, and the customer decision deadline '
+              'will not expire while ordering is closed.',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: const Text('Go back'),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: const Text('Continue'),
+              ),
+            ],
+          ),
+        ) ??
+        false;
+  }
+
   Future<void> _placeOrderInApp() async {
     final addr = _deliveryAddressController.text.trim();
 
@@ -1371,10 +1606,27 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return;
     }
 
+    if (!await _confirmOrderOutsideBusinessHours() || !mounted) return;
+
     setState(() => _placeOrderLoading = true);
     await AppState.instance.setProfileDeliveryAddress(addr);
     final measurements = _measurementsInCmForOrders();
     final selectedPerson = _selectedOrderPerson();
+    var deliveryPincode = '';
+    String? deliveryCityCode;
+    String? deliveryCityName;
+    String? deliveryStateCode;
+    String? deliveryStateName;
+    for (final savedAddress in _deliveryAddresses) {
+      if (savedAddress.addressId == _selectedDeliveryAddressId) {
+        deliveryPincode = savedAddress.pincode.trim();
+        deliveryCityCode = savedAddress.cityCode;
+        deliveryCityName = savedAddress.city;
+        deliveryStateCode = savedAddress.stateCode;
+        deliveryStateName = savedAddress.state;
+        break;
+      }
+    }
 
     if (_isIncompleteSelfProfile(selectedPerson)) {
       setState(() => _placeOrderLoading = false);
@@ -1382,38 +1634,97 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return;
     }
 
-    final id = await OrderService.createCoreTailoringOrder(
-      dressType: _selectedDressType,
-      price: _defaultPriceFromRates(),
-      fit: _selectedFit,
-      measurements: measurements,
-      notes: _composeDetailNotes(),
-      clientName: _clientNameController.text.trim(),
-      personId: selectedPerson?.id,
-      personName: selectedPerson?.name,
-      relationship: selectedPerson?.relationship,
-      occasionCategory: _occasionId,
-      kidsFlow: widget.isKidsFlow,
-      advancePercent: _advancePercent,
-      designTemplateId: _selectedTemplate?.id,
-      designTemplateTitle: _selectedTemplate?.title,
-      designImageUrl: _selectedTemplate?.imageUrl,
-      fabricChoice:
-          _fabricChoice == 'Other' &&
-              _customFabricController.text.trim().isNotEmpty
-          ? _customFabricController.text.trim()
-          : _fabricChoice,
-      accentColorHex: _colorHexRgb(_accentColor),
-      deliveryAddress: addr,
-      fabricDescription: (_fabricChoice != null || _selectedTemplate != null)
-          ? [
-              ?_fabricChoice,
-              if (_selectedTemplate != null)
-                'Design: ${_selectedTemplate!.title}',
-              'Accent: ${_colorHexRgb(_accentColor)}',
-            ].join(' · ')
-          : null,
-    );
+    final requestedOrderId = _db.collection('orders').doc().id;
+    Map<String, dynamic>? customerFabricAssets =
+        _matchingSavedWishlistFabricSelection?.customerFabricAssets;
+    var orderFabricAssetsWereUploaded = false;
+    String? id;
+    try {
+      if (_pendingCustomerFabricSelection != null) {
+        customerFabricAssets = await CustomerFabricAssetService.uploadSelection(
+          customerUid: FirebaseAuth.instance.currentUser!.uid,
+          scopeType: 'orders',
+          scopeId: requestedOrderId,
+          selection: _pendingCustomerFabricSelection!,
+        );
+        orderFabricAssetsWereUploaded = true;
+      } else if (customerFabricAssets != null) {
+        customerFabricAssets = await CustomerFabricAssetService
+            .copySavedSelectionToOrder(
+              customerUid: FirebaseAuth.instance.currentUser!.uid,
+              orderId: requestedOrderId,
+              savedAssets: customerFabricAssets,
+            );
+        orderFabricAssetsWereUploaded = true;
+      }
+      id = await OrderService.createCoreTailoringOrder(
+        orderId: requestedOrderId,
+        dressType: _selectedDressType,
+        price: _orderTotalFromRates,
+        stitchingBaseCharge: _defaultPriceFromRates(),
+        fit: _selectedFit,
+        measurements: measurements,
+        notes: _composeDetailNotes(),
+        clientName: _clientNameController.text.trim(),
+        personId: selectedPerson?.id,
+        personName: selectedPerson?.name,
+        relationship: selectedPerson?.relationship,
+        occasionCategory: _occasionId,
+        kidsFlow: widget.isKidsFlow,
+        designTemplateId: _selectedTemplate?.id,
+        designTemplateTitle: _selectedTemplate?.title,
+        designImageUrl: _selectedTemplate?.imageUrl,
+        catalogueVersionId: _selectedTemplate?.catalogueVersionId,
+        catalogueCommercialType: _selectedTemplate?.catalogueCommercialType,
+        approvedDesignCharge: _selectedTemplate?.catalogueVersionId == null
+            ? null
+            : _approvedCatalogueDesignCharge,
+        fabricPurchaseEstimate: _fabricEstimate?.toMap(),
+        customerFabricAssets: customerFabricAssets,
+        designSource: _selectedTemplate == null
+            ? 'manual_design_details'
+            : _selectedTemplate!.catalogueVersionId == null
+            ? 'design_template'
+            : 'catalogue_design',
+        fabricChoice:
+            _fabricChoice == 'Other' &&
+                _customFabricController.text.trim().isNotEmpty
+            ? _customFabricController.text.trim()
+            : _fabricChoice,
+        accentColorHex: _colorHexRgb(_accentColor),
+        deliveryAddress: addr,
+        deliveryPincode: deliveryPincode,
+        deliveryCityCode: deliveryCityCode,
+        deliveryCityName: deliveryCityName,
+        deliveryStateCode: deliveryStateCode,
+        deliveryStateName: deliveryStateName,
+        fabricDescription: (_fabricChoice != null || _selectedTemplate != null)
+            ? [
+                ?_fabricChoice,
+                if (_selectedTemplate != null)
+                  'Design: ${_selectedTemplate!.title}',
+                'Accent: ${_colorHexRgb(_accentColor)}',
+              ].join(' · ')
+            : null,
+      );
+    } catch (error) {
+      if (orderFabricAssetsWereUploaded) {
+        await CustomerFabricAssetService.deleteAssets(customerFabricAssets);
+      }
+      if (!mounted) return;
+      setState(() => _placeOrderLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not place the order: $error')),
+      );
+      return;
+    }
+    if (id == null) {
+      if (orderFabricAssetsWereUploaded) {
+        await CustomerFabricAssetService.deleteAssets(customerFabricAssets);
+      }
+    } else {
+      _pendingCustomerFabricSelection = null;
+    }
     if (!mounted) return;
     setState(() => _placeOrderLoading = false);
 
@@ -1450,10 +1761,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Order created — pay the advance online to confirm.'),
+          content: Text(
+            'Request sent — we will let you know when a Tailor accepts.',
+          ),
         ),
       );
-      context.push('/checkout/$id');
+      context.push('/orders');
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Sign in to place an order')),
@@ -1636,7 +1949,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildAdvancePaymentSection() {
-    final price = _defaultPriceFromRates();
+    final sewingPrice = _defaultPriceFromRates();
+    final designPrice = _approvedCatalogueDesignCharge;
+    final price = sewingPrice + designPrice;
     final adv = price * _advancePercent / 100.0;
     final bal = (price - adv).clamp(0.0, double.infinity);
     return Column(
@@ -1645,22 +1960,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         Text('Advance payment', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 4),
         Text(
-          '30–50% advance is paid online only (card, UPI, net banking) right after you place the order. Balance is due later per shop policy.',
+          'After a Tailor accepts your request, you can choose whether to proceed. If you proceed, the 50% advance is paid online; the balance is due later per shop policy.',
           style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
-        ),
-        const SizedBox(height: 12),
-        SegmentedButton<int>(
-          segments: const [
-            ButtonSegment(value: 30, label: Text('30%')),
-            ButtonSegment(value: 40, label: Text('40%')),
-            ButtonSegment(value: 50, label: Text('50%')),
-          ],
-          selected: {_advancePercent},
-          onSelectionChanged: (s) => setState(() => _advancePercent = s.first),
         ),
         const SizedBox(height: 10),
         Text(
-          'Order ₹${price.toStringAsFixed(0)} · Advance ₹${adv.toStringAsFixed(0)} · '
+          '${designPrice > 0 ? 'Stitching ₹${sewingPrice.toStringAsFixed(0)} + approved design ₹${designPrice.toStringAsFixed(0)} · ' : ''}'
+          'Order ₹${price.toStringAsFixed(0)} · 50% advance on acceptance ₹${adv.toStringAsFixed(0)} · '
           'Balance ₹${bal.toStringAsFixed(0)}',
           style: AppTextStyles.titleMedium.copyWith(color: AppColors.primary),
         ),
@@ -1673,117 +1979,168 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Design Your Dress'),
+        title: Text(
+          _showOrderForm ? 'Custom Tailoring Order' : 'Smart Style Ideas',
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () => context.pop(),
+          onPressed: () {
+            if (widget.startInBrowseMode && _showOrderForm) {
+              setState(() => _showOrderForm = false);
+            } else {
+              context.pop();
+            }
+          },
         ),
       ),
-      body: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          20,
-          20,
-          40 + MediaQuery.paddingOf(context).bottom,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildClientNameField(),
-            const SizedBox(height: 16),
-            _buildOccasionSection(),
-            const SizedBox(height: 24),
-            _buildDressTypeSelector(),
-            const SizedBox(height: 24),
+      body: _showOrderForm
+          ? _buildOrderFormBody(context)
+          : _buildBrowseFirstBody(context),
+    );
+  }
 
-            const SizedBox(height: 24),
-            _buildFitSelector(),
-            const SizedBox(height: 24),
-            _buildDesignLookSection(),
-            const SizedBox(height: 24),
-            //SUD
-            if (widget.initialMeasurementDraftId?.trim().isNotEmpty ==
-                true) ...[
-              const SizedBox(height: 4),
-              Text(
-                'Draft: ${widget.initialMeasurementDraftId}',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textHint,
-                ),
+  Widget _buildBrowseFirstBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        32 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Smart Style Idea', style: AppTextStyles.headlineMedium),
+          const SizedBox(height: 6),
+          Text(
+            'Explore approved designs, try your fabric and save favourites. '
+            'Browsing is free; any paid design charge is applied only when you create an order.',
+            style: AppTextStyles.bodyMedium.copyWith(
+              color: AppColors.textSecondary,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 22),
+          _buildOccasionSection(),
+          const SizedBox(height: 20),
+          _buildDressTypeSelector(),
+          const SizedBox(height: 20),
+          _buildFitSelector(),
+          const SizedBox(height: 20),
+          _buildDesignLookSection(approvedCatalogueOnly: true),
+          const SizedBox(height: 24),
+          PrimaryButton(
+            label: 'Create Tailoring Order',
+            icon: Icons.shopping_bag_outlined,
+            onTap: _openOrderForm,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOrderFormBody(BuildContext context) {
+    return SingleChildScrollView(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        20,
+        20,
+        40 + MediaQuery.paddingOf(context).bottom,
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildClientNameField(),
+          const SizedBox(height: 16),
+          _buildOccasionSection(),
+          const SizedBox(height: 24),
+          _buildDressTypeSelector(),
+          const SizedBox(height: 24),
+
+          const SizedBox(height: 24),
+          _buildFitSelector(),
+          const SizedBox(height: 24),
+          _buildDesignLookSection(),
+          const SizedBox(height: 24),
+          //SUD
+          if (widget.initialMeasurementDraftId?.trim().isNotEmpty == true) ...[
+            const SizedBox(height: 4),
+            Text(
+              'Draft: ${widget.initialMeasurementDraftId}',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
               ),
-            ],
-            ListenableBuilder(
-              listenable: AppState.instance,
-              builder: (context, _) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Measurements',
-                            style: AppTextStyles.headlineMedium,
-                          ),
-
-                          const SizedBox(height: 4),
-
-                          Text(
-                            'Saved body measurements for this profile. Use Suggest for dress-specific measurements.',
-                            style: AppTextStyles.bodyMedium,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const MeasurementUnitToggle(),
-                  ],
-                );
-              },
             ),
-            const SizedBox(height: 16),
-            ListenableBuilder(
-              listenable: AppState.instance,
-              builder: (context, _) => _buildMeasurementSummary(),
-            ),
-            const SizedBox(height: 24),
-            _buildCustomizationSection(),
-            const SizedBox(height: 24),
-            _buildNotesSection(),
-            const SizedBox(height: 24),
-            ListenableBuilder(
-              listenable: AppState.instance,
-              builder: (context, _) => _buildMeasurementActionsAndResults(),
-            ),
-            const SizedBox(height: 24),
-            _buildSmartAssistSection(),
-            const SizedBox(height: 24),
-            _buildAiPricing(),
-            const SizedBox(height: 24),
-            _buildDeliveryAddressSection(),
-            const SizedBox(height: 24),
-            _buildAdvancePaymentSection(),
-            const SizedBox(height: 16),
-            PrimaryButton(
-              label: _placeOrderLoading
-                  ? 'Placing order…'
-                  : 'Place order in app',
-              icon: Icons.shopping_bag_outlined,
-              onTap: _placeOrderLoading ? () {} : _placeOrderInApp,
-            ),
-            const SizedBox(height: 12),
-            SecondaryButton(
-              label: _saveDraftLoading ? 'Saving draft…' : 'Save as Draft',
-              icon: Icons.bookmark_border_rounded,
-              onTap: _saveDraftLoading
-                  ? () {}
-                  : () {
-                      unawaited(_saveOrderDraft());
-                    },
-            ),
-            const SizedBox(height: 24),
           ],
-        ),
+          ListenableBuilder(
+            listenable: AppState.instance,
+            builder: (context, _) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Measurements',
+                          style: AppTextStyles.headlineMedium,
+                        ),
+
+                        const SizedBox(height: 4),
+
+                        Text(
+                          'Saved body measurements for this profile. Use Suggest for dress-specific measurements.',
+                          style: AppTextStyles.bodyMedium,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const MeasurementUnitToggle(),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 16),
+          ListenableBuilder(
+            listenable: AppState.instance,
+            builder: (context, _) => _buildMeasurementSummary(),
+          ),
+          const SizedBox(height: 24),
+          _buildCustomizationSection(),
+          const SizedBox(height: 24),
+          _buildNotesSection(),
+          const SizedBox(height: 24),
+          ListenableBuilder(
+            listenable: AppState.instance,
+            builder: (context, _) => _buildMeasurementActionsAndResults(),
+          ),
+          const SizedBox(height: 24),
+          _buildSmartAssistSection(),
+          const SizedBox(height: 24),
+          _buildAiPricing(),
+          const SizedBox(height: 24),
+          _buildDeliveryAddressSection(),
+          const SizedBox(height: 24),
+          _buildAdvancePaymentSection(),
+          const SizedBox(height: 16),
+          PrimaryButton(
+            label: _placeOrderLoading ? 'Placing order…' : 'Place order in app',
+            icon: Icons.shopping_bag_outlined,
+            onTap: _placeOrderLoading ? () {} : _placeOrderInApp,
+          ),
+          const SizedBox(height: 12),
+          SecondaryButton(
+            label: _saveDraftLoading ? 'Saving draft…' : 'Save as Draft',
+            icon: Icons.bookmark_border_rounded,
+            onTap: _saveDraftLoading
+                ? () {}
+                : () {
+                    unawaited(_saveOrderDraft());
+                  },
+          ),
+          const SizedBox(height: 24),
+        ],
       ),
     );
   }
@@ -1874,6 +2231,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       children: [
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
+          key: ValueKey('neck-style-${_selectedNeckStyle ?? 'unset'}'),
           initialValue: _selectedNeckStyle,
           decoration: const InputDecoration(
             labelText: 'Neck Style',
@@ -1917,6 +2275,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         ],
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
+          key: ValueKey('sleeve-style-${_selectedSleeveStyle ?? 'unset'}'),
           initialValue: _selectedSleeveStyle,
           decoration: const InputDecoration(
             labelText: 'Sleeve Style',
@@ -1960,6 +2319,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         ],
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
+          key: ValueKey('back-design-${_selectedBackDesign ?? 'unset'}'),
           initialValue: _selectedBackDesign,
           decoration: const InputDecoration(
             labelText: 'Back Design',
@@ -2003,6 +2363,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         ],
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
+          key: ValueKey('alteration-margin-${_selectedAlterationMargin ?? 'unset'}'),
           initialValue: _selectedAlterationMargin,
           decoration: const InputDecoration(
             labelText: 'Alteration Margin',
@@ -2027,6 +2388,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
+          key: ValueKey('lining-${_selectedLiningPreference ?? 'unset'}'),
           initialValue: _selectedLiningPreference,
           decoration: const InputDecoration(
             labelText: 'Lining / Astar',
@@ -2127,6 +2489,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             setState(() {
               _selectedOrderPersonId = selectedPerson.id;
               _clientNameController.text = selectedPerson.name;
+              _customerMeasurementReference = null;
+              _garmentMeasurementEstimate = null;
+              _fabricEstimate = null;
+              _priceEstimate = null;
             });
             unawaited(_loadLatestMeasurementsForSelectedPerson());
           },
@@ -2141,15 +2507,16 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildDressTypeSelector() {
+    final dressTypes = _dressTypes.contains(_selectedDressType)
+        ? _dressTypes
+        : [..._dressTypes, _selectedDressType];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Dress Type', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          initialValue: _dressTypes.contains(_selectedDressType)
-              ? _selectedDressType
-              : _dressTypes.first,
+          initialValue: _selectedDressType,
           decoration: InputDecoration(
             filled: true,
             fillColor: AppColors.surface,
@@ -2159,7 +2526,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               borderSide: BorderSide(color: AppColors.divider),
             ),
           ),
-          items: _dressTypes
+          items: dressTypes
               .map(
                 (dressType) => DropdownMenuItem<String>(
                   value: dressType,
@@ -2198,7 +2565,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                   right: fit != _fitOptions.last ? 10 : 0,
                 ),
                 child: GestureDetector(
-                  onTap: () => setState(() => _selectedFit = fit),
+                  onTap: () => setState(() {
+                    _selectedFit = fit;
+                    _garmentMeasurementEstimate = null;
+                    _fabricEstimate = null;
+                    _priceEstimate = null;
+                  }),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 200),
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -2317,6 +2689,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               height: 1.35,
             ),
           ),
+          const SizedBox(height: 4),
+          TextButton.icon(
+            onPressed: () => context.push('/fabric-help'),
+            icon: const Icon(Icons.video_call_outlined, size: 18),
+            label: const Text('Ask a Tailor about fabric'),
+          ),
 
           if (_fabricChoice == 'Other') ...[
             const SizedBox(height: 4),
@@ -2369,6 +2747,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   void _selectDesignTemplate(DesignTemplate template) {
     setState(() {
+      if (_selectedTemplate?.id != template.id ||
+          _selectedTemplate?.catalogueVersionId !=
+              template.catalogueVersionId) {
+        _pendingCustomerFabricSelection = null;
+        _selectedWishlistFabricSelection = null;
+      }
       _selectedTemplate = template;
 
       // Design changes invalidate all previously generated estimates.
@@ -2378,204 +2762,99 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     });
   }
 
-  Widget _buildDesignLookSection() {
+  _SavedWishlistFabricSelection? get _matchingSavedWishlistFabricSelection {
+    final template = _selectedTemplate;
+    final selection = _selectedWishlistFabricSelection;
+    if (template == null || selection == null) return null;
+    if (selection.designId != template.id ||
+        selection.catalogueVersionId != template.catalogueVersionId) {
+      return null;
+    }
+    return selection;
+  }
+
+  Widget _previewImageError() => ColoredBox(
+    color: AppColors.surfaceVariant,
+    child: Center(
+      child: Icon(
+        Icons.broken_image_outlined,
+        size: 48,
+        color: AppColors.textHint,
+      ),
+    ),
+  );
+
+  Widget _buildDesignLookSection({bool approvedCatalogueOnly = false}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Design Catalog', style: AppTextStyles.headlineMedium),
+        Text(
+          approvedCatalogueOnly ? 'Choose a Design' : 'Design Catalog',
+          style: AppTextStyles.headlineMedium,
+        ),
         const SizedBox(height: 4),
         Text(
-          'Browse free designs, premium designs, or upload your own design. Selected designs help generate measurement suggestions, fabric recommendations and future price estimates.',
+          approvedCatalogueOnly
+              ? 'Browse published free and paid designs. Preview the views, try your fabric and save favourites. No charge is collected while you explore.'
+              : 'Browse free and paid designs, preview the front and back, and try a fabric photo. You can save a favourite or create a stitching order when you are ready.',
           style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
         ),
         const SizedBox(height: 14),
-        StreamBuilder<List<DesignTemplate>>(
-          stream: DesignTemplateService.watchTemplates(),
-          builder: (context, snap) {
-            if (snap.hasError) {
-              return Text(
-                'Could not load design images.',
-                style: AppTextStyles.bodySmall.copyWith(
-                  color: AppColors.textHint,
-                ),
-              );
-            }
-            if (!snap.hasData) {
-              return const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Center(
-                  child: SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                ),
-              );
-            }
-            final allTemplates = snap.data!;
-            final templates = _filteredDesignTemplates(allTemplates);
-
-            if (templates.isEmpty) {
-              return Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                child: Text(
-                  'No ${_occasionLabel() ?? 'matching'} '
-                  '$_selectedDressType designs are available yet. '
-                  'Try another occasion or dress type. '
-                  'You can still continue without selecting a catalog design.',
-                  style: AppTextStyles.bodyMedium.copyWith(
-                    color: AppColors.textHint,
-                  ),
-                ),
-              );
-            }
-            return SizedBox(
-              height: 120,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                itemCount: templates.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 10),
-                itemBuilder: (context, i) {
-                  final t = templates[i];
-                  final sel = _selectedTemplate?.id == t.id;
-                  return GestureDetector(
-                    onTap: () => _selectDesignTemplate(t),
-                    child: Container(
-                      width: 88,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(
-                          color: sel ? AppColors.primary : AppColors.divider,
-                          width: sel ? 2.5 : 1,
-                        ),
-                        color: AppColors.surface,
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Expanded(
-                            child: Stack(
-                              fit: StackFit.expand,
-                              children: [
-                                t.imageUrl.isEmpty
-                                    ? ColoredBox(
-                                        color: AppColors.surfaceVariant,
-                                        child: Icon(
-                                          Icons.image_not_supported_outlined,
-                                          color: AppColors.textHint,
-                                          size: 28,
-                                        ),
-                                      )
-                                    : Image.network(
-                                        t.imageUrl,
-                                        fit: BoxFit.cover,
-                                        errorBuilder: (_, _, _) => ColoredBox(
-                                          color: AppColors.surfaceVariant,
-                                          child: Icon(
-                                            Icons.broken_image_outlined,
-                                            color: AppColors.textHint,
-                                          ),
-                                        ),
-                                      ),
-                                Positioned(
-                                  top: 4,
-                                  left: 4,
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 3,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: t.isPremium
-                                          ? AppColors.accent
-                                          : AppColors.primary,
-                                      borderRadius: BorderRadius.circular(8),
-                                    ),
-                                    child: Text(
-                                      t.isPremium ? 'PREMIUM' : 'FREE',
-                                      style: AppTextStyles.labelMedium.copyWith(
-                                        color: Colors.white,
-                                        fontSize: 8,
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 6,
-                              vertical: 4,
-                            ),
-                            child: Text(
-                              t.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              textAlign: TextAlign.center,
-                              style: AppTextStyles.labelMedium.copyWith(
-                                fontSize: 11,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            );
-          },
-        ),
         const SizedBox(height: 16),
-        Text('Fabric Type', style: AppTextStyles.titleMedium),
-        const SizedBox(height: 8),
-        DropdownButtonFormField<String>(
-          initialValue: _fabricOptions.contains(_fabricChoice)
-              ? _fabricChoice
-              : null,
-          decoration: InputDecoration(
-            hintText: 'Select fabric type',
-            filled: true,
-            fillColor: AppColors.surface,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: BorderSide(color: AppColors.divider),
-            ),
-          ),
-          items: _fabricOptions
-              .map(
-                (fabric) => DropdownMenuItem<String>(
-                  value: fabric,
-                  child: Text(fabric),
-                ),
-              )
-              .toList(),
-          onChanged: (value) {
-            setState(() {
-              _fabricChoice = value;
-              _garmentMeasurementEstimate = null;
-            });
-          },
-        ),
-        _buildRecommendedFabricHint(),
-        _buildFabricMetadataHint(),
-        const SizedBox(height: 20),
-        if (_fabricChoice == 'Other') ...[
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _customFabricController,
-            decoration: const InputDecoration(
-              labelText: 'Fabric details',
-              hintText: 'e.g. Khadi cotton, Banarasi silk, stretch lycra',
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-        ],
         _buildLookPreviewCard(),
+        if (!approvedCatalogueOnly) ...[
+          const SizedBox(height: 16),
+          Text('Fabric Type', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 8),
+          DropdownButtonFormField<String>(
+            initialValue: _fabricOptions.contains(_fabricChoice)
+                ? _fabricChoice
+                : null,
+            decoration: InputDecoration(
+              hintText: 'Select fabric type',
+              filled: true,
+              fillColor: AppColors.surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: AppColors.divider),
+              ),
+            ),
+            items: _fabricOptions
+                .map(
+                  (fabric) => DropdownMenuItem<String>(
+                    value: fabric,
+                    child: Text(fabric),
+                  ),
+                )
+                .toList(),
+            onChanged: (value) {
+              setState(() {
+                _fabricChoice = value;
+                _pendingCustomerFabricSelection = null;
+                _garmentMeasurementEstimate = null;
+                _fabricEstimate = null;
+              });
+            },
+          ),
+          const SizedBox(height: 10),
+          _buildRecommendedFabricHint(),
+          _buildFabricMetadataHint(),
+          const SizedBox(height: 20),
+          if (_fabricChoice == 'Other') ...[
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _customFabricController,
+              decoration: const InputDecoration(
+                labelText: 'Fabric details',
+                hintText: 'e.g. Khadi cotton, Banarasi silk, stretch lycra',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+          ],
+        ],
       ],
     );
   }
@@ -2814,8 +3093,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   Future<void> _showDesignPickerSheet() async {
     var selectedCatalogFilter = 'all';
+    final browseOnly = widget.startInBrowseMode && !_showOrderForm;
 
-    await showModalBottomSheet<void>(
+    final shouldUploadOwnDesign = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -2837,16 +3117,20 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                     Padding(
                       padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
                       child: Text(
-                        'Select $_selectedDressType Design',
+                        selectedCatalogFilter == 'wishlist'
+                            ? 'Select from My Wishlist'
+                            : 'Select $_selectedDressType Design',
                         style: AppTextStyles.headlineMedium,
                       ),
                     ),
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Text(
-                        'Showing ${_occasionLabel() ?? 'matching'} '
-                        '$_selectedDressType designs from the '
-                        'SuiSakhi catalog.',
+                        selectedCatalogFilter == 'wishlist'
+                            ? 'Your saved designs across all garment types.'
+                            : 'Showing ${_occasionLabel() ?? 'matching'} '
+                                  '$_selectedDressType designs from the '
+                                  'SuiSakhi catalog.',
                         style: AppTextStyles.bodySmall.copyWith(
                           color: AppColors.textHint,
                         ),
@@ -2887,287 +3171,327 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                             },
                           ),
                           ChoiceChip(
-                            label: const Text('My Uploads'),
-                            selected: selectedCatalogFilter == 'uploads',
+                            label: const Text('My Wishlist'),
+                            selected: selectedCatalogFilter == 'wishlist',
                             onSelected: (_) {
                               setSheetState(() {
-                                selectedCatalogFilter = 'uploads';
+                                selectedCatalogFilter = 'wishlist';
                               });
                             },
                           ),
+                          if (!browseOnly)
+                            ChoiceChip(
+                              label: const Text('My Uploads'),
+                              selected: selectedCatalogFilter == 'uploads',
+                              onSelected: (_) {
+                                setSheetState(() {
+                                  selectedCatalogFilter = 'uploads';
+                                });
+                              },
+                            ),
                         ],
                       ),
                     ),
                     const SizedBox(height: 14),
 
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: OutlinedButton.icon(
-                        onPressed: () async {
-                          Navigator.pop(sheetContext);
-                          await _uploadOwnDesign();
-                        },
-                        icon: const Icon(Icons.upload_file_outlined),
-                        label: const Text('Upload Own Design'),
+                    if (!browseOnly)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            Navigator.pop(sheetContext, true);
+                          },
+                          icon: const Icon(Icons.upload_file_outlined),
+                          label: const Text('Upload Own Design'),
+                        ),
                       ),
-                    ),
 
                     const SizedBox(height: 12),
 
                     Expanded(
-                      child: StreamBuilder<List<DesignTemplate>>(
-                        stream: DesignTemplateService.watchTemplates(),
-                        builder: (context, snapshot) {
-                          if (snapshot.hasError) {
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  'Could not load designs. '
-                                  'Check your connection.',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: AppColors.textHint,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          }
-
-                          if (!snapshot.hasData) {
-                            return const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: CircularProgressIndicator(),
-                              ),
-                            );
-                          }
-
-                          final matchingTemplates = _filteredDesignTemplates(
-                            snapshot.data!,
-                          );
-
-                          final templates = matchingTemplates.where((template) {
-                            switch (selectedCatalogFilter) {
-                              case 'uploads':
-                                return false;
-
-                              case 'free':
-                                return template.isFree;
-
-                              case 'premium':
-                                return template.isPremium;
-
-                              case 'all':
-                              default:
-                                return true;
-                            }
-                          }).toList();
-
-                          if (templates.isEmpty) {
-                            final filterLabel =
-                                selectedCatalogFilter == 'uploads'
-                                ? 'uploaded'
-                                : selectedCatalogFilter == 'premium'
-                                ? 'premium'
-                                : selectedCatalogFilter == 'free'
-                                ? 'free'
-                                : 'matching';
-
-                            return Center(
-                              child: Padding(
-                                padding: const EdgeInsets.all(24),
-                                child: Text(
-                                  selectedCatalogFilter == 'uploads'
-                                      ? 'No uploaded designs found for this profile yet.\n\n'
-                                            'Use "Upload Own Design" to add your personal design references.'
-                                      : 'No $filterLabel '
-                                            '${_occasionLabel() ?? ''} '
-                                            '$_selectedDressType designs '
-                                            'are available yet.\n\n'
-                                            'Try another catalog filter, occasion or dress type. '
-                                            'You can still continue without selecting a catalog design.',
-                                  style: AppTextStyles.bodyMedium.copyWith(
-                                    color: AppColors.textHint,
-                                    height: 1.4,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                ),
-                              ),
-                            );
-                          }
-
-                          return ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                            itemCount: templates.length,
-                            separatorBuilder: (_, _) =>
-                                const SizedBox(height: 10),
-                            itemBuilder: (context, index) {
-                              final template = templates[index];
-
-                              final isSelected =
-                                  _selectedTemplate?.id == template.id;
-
-                              return Material(
-                                color: AppColors.background,
-                                borderRadius: BorderRadius.circular(14),
-                                child: InkWell(
-                                  borderRadius: BorderRadius.circular(14),
-                                  onTap: () {
-                                    _selectDesignTemplate(template);
-                                    Navigator.pop(sheetContext);
-                                  },
-                                  child: Container(
-                                    padding: const EdgeInsets.all(10),
-                                    decoration: BoxDecoration(
-                                      borderRadius: BorderRadius.circular(14),
-                                      border: Border.all(
-                                        color: isSelected
-                                            ? AppColors.primary
-                                            : Colors.transparent,
-                                        width: isSelected ? 2 : 1,
+                      child: selectedCatalogFilter == 'wishlist'
+                          ? _buildWishlistDesigns(sheetContext)
+                          : [
+                              'all',
+                              'free',
+                              'premium',
+                            ].contains(selectedCatalogFilter)
+                          ? _buildApprovedDesigns(
+                              sheetContext,
+                              selectedCatalogFilter,
+                            )
+                          : StreamBuilder<List<DesignTemplate>>(
+                              stream: DesignTemplateService.watchTemplates(),
+                              builder: (context, snapshot) {
+                                if (snapshot.hasError) {
+                                  return Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24),
+                                      child: Text(
+                                        'Could not load designs. '
+                                        'Check your connection.',
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              color: AppColors.textHint,
+                                            ),
+                                        textAlign: TextAlign.center,
                                       ),
                                     ),
-                                    child: Row(
-                                      children: [
-                                        ClipRRect(
-                                          borderRadius: BorderRadius.circular(
-                                            10,
+                                  );
+                                }
+
+                                if (!snapshot.hasData) {
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(24),
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  );
+                                }
+
+                                final matchingTemplates =
+                                    _filteredDesignTemplates(snapshot.data!);
+
+                                final templates = matchingTemplates.where((
+                                  template,
+                                ) {
+                                  switch (selectedCatalogFilter) {
+                                    case 'uploads':
+                                      return false;
+
+                                    case 'free':
+                                      return template.isFree;
+
+                                    case 'premium':
+                                      return template.isPremium;
+
+                                    case 'all':
+                                    default:
+                                      return true;
+                                  }
+                                }).toList();
+
+                                if (templates.isEmpty) {
+                                  final filterLabel =
+                                      selectedCatalogFilter == 'uploads'
+                                      ? 'uploaded'
+                                      : selectedCatalogFilter == 'premium'
+                                      ? 'premium'
+                                      : selectedCatalogFilter == 'free'
+                                      ? 'free'
+                                      : 'matching';
+
+                                  return Center(
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(24),
+                                      child: Text(
+                                        selectedCatalogFilter == 'uploads'
+                                            ? 'No uploaded designs found for this profile yet.\n\n'
+                                                  'Use "Upload Own Design" to add your personal design references.'
+                                            : 'No $filterLabel '
+                                                  '${_occasionLabel() ?? ''} '
+                                                  '$_selectedDressType designs '
+                                                  'are available yet.\n\n'
+                                                  'Try another catalog filter, occasion or dress type. '
+                                                  'You can still continue without selecting a catalog design.',
+                                        style: AppTextStyles.bodyMedium
+                                            .copyWith(
+                                              color: AppColors.textHint,
+                                              height: 1.4,
+                                            ),
+                                        textAlign: TextAlign.center,
+                                      ),
+                                    ),
+                                  );
+                                }
+
+                                return ListView.separated(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    0,
+                                    16,
+                                    24,
+                                  ),
+                                  itemCount: templates.length,
+                                  separatorBuilder: (_, _) =>
+                                      const SizedBox(height: 10),
+                                  itemBuilder: (context, index) {
+                                    final template = templates[index];
+
+                                    final isSelected =
+                                        _selectedTemplate?.id == template.id;
+
+                                    return Material(
+                                      color: AppColors.background,
+                                      borderRadius: BorderRadius.circular(14),
+                                      child: InkWell(
+                                        borderRadius: BorderRadius.circular(14),
+                                        onTap: () {
+                                          _selectDesignTemplate(template);
+                                          Navigator.pop(sheetContext);
+                                        },
+                                        child: Container(
+                                          padding: const EdgeInsets.all(10),
+                                          decoration: BoxDecoration(
+                                            borderRadius: BorderRadius.circular(
+                                              14,
+                                            ),
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? AppColors.primary
+                                                  : Colors.transparent,
+                                              width: isSelected ? 2 : 1,
+                                            ),
                                           ),
-                                          child: SizedBox(
-                                            width: 76,
-                                            height: 76,
-                                            child: Stack(
-                                              fit: StackFit.expand,
-                                              children: [
-                                                template.imageUrl.isEmpty
-                                                    ? ColoredBox(
-                                                        color: AppColors
-                                                            .surfaceVariant,
-                                                        child: Icon(
-                                                          Icons
-                                                              .image_not_supported_outlined,
-                                                          color: AppColors
-                                                              .textHint,
-                                                        ),
-                                                      )
-                                                    : Image.network(
-                                                        template.imageUrl,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder:
-                                                            (
-                                                              _,
-                                                              _,
-                                                              _,
-                                                            ) => ColoredBox(
+                                          child: Row(
+                                            children: [
+                                              ClipRRect(
+                                                borderRadius:
+                                                    BorderRadius.circular(10),
+                                                child: SizedBox(
+                                                  width: 76,
+                                                  height: 76,
+                                                  child: Stack(
+                                                    fit: StackFit.expand,
+                                                    children: [
+                                                      template.imageUrl.isEmpty
+                                                          ? ColoredBox(
                                                               color: AppColors
                                                                   .surfaceVariant,
                                                               child: Icon(
                                                                 Icons
-                                                                    .broken_image_outlined,
+                                                                    .image_not_supported_outlined,
                                                                 color: AppColors
                                                                     .textHint,
                                                               ),
+                                                            )
+                                                          : Image.network(
+                                                              template.imageUrl,
+                                                              fit: BoxFit.cover,
+                                                              errorBuilder: (_, _, _) => ColoredBox(
+                                                                color: AppColors
+                                                                    .surfaceVariant,
+                                                                child: Icon(
+                                                                  Icons
+                                                                      .broken_image_outlined,
+                                                                  color: AppColors
+                                                                      .textHint,
+                                                                ),
+                                                              ),
                                                             ),
-                                                      ),
-                                                Positioned(
-                                                  top: 4,
-                                                  left: 4,
-                                                  child: Container(
-                                                    padding:
-                                                        const EdgeInsets.symmetric(
-                                                          horizontal: 6,
-                                                          vertical: 3,
+                                                      Positioned(
+                                                        top: 4,
+                                                        left: 4,
+                                                        child: Container(
+                                                          padding:
+                                                              const EdgeInsets.symmetric(
+                                                                horizontal: 6,
+                                                                vertical: 3,
+                                                              ),
+                                                          decoration: BoxDecoration(
+                                                            color:
+                                                                template
+                                                                    .isPremium
+                                                                ? AppColors
+                                                                      .accent
+                                                                : AppColors
+                                                                      .primary,
+                                                            borderRadius:
+                                                                BorderRadius.circular(
+                                                                  8,
+                                                                ),
+                                                          ),
+                                                          child: Text(
+                                                            template.isPremium
+                                                                ? 'PREMIUM'
+                                                                : 'FREE',
+                                                            style: AppTextStyles
+                                                                .labelMedium
+                                                                .copyWith(
+                                                                  color: Colors
+                                                                      .white,
+                                                                  fontSize: 8,
+                                                                  fontWeight:
+                                                                      FontWeight
+                                                                          .w700,
+                                                                ),
+                                                          ),
                                                         ),
-                                                    decoration: BoxDecoration(
-                                                      color: template.isPremium
-                                                          ? AppColors.accent
-                                                          : AppColors.primary,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                            8,
-                                                          ),
-                                                    ),
-                                                    child: Text(
-                                                      template.isPremium
-                                                          ? 'PREMIUM'
-                                                          : 'FREE',
-                                                      style: AppTextStyles
-                                                          .labelMedium
-                                                          .copyWith(
-                                                            color: Colors.white,
-                                                            fontSize: 8,
-                                                            fontWeight:
-                                                                FontWeight.w700,
-                                                          ),
-                                                    ),
+                                                      ),
+                                                    ],
                                                   ),
                                                 ),
-                                              ],
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 14),
-                                        Expanded(
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                template.title,
-                                                style:
-                                                    AppTextStyles.titleMedium,
-                                                maxLines: 2,
-                                                overflow: TextOverflow.ellipsis,
                                               ),
-                                              const SizedBox(height: 4),
-                                              Text(
-                                                template.dressType
-                                                            ?.trim()
-                                                            .isNotEmpty ==
-                                                        true
-                                                    ? template.dressType!
-                                                    : _selectedDressType,
-                                                style: AppTextStyles.bodySmall
-                                                    .copyWith(
-                                                      color: AppColors.textHint,
+                                              const SizedBox(width: 14),
+                                              Expanded(
+                                                child: Column(
+                                                  crossAxisAlignment:
+                                                      CrossAxisAlignment.start,
+                                                  children: [
+                                                    Text(
+                                                      template.title,
+                                                      style: AppTextStyles
+                                                          .titleMedium,
+                                                      maxLines: 2,
+                                                      overflow:
+                                                          TextOverflow.ellipsis,
                                                     ),
-                                              ),
-                                              if (template.isPremium) ...[
-                                                const SizedBox(height: 4),
-                                                Text(
-                                                  template.priceInr != null
-                                                      ? '₹${template.priceInr!.toStringAsFixed(0)}'
-                                                      : 'Price to be confirmed',
-                                                  style: AppTextStyles.bodySmall
-                                                      .copyWith(
-                                                        color: AppColors.accent,
-                                                        fontWeight:
-                                                            FontWeight.w700,
+                                                    const SizedBox(height: 4),
+                                                    Text(
+                                                      template.dressType
+                                                                  ?.trim()
+                                                                  .isNotEmpty ==
+                                                              true
+                                                          ? template.dressType!
+                                                          : _selectedDressType,
+                                                      style: AppTextStyles
+                                                          .bodySmall
+                                                          .copyWith(
+                                                            color: AppColors
+                                                                .textHint,
+                                                          ),
+                                                    ),
+                                                    if (template.isPremium) ...[
+                                                      const SizedBox(height: 4),
+                                                      Text(
+                                                        template.priceInr !=
+                                                                null
+                                                            ? '₹${template.priceInr!.toStringAsFixed(0)}'
+                                                            : 'Price to be confirmed',
+                                                        style: AppTextStyles
+                                                            .bodySmall
+                                                            .copyWith(
+                                                              color: AppColors
+                                                                  .accent,
+                                                              fontWeight:
+                                                                  FontWeight
+                                                                      .w700,
+                                                            ),
                                                       ),
+                                                    ],
+                                                  ],
                                                 ),
-                                              ],
+                                              ),
+                                              if (isSelected)
+                                                const Padding(
+                                                  padding: EdgeInsets.only(
+                                                    left: 8,
+                                                  ),
+                                                  child: Icon(
+                                                    Icons.check_circle_rounded,
+                                                    color: AppColors.primary,
+                                                    size: 26,
+                                                  ),
+                                                ),
                                             ],
                                           ),
                                         ),
-                                        if (isSelected)
-                                          const Padding(
-                                            padding: EdgeInsets.only(left: 8),
-                                            child: Icon(
-                                              Icons.check_circle_rounded,
-                                              color: AppColors.primary,
-                                              size: 26,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
-                      ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                     ),
                   ],
                 ),
@@ -3177,10 +3501,816 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         );
       },
     );
+    if (shouldUploadOwnDesign == true && mounted) {
+      await _uploadOwnDesign();
+    }
+  }
+
+  Widget _buildApprovedDesigns(
+    BuildContext sheetContext,
+    String selectedCatalogFilter,
+  ) {
+    return StreamBuilder<List<CatalogueDesign>>(
+      stream: CatalogueDesignService.watchPublishedDesigns(
+        occasionCode: _occasionId,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'Could not load published catalogue designs.\n${snapshot.error}',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final designs = snapshot.data!
+            .where(_matchesSelectedGarment)
+            .where((design) {
+              final commercialType = design.commercial.commercialType;
+              return switch (selectedCatalogFilter) {
+                'free' => commercialType == CatalogueCommercialType.free,
+                'premium' => commercialType != CatalogueCommercialType.free,
+                _ => true,
+              };
+            })
+            .toList(growable: false);
+        if (designs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                'No free or paid designs are published for $_selectedDressType yet.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  color: AppColors.textHint,
+                ),
+              ),
+            ),
+          );
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+          itemCount: designs.length,
+          separatorBuilder: (_, _) => const SizedBox(height: 10),
+          itemBuilder: (context, index) {
+            final design = designs[index];
+            return FutureBuilder<PublishedCatalogueBundle?>(
+              future: CatalogueDesignService.getPublishedBundle(design),
+              builder: (context, bundleSnapshot) {
+                final bundle = bundleSnapshot.data;
+                final view = bundle?.primaryView;
+                final imageUrl = view?.bestPreviewUrl ?? '';
+                final selected = _selectedTemplate?.id == design.designId;
+                return Container(
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: selected ? AppColors.primary : AppColors.divider,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(13),
+                        ),
+                        child: SizedBox(
+                          width: 86,
+                          height: 116,
+                          child: imageUrl.isEmpty
+                              ? const ColoredBox(
+                                  color: Color(0xFFF0EDF8),
+                                  child: Icon(Icons.image_outlined),
+                                )
+                              : Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const ColoredBox(
+                                    color: Color(0xFFF0EDF8),
+                                    child: Icon(Icons.broken_image_outlined),
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                design.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: AppTextStyles.titleMedium,
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                design.commercial.commercialType ==
+                                        CatalogueCommercialType.free
+                                    ? 'FREE'
+                                    : 'PAID',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              if (design.commercial.commercialType !=
+                                  CatalogueCommercialType.free)
+                                Text(
+                                  '₹${(design.commercial.approvedDesignCharge ?? 0).toStringAsFixed(0)}',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.accent,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              Text(
+                                '${bundle?.views.length ?? 0} design view(s)',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                              Wrap(
+                                spacing: 2,
+                                children: [
+                                  TextButton(
+                                    onPressed: bundle == null
+                                        ? null
+                                        : () => _showCatalogueDesignPreview(
+                                            design,
+                                            bundle,
+                                          ),
+                                    child: const Text('View'),
+                                  ),
+                                  TextButton(
+                                    onPressed: bundle == null
+                                        ? null
+                                        : () {
+                                            _selectCatalogueDesign(
+                                              design,
+                                              bundle,
+                                            );
+                                            Navigator.pop(sheetContext);
+                                          },
+                                    child: const Text('Select'),
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: bundle == null
+                                        ? null
+                                        : () async {
+                                            try {
+                                              await CustomerWishlistService.saveDesign(
+                                                designId: design.designId,
+                                                catalogueVersionId:
+                                                    bundle.version.versionId,
+                                                fabricPreviewSelection:
+                                                    _pendingCustomerFabricSelection
+                                                                ?.designId ==
+                                                            design.designId &&
+                                                        _pendingCustomerFabricSelection
+                                                                ?.catalogueVersionId ==
+                                                            bundle
+                                                                .version
+                                                                .versionId
+                                                    ? _pendingCustomerFabricSelection
+                                                    : null,
+                                              );
+                                              if (!context.mounted) return;
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                const SnackBar(
+                                                  content: Text(
+                                                    'Saved to your wishlist.',
+                                                  ),
+                                                ),
+                                              );
+                                            } catch (error) {
+                                              if (!context.mounted) return;
+                                              ScaffoldMessenger.of(
+                                                context,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Could not save design: $error',
+                                                  ),
+                                                ),
+                                              );
+                                            }
+                                          },
+                                    icon: const Icon(Icons.favorite_border),
+                                    label: const Text('Save'),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (!bundleSnapshot.hasData && !bundleSnapshot.hasError)
+                        const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildWishlistDesigns(BuildContext sheetContext) {
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: CustomerWishlistService.watchItems(),
+      builder: (context, wishlistSnapshot) {
+        if (wishlistSnapshot.hasError) {
+          return const Center(child: Text('Could not load your wishlist.'));
+        }
+        if (!wishlistSnapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final savedItems = wishlistSnapshot.data!.docs;
+        if (savedItems.isEmpty) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: Text(
+                'Your wishlist is empty. Save a design while browsing to find it here.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          );
+        }
+        return FutureBuilder<List<_WishlistDesignOption>>(
+          future: _loadWishlistDesignOptions(savedItems),
+          builder: (context, optionsSnapshot) {
+            if (optionsSnapshot.hasError) {
+              return const Center(
+                child: Text(
+                  'Could not load the designs saved in your wishlist.',
+                ),
+              );
+            }
+            if (!optionsSnapshot.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final options = optionsSnapshot.data!;
+            if (options.isEmpty) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Text(
+                    'No available designs were found in your wishlist. '
+                    'Saved designs remain visible here when their approved '
+                    'catalogue versions are available.',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+              );
+            }
+            return ListView.separated(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              itemCount: options.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final option = options[index];
+                final design = option.design;
+                final catalogueImageUrl =
+                    option.bundle.primaryView?.bestPreviewUrl ?? '';
+                final fabricPreviewUrls = option.fabricSelection?.previews
+                    .where((preview) => preview.imageUrl.isNotEmpty)
+                    .toList(growable: false) ??
+                    const <_WishlistFabricPreview>[];
+                final fabricPreviewUrl = fabricPreviewUrls.isEmpty
+                    ? null
+                    : fabricPreviewUrls.first.imageUrl;
+                final imageUrl = fabricPreviewUrl ?? catalogueImageUrl;
+                final isFree =
+                    design.commercial.commercialType ==
+                    CatalogueCommercialType.free;
+                return Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.background,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: AppColors.divider),
+                  ),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox(
+                          width: 76,
+                          height: 88,
+                          child: imageUrl.isEmpty
+                              ? const ColoredBox(
+                                  color: Color(0xFFF0EDF8),
+                                  child: Icon(Icons.image_outlined),
+                                )
+                              : Image.network(
+                                  imageUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, _, _) => const ColoredBox(
+                                    color: Color(0xFFF0EDF8),
+                                    child: Icon(Icons.broken_image_outlined),
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              design.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: AppTextStyles.titleMedium,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isFree
+                                  ? 'FREE · ${_wishlistGarmentTypeLabel(design)}'
+                                  : 'PAID · ${_wishlistGarmentTypeLabel(design)}',
+                              style: AppTextStyles.bodySmall.copyWith(
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                            if (!isFree)
+                              Text(
+                                '₹${(design.commercial.approvedDesignCharge ?? 0).toStringAsFixed(0)}',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.accent,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            if (option.fabricSelection?.previews.isNotEmpty ==
+                                true)
+                              Text(
+                                'Your fabric preview · ${option.fabricSelection!.previews.length} view(s)',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.tonal(
+                        onPressed: () {
+                          final selectedType = _dressTypeForWishlistDesign(
+                            design,
+                          );
+                          String? matchingOccasion;
+                          for (final code in design.occasionCodes) {
+                            if (OccasionCategory.values.any(
+                              (occasion) => occasion.name == code,
+                            )) {
+                              matchingOccasion = code;
+                              break;
+                            }
+                          }
+                          setState(() {
+                            _selectedDressType = selectedType;
+                            if (matchingOccasion != null &&
+                                !design.occasionCodes.contains(_occasionId)) {
+                              _occasionId = matchingOccasion;
+                            }
+                            _garmentMeasurementEstimate = null;
+                            _fabricEstimate = null;
+                            _priceEstimate = null;
+                          });
+                          _selectCatalogueDesign(
+                            design,
+                            option.bundle,
+                            wishlistSelection: option.fabricSelection,
+                          );
+                          Navigator.pop(sheetContext);
+                        },
+                        child: const Text('Select'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<List<_WishlistDesignOption>> _loadWishlistDesignOptions(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> savedItems,
+  ) async {
+    final results = await Future.wait(
+      savedItems.map((savedItem) async {
+        final savedData = savedItem.data();
+        final designId = savedData['designId']?.toString().trim() ?? '';
+        final versionId =
+            savedData['catalogueVersionId']?.toString().trim() ?? '';
+        if (designId.isEmpty) return null;
+        final designDocument = await _db
+            .collection('designs')
+            .doc(designId)
+            .get();
+        if (!designDocument.exists) return null;
+        final design = CatalogueDesign.fromDoc(designDocument);
+        final bundle = await _loadWishlistCatalogueBundle(design, versionId);
+        if (bundle == null) return null;
+        final fabricSelection = await _loadWishlistFabricSelection(
+          savedItem.id,
+          savedData,
+          designId,
+          bundle.version.versionId,
+        );
+        return _WishlistDesignOption(
+          design: design,
+          bundle: bundle,
+          fabricSelection: fabricSelection,
+        );
+      }),
+    );
+    return results.whereType<_WishlistDesignOption>().toList(growable: false);
+  }
+
+  Future<PublishedCatalogueBundle?> _loadWishlistCatalogueBundle(
+    CatalogueDesign design,
+    String savedVersionId,
+  ) async {
+    if (!design.isPublished) return null;
+
+    final active = await CatalogueDesignService.getPublishedBundle(design);
+    if (savedVersionId.isEmpty) return active;
+    if (active?.version.versionId == savedVersionId) return active;
+
+    final versionRef = _db
+        .collection('designs')
+        .doc(design.designId)
+        .collection('versions')
+        .doc(savedVersionId);
+    final versionSnapshot = await versionRef.get();
+    if (!versionSnapshot.exists) return null;
+
+    final version = CatalogueDesignVersion.fromMap({
+      ...versionSnapshot.data()!,
+      'designId': design.designId,
+      'versionId': versionSnapshot.id,
+    });
+    final viewSnapshot = await versionRef
+        .collection('views')
+        .orderBy('displayOrder')
+        .get();
+    final views = viewSnapshot.docs
+        .where((document) => document.data()['excludedFromVersion'] != true)
+        .map((document) => CatalogueDesignView.fromMap(document.data()))
+        .toList(growable: false);
+    final publishedViews = views.isNotEmpty
+        ? views
+        : version.legacyView == null
+        ? const <CatalogueDesignView>[]
+        : <CatalogueDesignView>[version.legacyView!];
+    if (publishedViews.isEmpty) return null;
+    return PublishedCatalogueBundle(version: version, views: publishedViews);
+  }
+
+  Future<_SavedWishlistFabricSelection?> _loadWishlistFabricSelection(
+    String itemId,
+    Map<String, dynamic> savedData,
+    String designId,
+    String versionId,
+  ) async {
+    final rawMetadata = savedData['fabricMetadata'];
+    final metadata = rawMetadata is Map
+        ? Map<String, dynamic>.from(rawMetadata)
+        : const <String, dynamic>{};
+    final rawPreviews = metadata['previews'];
+    final previewAssets = rawPreviews is Iterable
+        ? rawPreviews
+              .whereType<Map>()
+              .map((asset) => Map<String, dynamic>.from(asset))
+              .toList()
+        : <Map<String, dynamic>>[];
+    if (previewAssets.isEmpty) {
+      final legacyPreviewPath =
+          savedData['fabricPreviewStoragePath']?.toString().trim() ?? '';
+      if (legacyPreviewPath.isNotEmpty) {
+        previewAssets.add({
+          'storagePath': legacyPreviewPath,
+          'viewType': metadata['viewType']?.toString() ?? 'front',
+        });
+      }
+    }
+    final fabricPhotoPath =
+        savedData['fabricPhotoStoragePath']?.toString().trim() ?? '';
+    if (previewAssets.isEmpty && fabricPhotoPath.isEmpty) return null;
+
+    final views = <_WishlistFabricPreview>[];
+    for (final asset in previewAssets) {
+      final path = asset['storagePath']?.toString().trim() ?? '';
+      if (path.isEmpty) continue;
+      String url = '';
+      try {
+        url = await CustomerFabricAssetService.downloadUrl(path);
+      } catch (_) {
+        // Keep the secure Storage reference even if this preview cannot load.
+      }
+      views.add(
+        _WishlistFabricPreview(
+          storagePath: path,
+          imageUrl: url,
+          viewType: asset['viewType']?.toString() ?? 'garment',
+          contentType: asset['contentType']?.toString(),
+          byteSize: asset['byteSize'] is num
+              ? (asset['byteSize'] as num).toInt()
+              : null,
+        ),
+      );
+    }
+
+    final normalizedPreviews = views
+        .map((view) => view.toAssetMap())
+        .toList(growable: false);
+    final fabricPhoto = fabricPhotoPath.isEmpty
+        ? null
+        : <String, dynamic>{'storagePath': fabricPhotoPath};
+    return _SavedWishlistFabricSelection(
+      wishlistItemId: itemId,
+      designId: designId,
+      catalogueVersionId: versionId,
+      previews: views,
+      customerFabricAssets: {
+        'designId': designId,
+        'catalogueVersionId': versionId,
+        'wishlistItemId': itemId,
+        'source': 'customerWishlist',
+        'fabricPhoto': ?fabricPhoto,
+        if (normalizedPreviews.isNotEmpty) ...{
+          'selectedPreview': normalizedPreviews.first,
+          'previews': normalizedPreviews,
+        },
+      },
+    );
+  }
+
+  bool _matchesSelectedGarment(CatalogueDesign design) {
+    final code = _catalogueCodeForDressType(_selectedDressType);
+    if (design.garmentTypeCodes.contains(code)) return true;
+    return code == 'blouse' && design.garmentTypeCodes.contains('sareeBlouse');
+  }
+
+  String _catalogueCodeForDressType(String dressType) {
+    final selected = dressType.trim().toLowerCase();
+    return switch (selected) {
+      'kurti' => 'kurti',
+      'kurta set' => 'kurtaSet',
+      'salwar suit' => 'salwarSuit',
+      'anarkali suit' => 'anarkali',
+      'lehenga choli' => 'lehengaCholi',
+      'gown' => 'gown',
+      'blouse' => 'blouse',
+      'saree blouse' => 'sareeBlouse',
+      'top / tunic' => 'topTunic',
+      'shirt' => 'shirt',
+      'palazzo / pant' => 'palazzoPant',
+      'skirt' => 'skirt',
+      'dress / one piece' => 'dress',
+      'other' => 'other',
+      _ => selected,
+    };
+  }
+
+  String _dressTypeForWishlistDesign(CatalogueDesign design) {
+    const labelsByCode = <String, String>{
+      'kurti': 'Kurti',
+      'kurtaSet': 'Kurta Set',
+      'salwarSuit': 'Salwar Suit',
+      'anarkali': 'Anarkali Suit',
+      'lehengaCholi': 'Lehenga Choli',
+      'gown': 'Gown',
+      'blouse': 'Blouse',
+      'sareeBlouse': 'Saree Blouse',
+      'topTunic': 'Top / Tunic',
+      'shirt': 'Shirt',
+      'palazzoPant': 'Palazzo / Pant',
+      'skirt': 'Skirt',
+      'dress': 'Dress / One Piece',
+      'coat': 'Coat',
+      'other': 'Other',
+    };
+    String? fallbackLabel;
+    for (final code in design.garmentTypeCodes) {
+      final label = labelsByCode[code];
+      if (label == 'Other') {
+        fallbackLabel = label;
+      } else if (label != null) {
+        return label;
+      }
+    }
+    if (fallbackLabel != null) return fallbackLabel;
+    return design.garmentTypeCodes.isEmpty
+        ? 'Other'
+        : _humanizeCatalogueCode(design.garmentTypeCodes.first);
+  }
+
+  String _wishlistGarmentTypeLabel(CatalogueDesign design) =>
+      _dressTypeForWishlistDesign(design);
+
+  String _humanizeCatalogueCode(String code) {
+    final words = code.replaceAllMapped(
+      RegExp(r'([a-z])([A-Z])'),
+      (match) => '${match.group(1)} ${match.group(2)}',
+    );
+    return words
+        .replaceAll(RegExp(r'[_-]+'), ' ')
+        .trim()
+        .split(RegExp(r'\s+'))
+        .map(
+          (word) => word.isEmpty
+              ? word
+              : '${word[0].toUpperCase()}${word.substring(1)}',
+        )
+        .join(' ');
+  }
+
+  void _selectCatalogueDesign(
+    CatalogueDesign design,
+  PublishedCatalogueBundle bundle, {
+    _SavedWishlistFabricSelection? wishlistSelection,
+  }) {
+    final primary = bundle.primaryView;
+    if (primary == null || primary.bestPreviewUrl?.trim().isEmpty != false) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This approved design has no preview image.'),
+        ),
+      );
+      return;
+    }
+    final isFree =
+        design.commercial.commercialType == CatalogueCommercialType.free;
+    _selectDesignTemplate(
+      DesignTemplate(
+        id: design.designId,
+        title: design.title,
+        imageUrl: primary.bestPreviewUrl!,
+        catalogType: isFree
+            ? DesignCatalogType.free
+            : DesignCatalogType.premium,
+        dressType: _selectedDressType,
+        occasionIds: design.occasionCodes,
+        priceInr: design.commercial.approvedDesignCharge,
+        createdBy: design.submittedByUid,
+        ownerProfileId: design.ownerProfileId,
+        catalogueVersionId: bundle.version.versionId,
+        catalogueCommercialType: design.commercial.commercialType.name,
+        constructionMetadata: design.constructionMetadata,
+      ),
+    );
+    setState(() {
+      _selectedWishlistFabricSelection = wishlistSelection;
+      if (wishlistSelection != null) {
+        _pendingCustomerFabricSelection = null;
+      }
+    });
+  }
+
+  Future<void> _saveSelectedDesignToWishlist() async {
+    final template = _selectedTemplate;
+    final versionId = template?.catalogueVersionId?.trim() ?? '';
+    if (template == null || versionId.isEmpty) return;
+    try {
+      await CustomerWishlistService.saveDesign(
+        designId: template.id,
+        catalogueVersionId: versionId,
+        fabricPreviewSelection:
+            _pendingCustomerFabricSelection?.designId == template.id &&
+                _pendingCustomerFabricSelection?.catalogueVersionId == versionId
+            ? _pendingCustomerFabricSelection
+            : null,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Design saved to your wishlist.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not save design: $error')),
+        );
+      }
+    }
+  }
+
+  Future<void> _showCatalogueDesignPreview(
+    CatalogueDesign design,
+    PublishedCatalogueBundle bundle,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(design.title),
+        content: SizedBox(
+          width: 380,
+          height: 420,
+          child: Column(
+            children: [
+              Expanded(
+                child: PageView.builder(
+                  itemCount: bundle.views.length,
+                  itemBuilder: (context, index) {
+                    final view = bundle.views[index];
+                    final url = view.bestPreviewUrl;
+                    return Column(
+                      children: [
+                        Expanded(
+                          child: url == null
+                              ? const Icon(Icons.image_not_supported_outlined)
+                              : Image.network(
+                                  url,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (_, _, _) =>
+                                      const Icon(Icons.broken_image_outlined),
+                                ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(view.viewType.label),
+                      ],
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                bundle.views.any(
+                      (view) =>
+                          view.viewType == CatalogueDesignViewType.back ||
+                          view.viewType ==
+                              CatalogueDesignViewType.combinedFrontBack,
+                    )
+                    ? 'Showing the views approved for this design.'
+                    : 'Only the published view is available. A missing back view is not fabricated or shown.',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodySmall,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Close'),
+          ),
+          FilledButton(
+            onPressed: () {
+              _selectCatalogueDesign(design, bundle);
+              Navigator.pop(dialogContext);
+            },
+            child: const Text('Select design'),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildLookPreviewCard() {
     final template = _selectedTemplate;
+    final fabricSelection = _pendingCustomerFabricSelection;
+    final savedFabricSelection = _matchingSavedWishlistFabricSelection;
+    final hasMatchingPendingPreview =
+        template != null &&
+        fabricSelection != null &&
+        fabricSelection.designId == template.id &&
+        fabricSelection.catalogueVersionId == template.catalogueVersionId;
+    final pendingPreviews = hasMatchingPendingPreview
+        ? fabricSelection.previews
+        : const <CustomerFabricViewPreview>[];
+    final savedPreviewViews = savedFabricSelection?.previews
+            .where((preview) => preview.imageUrl.isNotEmpty)
+            .toList(growable: false) ??
+        const <_WishlistFabricPreview>[];
+    final previewCount = pendingPreviews.isNotEmpty
+        ? pendingPreviews.length
+        : savedPreviewViews.length;
+    final hasMatchingFabricPreview = previewCount > 0;
 
     return Container(
       width: double.infinity,
@@ -3249,41 +4379,101 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               child: OutlinedButton.icon(
                 onPressed: _showDesignPickerSheet,
                 icon: const Icon(Icons.collections_bookmark_outlined),
-                label: const Text('Browse Design Catalog'),
+                label: Text(
+                  widget.startInBrowseMode && !_showOrderForm
+                      ? 'Browse approved designs'
+                      : 'Browse Design Catalog',
+                ),
               ),
             ),
           ] else ...[
+            if (hasMatchingFabricPreview) ...[
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Chip(
+                  avatar: const Icon(Icons.texture_outlined, size: 16),
+                  label: Text(
+                    'Your fabric · $previewCount view${previewCount == 1 ? '' : 's'}',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+            ],
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: AspectRatio(
                 aspectRatio: 0.82,
-                child: template.imageUrl.trim().isEmpty
-                    ? ColoredBox(
-                        color: AppColors.surfaceVariant,
-                        child: Center(
-                          child: Icon(
-                            Icons.image_not_supported_outlined,
-                            size: 48,
-                            color: AppColors.textHint,
-                          ),
-                        ),
-                      )
-                    : Image.network(
+                child: PageView.builder(
+                  itemCount: previewCount + 1,
+                  itemBuilder: (context, index) {
+                    final isCustomerPreview = index < previewCount;
+                    final previewLabel = isCustomerPreview
+                        ? pendingPreviews.isNotEmpty
+                              ? pendingPreviews[index].viewType
+                              : savedPreviewViews[index].viewType
+                        : 'Original catalogue design · tailor reference';
+                    Widget image;
+                    if (isCustomerPreview && pendingPreviews.isNotEmpty) {
+                      image = Image.memory(
+                        pendingPreviews[index].bytes,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => _previewImageError(),
+                      );
+                    } else if (isCustomerPreview) {
+                      image = Image.network(
+                        savedPreviewViews[index].imageUrl,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, _, _) => _previewImageError(),
+                      );
+                    } else if (template.imageUrl.trim().isEmpty) {
+                      image = _previewImageError();
+                    } else {
+                      image = Image.network(
                         template.imageUrl,
                         fit: BoxFit.contain,
-                        errorBuilder: (_, _, _) => ColoredBox(
-                          color: AppColors.surfaceVariant,
-                          child: Center(
-                            child: Icon(
-                              Icons.broken_image_outlined,
-                              size: 48,
-                              color: AppColors.textHint,
-                            ),
-                          ),
+                        errorBuilder: (_, _, _) => _previewImageError(),
+                      );
+                    }
+                    return Column(
+                      children: [
+                        Expanded(child: image),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
+                          child: Text(previewLabel),
                         ),
-                      ),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
+            if (template.catalogueVersionId?.trim().isNotEmpty == true) ...[
+              const SizedBox(height: 12),
+              CatalogueFabricPreviewButton(
+                designId: template.id,
+                versionId: template.catalogueVersionId!,
+                onSelectionChanged: (selection) => setState(() {
+                  _pendingCustomerFabricSelection = selection;
+                  _selectedWishlistFabricSelection = null;
+                }),
+              ),
+              if (_pendingCustomerFabricSelection != null &&
+                  _pendingCustomerFabricSelection!.designId == template.id) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'This is an AI visual approximation. The tailor receives both this customer reference and the original catalogue construction reference. Fabric photo and preview are stored only when you save the design or start an order.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+              TextButton.icon(
+                onPressed: _saveSelectedDesignToWishlist,
+                icon: const Icon(Icons.favorite_border_rounded),
+                label: const Text('Save design to wishlist'),
+              ),
+            ],
             const SizedBox(height: 12),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3300,7 +4490,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    template.isPremium ? 'PREMIUM' : 'FREE',
+                    template.catalogueVersionId != null
+                        ? 'PAID'
+                        : template.isPremium
+                        ? 'PREMIUM'
+                        : 'FREE',
                     style: AppTextStyles.labelMedium.copyWith(
                       color: Colors.white,
                       fontSize: 10,
@@ -3404,6 +4598,24 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
+  GarmentMeasurementEstimate _estimateGarmentMeasurementsLocally({
+    required BodyMeasurements body,
+    required DesignMetadata designMetadata,
+    required FabricMetadata fabricMetadata,
+    required OccasionMetadata occasionMetadata,
+  }) {
+    return GarmentMeasurementEngine.estimate(
+      body: body,
+      dressType: _selectedDressType,
+      fitPreference: _selectedFit,
+      occasionCategory: _occasionLabel(),
+      designTitle: _selectedTemplate?.title,
+      designMetadata: designMetadata,
+      occasionMetadata: occasionMetadata,
+      fabricMetadata: fabricMetadata,
+    );
+  }
+
   void _suggestGarmentMeasurements() {
     final body = _bodyMeasurementsFromDesignerFields();
 
@@ -3411,22 +4623,18 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text(
-            'Please take or select body measurements before generating dress suggestions.',
+            'No saved measurement is available for this profile. Use Take New Measurement to choose AI Camera or another available method before generating the estimate.',
           ),
         ),
       );
       return;
     }
 
-    final designMetadata = DesignMetadataService.defaultForDressType(
-      _selectedDressType,
-    );
+    final designMetadata =
+        _selectedTemplate?.constructionMetadata ??
+        DesignMetadataService.defaultForDressType(_selectedDressType);
 
-    final fabricForMetadata =
-        _fabricChoice == 'Other' &&
-            _customFabricController.text.trim().isNotEmpty
-        ? _customFabricController.text.trim()
-        : _fabricChoice;
+    final fabricForMetadata = _effectiveFabricChoice;
 
     final fabricMetadata = FabricMetadataService.forFabric(fabricForMetadata);
 
@@ -3443,12 +4651,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       liningPreference: _selectedLiningPreference,
     );
 
-    final garmentEstimate = GarmentMeasurementEngine.estimate(
+    final garmentEstimate = _estimateGarmentMeasurementsLocally(
       body: body,
-      dressType: _selectedDressType,
-      fitPreference: _selectedFit,
-      occasionCategory: _occasionLabel(),
-      designTitle: _selectedTemplate?.title,
       designMetadata: designMetadata,
       occasionMetadata: occasionMetadata,
       fabricMetadata: fabricMetadata,
@@ -3594,7 +4798,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         ),
         child: Text(
           'No saved measurements found for this profile. '
-          'Take a new measurement before generating dress estimates.',
+          'Use Take New Measurement to choose AI Camera or another available method.',
           style: AppTextStyles.bodySmall.copyWith(
             color: AppColors.textHint,
             height: 1.35,
@@ -3646,19 +4850,6 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               onPressed: _suggestGarmentMeasurements,
               icon: const Icon(Icons.auto_awesome_rounded),
               label: const Text('Generate Dress Estimate'),
-            ),
-            OutlinedButton.icon(
-              onPressed: () {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text(
-                      'Dress-specific adjustment screen will be added next.',
-                    ),
-                  ),
-                );
-              },
-              icon: const Icon(Icons.tune_rounded),
-              label: const Text('Adjust for this Dress'),
             ),
             OutlinedButton.icon(
               onPressed: () {
@@ -3726,6 +4917,46 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       children: [
         Text('Special Instructions', style: AppTextStyles.headlineMedium),
         const SizedBox(height: 8),
+        OutlinedButton.icon(
+          onPressed: _chooseSavedMeasurementReference,
+          icon: const Icon(Icons.straighten_outlined),
+          label: Text(
+            _customerMeasurementReference == null
+                ? 'Add saved measurement reference'
+                : 'Change saved measurement reference',
+          ),
+        ),
+        if (_customerMeasurementReference != null) ...[
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: .08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AppColors.accent.withValues(alpha: .3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: AppColors.accent),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${_customerMeasurementReference!.title} · ${_customerMeasurementReference!.values.length} fields. Added as a customer note for Tailor review.',
+                    style: AppTextStyles.bodySmall,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Remove reference',
+                  onPressed: () => setState(
+                    () => _customerMeasurementReference = null,
+                  ),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+          ),
+        ],
         TextFormField(
           controller: _notesController,
           maxLines: 3,
@@ -3738,7 +4969,331 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
   }
 
+  String? get _effectiveFabricChoice {
+    if (_fabricChoice == 'Other' &&
+        _customFabricController.text.trim().isNotEmpty) {
+      return _customFabricController.text.trim();
+    }
+    return _fabricChoice;
+  }
+
+  String _smartAssistContextKey() {
+    final measurementText = _measurementFields.entries
+        .map((entry) => '${entry.key}:${entry.value.text.trim()}')
+        .join(';');
+    return [
+      _selectedOrderPersonId ?? '',
+      _occasionId ?? '',
+      _selectedDressType,
+      _selectedFit,
+      _selectedTemplate?.id ?? '',
+      _selectedTemplate?.catalogueVersionId ?? '',
+      _effectiveFabricChoice ?? '',
+      _selectedNeckStyle ?? '',
+      _selectedSleeveStyle ?? '',
+      _selectedBackDesign ?? '',
+      _selectedAlterationMargin ?? '',
+      _selectedLiningPreference ?? '',
+      measurementText,
+    ].join('|');
+  }
+
+  String? _neckStyleFromMetadata(DesignNeckType type) => switch (type) {
+    DesignNeckType.round => 'Round Neck',
+    DesignNeckType.vNeck => 'V Neck',
+    DesignNeckType.boat => 'Boat Neck',
+    DesignNeckType.square => 'Square Neck',
+    DesignNeckType.keyhole => 'Keyhole Neck',
+    DesignNeckType.collar => 'Collar Neck',
+    DesignNeckType.other => null,
+  };
+
+  String? _sleeveStyleFromMetadata(DesignSleeveType type) => switch (type) {
+    DesignSleeveType.sleeveless => 'Sleeveless',
+    DesignSleeveType.cap => 'Cap Sleeve',
+    DesignSleeveType.half => 'Short Sleeve',
+    DesignSleeveType.threeQuarter => 'Three Quarter Sleeve',
+    DesignSleeveType.full => 'Full Sleeve',
+    DesignSleeveType.puff => 'Puff Sleeve',
+    DesignSleeveType.other => null,
+  };
+
+  List<_DressFitSuggestion> _buildLocalDressFitSuggestions() {
+    final suggestions = <_DressFitSuggestion>[];
+    final template = _selectedTemplate;
+    final construction = template?.constructionMetadata;
+    final metadata = construction ??
+        DesignMetadataService.defaultForDressType(_selectedDressType);
+    final fabric = _effectiveFabricChoice == null
+        ? null
+        : FabricMetadataService.forFabric(_effectiveFabricChoice);
+    final occasion = OccasionMetadataService.forOccasion(
+      occasionId: _occasionId,
+      occasionLabel: _occasionLabel() ?? 'General',
+    );
+
+    // Suggest design-specific neckline and sleeve settings only when the
+    // published catalogue version includes construction metadata.
+    if (construction != null) {
+      final neckStyle = _neckStyleFromMetadata(construction.neckType);
+      if (neckStyle != null && _selectedNeckStyle != neckStyle) {
+        suggestions.add(
+          _DressFitSuggestion(
+            field: 'neckStyle',
+            value: neckStyle,
+            reason: 'Matches the selected catalogue design details.',
+          ),
+        );
+      }
+      final sleeveStyle = _sleeveStyleFromMetadata(construction.sleeveType);
+      if (sleeveStyle != null && _selectedSleeveStyle != sleeveStyle) {
+        suggestions.add(
+          _DressFitSuggestion(
+            field: 'sleeveStyle',
+            value: sleeveStyle,
+            reason: 'Matches the selected catalogue design details.',
+          ),
+        );
+      }
+    }
+
+    final liningRecommended =
+        metadata.liningRequired ||
+        occasion.liningRecommended ||
+        (fabric?.liningRecommended ?? false);
+    final liningValue = metadata.liningRequired ? 'Required' : 'As Recommended';
+    if (liningRecommended && _selectedLiningPreference != liningValue) {
+      final reason = metadata.liningRequired
+          ? 'The catalogue construction details call for lining.'
+          : fabric?.liningRecommended == true
+          ? '${fabric!.fabricName} may benefit from lining for coverage and finish.'
+          : '${occasion.displayName} designs often benefit from a lining review.';
+      suggestions.add(
+        _DressFitSuggestion(
+          field: 'liningPreference',
+          value: liningValue,
+          reason: reason,
+        ),
+      );
+    }
+
+    final needsTailorReview =
+        metadata.complexity == DesignComplexity.high ||
+        occasion.tailorReviewRecommended ||
+        fabric?.weight == FabricWeight.heavy ||
+        fabric?.behavior == FabricBehavior.delicate;
+    if (needsTailorReview &&
+        _selectedAlterationMargin != 'Tailor Recommendation') {
+      suggestions.add(
+        const _DressFitSuggestion(
+          field: 'alterationMargin',
+          value: 'Tailor Recommendation',
+          reason: 'Ask the tailor to confirm movement and alteration allowance before cutting.',
+        ),
+      );
+    }
+
+    return suggestions.take(3).toList(growable: false);
+  }
+
+  void _onDressFitAssistant() {
+    if (_selectedTemplate == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Select a design before using the fit assistant.'),
+        ),
+      );
+      return;
+    }
+    final body = _bodyMeasurementsFromDesignerFields();
+    if (body == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'A saved measurement is needed for a fit review. Use Take New Measurement if this profile has no measurement yet.',
+          ),
+        ),
+      );
+      return;
+    }
+    final designMetadata =
+        _selectedTemplate!.constructionMetadata ??
+        DesignMetadataService.defaultForDressType(_selectedDressType);
+    final fabricMetadata = FabricMetadataService.forFabric(
+      _effectiveFabricChoice,
+    );
+    final occasionMetadata = OccasionMetadataService.forOccasion(
+      occasionId: _occasionId,
+      occasionLabel: _occasionLabel() ?? 'General',
+    );
+    // Reuse the same local engine as Generate Dress Estimate without
+    // populating the estimate card or changing the customer's selections.
+    final estimate =
+        _garmentMeasurementEstimate ??
+        _estimateGarmentMeasurementsLocally(
+          body: body,
+          designMetadata: designMetadata,
+          occasionMetadata: occasionMetadata,
+          fabricMetadata: fabricMetadata,
+        );
+
+    final designName = _selectedTemplate!.title;
+    final suggestions = _buildLocalDressFitSuggestions();
+    final summary =
+        'Your ${_selectedFit.toLowerCase()} fit estimate for $designName '
+        'is based on the available saved measurements and contains ${estimate.valuesCm.length} garment-specific values (formula ${estimate.formulaVersion}). '
+        'Your selected design and saved body measurements are unchanged. Ask your tailor to confirm comfort and movement before cutting.';
+    setState(() {
+      _fitAssistantSummary = summary;
+      _fitAssistantSuggestions = suggestions;
+      _fitAssistantContextKey = _smartAssistContextKey();
+    });
+    if (suggestions.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Your current selections look consistent with the available design guidance.'),
+        ),
+      );
+    }
+  }
+
+  String _fitSuggestionLabel(String field) => switch (field) {
+    'neckStyle' => 'Neck style',
+    'sleeveStyle' => 'Sleeve style',
+    'alterationMargin' => 'Alteration margin',
+    'liningPreference' => 'Lining / astar',
+    _ => 'Suggestion',
+  };
+
+  Future<void> _reviewFitSuggestions() async {
+    final suggestions = _fitAssistantSuggestions;
+    if (suggestions.isEmpty) return;
+    final selectedIndexes = <int>{};
+    final approved = await showModalBottomSheet<List<_DressFitSuggestion>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => SafeArea(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.sizeOf(context).height * 0.72,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Review fit suggestions', style: AppTextStyles.headlineMedium),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Choose only the changes you want. Saved measurements and the original catalogue design stay unchanged.',
+                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                  ),
+                  const SizedBox(height: 12),
+                  Flexible(
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: suggestions.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 4),
+                      itemBuilder: (context, index) {
+                        final suggestion = suggestions[index];
+                        return CheckboxListTile(
+                          value: selectedIndexes.contains(index),
+                          contentPadding: EdgeInsets.zero,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: Text(
+                            '${_fitSuggestionLabel(suggestion.field)}: ${suggestion.value}',
+                            style: AppTextStyles.titleMedium,
+                          ),
+                          subtitle: Text(suggestion.reason),
+                          onChanged: (selected) => setSheetState(() {
+                            if (selected == true) {
+                              selectedIndexes.add(index);
+                            } else {
+                              selectedIndexes.remove(index);
+                            }
+                          }),
+                        );
+                      },
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(sheetContext),
+                        child: const Text('Not now'),
+                      ),
+                      const Spacer(),
+                      FilledButton(
+                        onPressed: selectedIndexes.isEmpty
+                            ? null
+                            : () => Navigator.pop(
+                                sheetContext,
+                                [
+                                  for (var i = 0; i < suggestions.length; i++)
+                                    if (selectedIndexes.contains(i)) suggestions[i],
+                                ],
+                              ),
+                        child: Text('Apply ${selectedIndexes.length} selected'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    if (approved != null && approved.isNotEmpty && mounted) {
+      _applyDressFitSuggestions(approved);
+    }
+  }
+
+  void _applyDressFitSuggestions(List<_DressFitSuggestion> suggestions) {
+    setState(() {
+      for (final suggestion in suggestions) {
+        switch (suggestion.field) {
+          case 'neckStyle':
+            _selectedNeckStyle = suggestion.value;
+            _neckController.text = suggestion.value;
+            break;
+          case 'sleeveStyle':
+            _selectedSleeveStyle = suggestion.value;
+            _sleeveStyleController.text = suggestion.value;
+            break;
+          case 'backDesign':
+            _selectedBackDesign = suggestion.value;
+            _backDesignController.text = suggestion.value;
+            break;
+          case 'alterationMargin':
+            _selectedAlterationMargin = suggestion.value;
+            _marginController.text = suggestion.value;
+            break;
+          case 'liningPreference':
+            _selectedLiningPreference = suggestion.value;
+            break;
+        }
+      }
+      _garmentMeasurementEstimate = null;
+      _fabricEstimate = null;
+      _priceEstimate = null;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Your selected suggestions were applied. Generate the estimate again to refresh it.',
+        ),
+      ),
+    );
+  }
+
   Future<void> _onFabricStyleTips() async {
+    if (_smartAssistBusy != null) return;
+    final contextKey = _smartAssistContextKey();
     setState(() {
       _smartAssistBusy = 'fabric';
       _fabricStyleAiText = null;
@@ -3759,7 +5314,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     if (!mounted) return;
     setState(() => _smartAssistBusy = null);
     if (r.success) {
-      setState(() => _fabricStyleAiText = r.text);
+      setState(() {
+        _fabricStyleAiText = r.text;
+        _fabricStyleContextKey = contextKey;
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -3771,10 +5329,48 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     }
   }
 
+  String _fabricGuidanceNoteBlock(String suggestionText) =>
+      'Customer-approved fabric & styling guidance:\n${suggestionText.trim()}';
+
+  void _addFabricSuggestionsToNotes() {
+    final suggestionText = _fabricStyleAiText;
+    if (suggestionText == null ||
+        _fabricStyleContextKey != _smartAssistContextKey()) {
+      return;
+    }
+    final block = _fabricGuidanceNoteBlock(suggestionText);
+    final existing = _notesController.text.trim();
+    if (existing.contains(block)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('These suggestions are already in your instructions.'),
+        ),
+      );
+      return;
+    }
+    _notesController.text = existing.isEmpty ? block : '$existing\n\n$block';
+    setState(() {});
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Approved guidance added to tailor instructions.'),
+      ),
+    );
+  }
+
   Future<void> _onPolishNotesForTailor() async {
+    if (_smartAssistBusy != null) return;
+    final currentDraft = _notesController.text.trim();
+    if (currentDraft.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Add the instructions you want improved first.'),
+        ),
+      );
+      return;
+    }
     setState(() => _smartAssistBusy = 'polish');
     final r = await ClaudeSmartAssistantService.polishCustomerNotes(
-      draft: _notesController.text,
+      draft: currentDraft,
       dressType: _selectedDressType,
       fit: _selectedFit,
     );
@@ -3791,21 +5387,53 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
       return;
     }
+    if (_notesController.text.trim() != currentDraft) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Your instructions changed. Please run Improve Tailor Instructions again.',
+          ),
+        ),
+      );
+      return;
+    }
     final apply = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Polished notes'),
-        content: SingleChildScrollView(
-          child: Text(r.text, style: AppTextStyles.bodyMedium),
+        title: const Text('Review improved instructions'),
+        content: SizedBox(
+          width: double.maxFinite,
+          height: MediaQuery.sizeOf(ctx).height * 0.55,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Your current instructions', style: AppTextStyles.titleMedium),
+                const SizedBox(height: 6),
+                Text(currentDraft, style: AppTextStyles.bodySmall),
+                const SizedBox(height: 18),
+                Text('Suggested wording', style: AppTextStyles.titleMedium),
+                const SizedBox(height: 6),
+                Text(r.text, style: AppTextStyles.bodyMedium),
+                const SizedBox(height: 12),
+                Text(
+                  'Your current text stays unchanged unless you approve the suggested wording. You can edit it afterward.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: const Text('Keep current'),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Replace notes'),
+            child: const Text('Use suggested wording'),
           ),
         ],
       ),
@@ -3817,6 +5445,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   }
 
   Widget _buildSmartAssistSection() {
+    final contextKey = _smartAssistContextKey();
+    final hasCurrentFitReview =
+        _fitAssistantSummary != null && _fitAssistantContextKey == contextKey;
+    final hasCurrentFabricTips =
+        _fabricStyleAiText != null && _fabricStyleContextKey == contextKey;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -3835,12 +5468,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 size: 22,
               ),
               const SizedBox(width: 8),
-              Text('Smart assist', style: AppTextStyles.headlineMedium),
+              Text('Smart Assist · Optional', style: AppTextStyles.headlineMedium),
             ],
           ),
           const SizedBox(height: 4),
           Text(
-            'Get fabric suggestions and improve stitching instructions before placing the order',
+            'Get fit, fabric and tailor-note guidance. Review every suggestion; nothing changes until you approve it.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
@@ -3848,6 +5481,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             spacing: 10,
             runSpacing: 10,
             children: [
+              OutlinedButton.icon(
+                onPressed: _smartAssistBusy != null
+                    ? null
+                    : _onDressFitAssistant,
+                icon: const Icon(Icons.accessibility_new_rounded, size: 20),
+                label: const Text('Dress Fit Assistant'),
+              ),
               OutlinedButton.icon(
                 onPressed: _smartAssistBusy != null ? null : _onFabricStyleTips,
                 icon: _smartAssistBusy == 'fabric'
@@ -3882,11 +5522,83 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               ),
             ],
           ),
-          if (_fabricStyleAiText != null) ...[
+          if (hasCurrentFitReview) ...[
             const SizedBox(height: 14),
-            Text(
-              _fabricStyleAiText!,
-              style: AppTextStyles.bodySmall.copyWith(height: 1.45),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Fit review', style: AppTextStyles.titleMedium),
+                  const SizedBox(height: 5),
+                  Text(
+                    _fitAssistantSummary!,
+                    style: AppTextStyles.bodySmall.copyWith(height: 1.4),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Fit review uses the same local measurement engine; body measurement values are not sent to the assistant.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  if (_fitAssistantSuggestions.isEmpty)
+                    Text(
+                      'No selection changes are suggested from the available catalogue and fabric guidance.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textHint,
+                      ),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: _reviewFitSuggestions,
+                      icon: const Icon(Icons.tune_rounded),
+                      label: Text(
+                        'Review ${_fitAssistantSuggestions.length} suggestion${_fitAssistantSuggestions.length == 1 ? '' : 's'}',
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          if (hasCurrentFabricTips) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Fabric & styling ideas', style: AppTextStyles.titleMedium),
+                  const SizedBox(height: 6),
+                  Text(
+                    _fabricStyleAiText!,
+                    style: AppTextStyles.bodySmall.copyWith(height: 1.45),
+                  ),
+                  const SizedBox(height: 6),
+                  OutlinedButton.icon(
+                    onPressed: _addFabricSuggestionsToNotes,
+                    icon: const Icon(Icons.note_add_outlined),
+                    label: Text(
+                      _notesController.text.contains(
+                            _fabricGuidanceNoteBlock(_fabricStyleAiText!),
+                          )
+                          ? 'Added to Tailor Instructions'
+                          : 'Add approved guidance to Tailor Instructions',
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -4107,7 +5819,9 @@ class _DesignerAddress {
   final String addressLine2;
   final String landmark;
   final String city;
+  final String? cityCode;
   final String state;
+  final String? stateCode;
   final String pincode;
   final bool isDefault;
 
@@ -4120,12 +5834,24 @@ class _DesignerAddress {
     required this.addressLine2,
     required this.landmark,
     required this.city,
+    this.cityCode,
     required this.state,
+    this.stateCode,
     required this.pincode,
     required this.isDefault,
   });
 
   factory _DesignerAddress.fromMap(String id, Map<String, dynamic> data) {
+    final city = data['city']?.toString() ?? data['cityName']?.toString() ?? '';
+    final state =
+        data['state']?.toString() ?? data['stateName']?.toString() ?? '';
+    final metadata = IndiaAddressMetadata.instance;
+    final stateCode =
+        data['stateCode']?.toString() ?? metadata.stateCodeForLabel(state);
+    final cityCode =
+        data['cityCode']?.toString() ??
+        metadata.cityCodeForLabel(stateCode: stateCode, cityLabel: city);
+
     return _DesignerAddress(
       addressId: data['addressId']?.toString() ?? id,
       addressType: data['addressType']?.toString() ?? 'Home',
@@ -4134,8 +5860,10 @@ class _DesignerAddress {
       addressLine1: data['addressLine1']?.toString() ?? '',
       addressLine2: data['addressLine2']?.toString() ?? '',
       landmark: data['landmark']?.toString() ?? '',
-      city: data['city']?.toString() ?? '',
-      state: data['state']?.toString() ?? '',
+      city: city,
+      cityCode: cityCode,
+      state: state,
+      stateCode: stateCode,
       pincode: data['pincode']?.toString() ?? '',
       isDefault: data['isDefault'] == true,
     );
@@ -4163,3 +5891,57 @@ class _DesignerAddress {
     return parts.where((part) => part.trim().isNotEmpty).join('\n');
   }
 }
+
+class _WishlistDesignOption {
+  const _WishlistDesignOption({
+    required this.design,
+    required this.bundle,
+    this.fabricSelection,
+  });
+
+  final CatalogueDesign design;
+  final PublishedCatalogueBundle bundle;
+  final _SavedWishlistFabricSelection? fabricSelection;
+}
+
+class _SavedWishlistFabricSelection {
+  const _SavedWishlistFabricSelection({
+    required this.wishlistItemId,
+    required this.designId,
+    required this.catalogueVersionId,
+    required this.previews,
+    required this.customerFabricAssets,
+  });
+
+  final String wishlistItemId;
+  final String designId;
+  final String catalogueVersionId;
+  final List<_WishlistFabricPreview> previews;
+  final Map<String, dynamic> customerFabricAssets;
+}
+
+class _WishlistFabricPreview {
+  const _WishlistFabricPreview({
+    required this.storagePath,
+    required this.imageUrl,
+    required this.viewType,
+    this.contentType,
+    this.byteSize,
+  });
+
+  final String storagePath;
+  final String imageUrl;
+  final String viewType;
+  final String? contentType;
+  final int? byteSize;
+
+  Map<String, dynamic> toAssetMap() => {
+    'storagePath': storagePath,
+    'viewType': viewType,
+    if (contentType != null) 'contentType': contentType,
+    if (byteSize != null) 'byteSize': byteSize,
+  };
+}
+
+String _shortMeasurementDate(DateTime date) =>
+    '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';

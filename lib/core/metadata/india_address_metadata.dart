@@ -28,6 +28,16 @@ class IndiaAddressMetadata implements AddressMetadataProvider {
       AddressMetadataOption(code: 'SOLAPUR', label: 'Solapur'),
       AddressMetadataOption(code: 'SATARA', label: 'Satara'),
       AddressMetadataOption(code: 'SANGLI', label: 'Sangli'),
+      AddressMetadataOption(code: 'AMRAVATI', label: 'Amravati'),
+      AddressMetadataOption(code: 'JALGAON', label: 'Jalgaon'),
+      AddressMetadataOption(code: 'NANDED', label: 'Nanded'),
+      AddressMetadataOption(code: 'AKOLA', label: 'Akola'),
+      AddressMetadataOption(code: 'LATUR', label: 'Latur'),
+      AddressMetadataOption(code: 'AHMEDNAGAR', label: 'Ahmednagar'),
+      AddressMetadataOption(code: 'WARDHA', label: 'Wardha'),
+      AddressMetadataOption(code: 'CHANDRAPUR', label: 'Chandrapur'),
+      AddressMetadataOption(code: 'YAVATMAL', label: 'Yavatmal'),
+      AddressMetadataOption(code: 'RATNAGIRI', label: 'Ratnagiri'),
     ],
     'GJ': [
       AddressMetadataOption(code: 'AHMEDABAD', label: 'Ahmedabad'),
@@ -134,6 +144,13 @@ class IndiaAddressMetadata implements AddressMetadataProvider {
         stateCode.trim().isEmpty ||
         normalizedLabel.isEmpty) {
       return null;
+    }
+
+    // Preserve the legacy Maharashtra label while mapping it to the current
+    // canonical city identity used by partner and order matching.
+    if (stateCode.trim().toUpperCase() == 'MH' &&
+        normalizedLabel == 'aurangabad') {
+      return 'CHHATRAPATI_SAMBHAJINAGAR';
     }
 
     for (final city in citiesForState(stateCode)) {

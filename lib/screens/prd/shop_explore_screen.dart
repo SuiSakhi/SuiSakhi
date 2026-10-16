@@ -8,9 +8,30 @@ import '../../services/order_service.dart';
 
 /// PRD Section 4 — Shop & Explore (phase-1: interest capture → admin / partner handoff).
 class ShopExploreScreen extends StatelessWidget {
-  const ShopExploreScreen({super.key});
+  const ShopExploreScreen({super.key, this.initialCategoryId});
 
-  Future<void> _onCategory(BuildContext context, ShopExploreCategory cat) async {
+  final String? initialCategoryId;
+
+  List<ShopExploreCategory> get _categories {
+    final categoryId = initialCategoryId?.trim();
+    if (categoryId == null || categoryId.isEmpty) {
+      return ShopExploreCategory.items;
+    }
+    return ShopExploreCategory.items
+        .where((category) => category.id == categoryId)
+        .toList(growable: false);
+  }
+
+  String get _title => switch (initialCategoryId) {
+    'rent' => 'Dress Rental',
+    'garment_care' => 'Garment Care',
+    _ => 'Fashion Store',
+  };
+
+  Future<void> _onCategory(
+    BuildContext context,
+    ShopExploreCategory cat,
+  ) async {
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -36,7 +57,7 @@ class ShopExploreScreen extends StatelessWidget {
     final id = await OrderService.createMarketplaceInterest(
       shopCategoryId: cat.id,
       title: cat.title,
-      notes: 'Shop & Explore interest',
+      notes: '${cat.title} interest from the customer home.',
     );
     if (!context.mounted) return;
     if (id != null) {
@@ -56,7 +77,7 @@ class ShopExploreScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Shop & Explore'),
+        title: Text(_title),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => context.pop(),
@@ -65,14 +86,19 @@ class ShopExploreScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
-          Text('Partners & collections', style: AppTextStyles.headlineSmall),
+          Text(
+            initialCategoryId == null ? 'Partners & collections' : _title,
+            style: AppTextStyles.headlineSmall,
+          ),
           const SizedBox(height: 6),
           Text(
-            'Rentals, fabrics, accessories, kids wear, festivals & printing — commission-based partners (PRD phase 1: manual coordination).',
+            initialCategoryId == null
+                ? 'Ready-to-wear, boutique collections, rentals, fabrics, accessories and more. Partner requests are coordinated by our team in phase 1.'
+                : 'Submit a request and our team will connect you with the right partner.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 20),
-          ...ShopExploreCategory.items.map((cat) {
+          ..._categories.map((cat) {
             return Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Material(
@@ -100,11 +126,17 @@ class ShopExploreScreen extends StatelessWidget {
                             children: [
                               Text(cat.title, style: AppTextStyles.titleMedium),
                               const SizedBox(height: 2),
-                              Text(cat.subtitle, style: AppTextStyles.bodySmall),
+                              Text(
+                                cat.subtitle,
+                                style: AppTextStyles.bodySmall,
+                              ),
                             ],
                           ),
                         ),
-                        const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppColors.textHint,
+                        ),
                       ],
                     ),
                   ),

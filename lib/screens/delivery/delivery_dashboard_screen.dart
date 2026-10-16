@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
@@ -9,22 +10,29 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/payment_models.dart';
 import '../../services/claude_smart_assistant_service.dart';
+import '../../services/order_lifecycle_service.dart';
+import '../../widgets/orders/delivery_pin_dialog.dart';
+import '../../widgets/orders/optional_pickup_photo_dialog.dart';
+import '../../widgets/orders/order_tracking_tag.dart';
 
 class DeliveryDashboardScreen extends StatefulWidget {
   const DeliveryDashboardScreen({super.key});
 
   @override
-  State<DeliveryDashboardScreen> createState() => _DeliveryDashboardScreenState();
+  State<DeliveryDashboardScreen> createState() =>
+      _DeliveryDashboardScreenState();
 }
 
 class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
-  int _tab = 0; // 0 = Available, 1 = My Deliveries
+  int _tab = 0; // 0 = Available, 1 = Inbound Pickup, 2 = My Deliveries
   List<DressOrder> _available = [];
   List<DressOrder> _mine = [];
+  List<DressOrder> _inboundPickups = [];
   bool _loading = true;
-  int _totalDeliveries = 0;
   double _earnings = 0;
   bool _subscriptionActive = true;
+  String? _deliveryAccountId;
+  String? _deliveryProfileId;
 
   @override
   void initState() {
@@ -33,8 +41,37 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   }
 
   Future<void> _loadData() async {
+    // Do not reuse a previous profile if the signed-in account changed or the
+    // current account no longer has an approved Delivery Partner profile.
+    _deliveryAccountId = null;
+    _deliveryProfileId = null;
     final myEmail = AppState.instance.profile?.email ?? '';
     try {
+      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
+      if (phone != null && phone.trim().isNotEmpty) {
+        final accountId = await AppState.instance.fetchAccountIdForMobile(
+          phone.trim(),
+        );
+        if (accountId != null) {
+          final profiles = await AppState.instance
+              .fetchActiveProfilesForAccount(accountId);
+          final matches = profiles
+              .where(
+                (profile) =>
+                    profile['partnerType'] == 'deliveryPartner' &&
+                    profile['role'] == 'partner' &&
+                    profile['operationalStatus'] == 'active' &&
+                    profile['activationStatus'] == 'active' &&
+                    profile['approvalStatus'] == 'approved' &&
+                    profile['kycStatus'] == 'verified',
+              )
+              .toList();
+          _deliveryAccountId = accountId;
+          _deliveryProfileId = matches.isEmpty
+              ? null
+              : matches.first['profileId']?.toString();
+        }
+      }
       // Load subscription info
       if (myEmail.isNotEmpty) {
         final sub = await FirebaseFirestore.instance
@@ -44,9 +81,9 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         if (sub.exists) {
           final data = sub.data()!;
           final until = (data['subscribedUntil'] as Timestamp?)?.toDate();
-          _subscriptionActive = data['active'] == true &&
+          _subscriptionActive =
+              data['active'] == true &&
               (until == null || until.isAfter(DateTime.now()));
-          _totalDeliveries = (data['totalDeliveries'] as num?)?.toInt() ?? 0;
         }
       }
 
@@ -66,18 +103,57 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
           .collection('orders')
           .where('deliveryPartnerId', isEqualTo: uid)
           .get();
+      final pickupSnap =
+          _deliveryAccountId == null || _deliveryProfileId == null
+          ? null
+          : await FirebaseFirestore.instance
+                .collection('orders')
+                .where(
+                  'inboundPickupPartnerAccountId',
+                  isEqualTo: _deliveryAccountId,
+                )
+                .where(
+                  'inboundPickupPartnerProfileId',
+                  isEqualTo: _deliveryProfileId,
+                )
+                .where('inboundPickupStatus', isEqualTo: 'assigned')
+                .get();
 
       if (mounted) {
         setState(() {
-          _available = availSnap.docs.map((d) => _fromDoc(d)).toList();
-          _mine = mineSnap.docs
+          _available = availSnap.docs
               .map((d) => _fromDoc(d))
-              .where((o) => o.status == OrderStatus.outForDelivery ||
-                  o.status == OrderStatus.delivered)
-              .toList()
-            ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
-          final delivered =
-              _mine.where((o) => o.status == OrderStatus.delivered).length;
+              .where(
+                (order) =>
+                    !order.usesProductionAssignment ||
+                    (order.paymentStatus == PaymentStatus.fullyPaid &&
+                        order.outboundHandoverStatus == 'assigned' &&
+                        order.outboundHandoverPartnerType ==
+                            'deliveryPartner' &&
+                        order.outboundHandoverPartnerAccountId ==
+                            _deliveryAccountId &&
+                        order.outboundHandoverPartnerProfileId ==
+                            _deliveryProfileId),
+              )
+              .toList();
+          _mine =
+              mineSnap.docs
+                  .map((d) => _fromDoc(d))
+                  .where(
+                    (o) =>
+                        o.status == OrderStatus.outForDelivery ||
+                        o.status == OrderStatus.delivered,
+                  )
+                  .toList()
+                ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+          _inboundPickups =
+              pickupSnap == null
+                    ? <DressOrder>[]
+                    : pickupSnap.docs.map(_fromDoc).toList()
+                ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+          final delivered = _mine
+              .where((o) => o.status == OrderStatus.delivered)
+              .length;
           _earnings = delivered * feePerOrder;
           _loading = false;
         });
@@ -97,8 +173,11 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
       builder: (ctx) => AlertDialog(
         title: Row(
           children: [
-            Icon(Icons.local_shipping_rounded,
-                color: AppColors.primary, size: 22),
+            Icon(
+              Icons.local_shipping_rounded,
+              color: AppColors.primary,
+              size: 22,
+            ),
             const SizedBox(width: 8),
             const Expanded(child: Text('AI delivery tips')),
           ],
@@ -149,8 +228,10 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
                   : _tab == 0
-                      ? _buildAvailableList()
-                      : _buildMyDeliveries(),
+                  ? _buildAvailableList()
+                  : _tab == 1
+                  ? _buildInboundPickups()
+                  : _buildMyDeliveries(),
             ),
           ],
         ),
@@ -185,18 +266,55 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFF00BCD4).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFF00BCD4).withValues(alpha: 0.4)),
+              border: Border.all(
+                color: const Color(0xFF00BCD4).withValues(alpha: 0.4),
+              ),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.delivery_dining_rounded,
-                    color: Color(0xFF00BCD4), size: 15),
+                const Icon(
+                  Icons.delivery_dining_rounded,
+                  color: Color(0xFF00BCD4),
+                  size: 15,
+                ),
                 const SizedBox(width: 6),
-                Text('Delivery',
-                    style: AppTextStyles.labelMedium
-                        .copyWith(color: const Color(0xFF00BCD4))),
+                Text(
+                  'Delivery',
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: const Color(0xFF00BCD4),
+                  ),
+                ),
               ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          GestureDetector(
+            onTap: () {
+              final accountId = _deliveryAccountId?.trim() ?? '';
+              final profileId = _deliveryProfileId?.trim() ?? '';
+              if (accountId.isNotEmpty && profileId.isNotEmpty) {
+                context.push(
+                  '/partner/account'
+                  '?accountId=${Uri.encodeQueryComponent(accountId)}'
+                  '&profileId=${Uri.encodeQueryComponent(profileId)}'
+                  '&category=deliveryPartner',
+                );
+              } else {
+                context.push('/partner/apply/delivery');
+              }
+            },
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.surfaceVariant,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.account_circle_outlined,
+                color: AppColors.textSecondary,
+                size: 22,
+              ),
             ),
           ),
           const SizedBox(width: 10),
@@ -211,8 +329,11 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
                 color: AppColors.surfaceVariant,
                 borderRadius: BorderRadius.circular(12),
               ),
-              child: const Icon(Icons.logout_rounded,
-                  color: AppColors.textSecondary, size: 20),
+              child: const Icon(
+                Icons.logout_rounded,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
             ),
           ),
         ],
@@ -257,10 +378,10 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
           ),
           const SizedBox(width: 10),
           _StatCard(
-            label: 'My Deliveries',
-            value: '$_totalDeliveries',
+            label: 'Inbound pickup',
+            value: '${_inboundPickups.length}',
             color: const Color(0xFF00BCD4),
-            icon: Icons.delivery_dining_rounded,
+            icon: Icons.inventory_2_outlined,
           ),
           const SizedBox(width: 10),
           _StatCard(
@@ -277,20 +398,29 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   Widget _buildTabBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: Row(
-        children: [
-          _TabBtn(
-            label: 'Available (${_available.length})',
-            selected: _tab == 0,
-            onTap: () => setState(() => _tab = 0),
-          ),
-          const SizedBox(width: 10),
-          _TabBtn(
-            label: 'My Deliveries',
-            selected: _tab == 1,
-            onTap: () => setState(() => _tab = 1),
-          ),
-        ],
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            _TabBtn(
+              label: 'Available (${_available.length})',
+              selected: _tab == 0,
+              onTap: () => setState(() => _tab = 0),
+            ),
+            const SizedBox(width: 8),
+            _TabBtn(
+              label: 'Inbound pickup (${_inboundPickups.length})',
+              selected: _tab == 1,
+              onTap: () => setState(() => _tab = 1),
+            ),
+            const SizedBox(width: 8),
+            _TabBtn(
+              label: 'My Deliveries',
+              selected: _tab == 2,
+              onTap: () => setState(() => _tab = 2),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -301,12 +431,19 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.inbox_outlined, size: 64, color: AppColors.textHint),
+            const Icon(
+              Icons.inbox_outlined,
+              size: 64,
+              color: AppColors.textHint,
+            ),
             const SizedBox(height: 16),
             Text('No orders available', style: AppTextStyles.headlineMedium),
             const SizedBox(height: 8),
-            Text('Orders ready for delivery will appear here',
-                style: AppTextStyles.bodyMedium, textAlign: TextAlign.center),
+            Text(
+              'Orders ready for delivery will appear here',
+              style: AppTextStyles.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
           ],
         ),
       );
@@ -319,6 +456,9 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         actionLabel: 'Accept Delivery',
         actionColor: const Color(0xFF00BCD4),
         onAction: () => _acceptDelivery(_available[i]),
+        onDecline: _available[i].usesProductionAssignment
+            ? () => _declineAssignedTask(_available[i], 'declineOutbound')
+            : null,
         onAiBrief: () => _showDeliveryAiBrief(context, _available[i]),
       ),
     );
@@ -330,8 +470,11 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.delivery_dining_outlined,
-                size: 64, color: AppColors.textHint),
+            const Icon(
+              Icons.delivery_dining_outlined,
+              size: 64,
+              color: AppColors.textHint,
+            ),
             const SizedBox(height: 16),
             Text('No deliveries yet', style: AppTextStyles.headlineMedium),
           ],
@@ -360,13 +503,180 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
     );
   }
 
+  Widget _buildInboundPickups() {
+    if (_inboundPickups.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.inventory_2_outlined,
+              size: 64,
+              color: AppColors.textHint,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'No inbound pickups assigned',
+              style: AppTextStyles.headlineMedium,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'New pickup tasks assigned by SuiSakhi will appear here.',
+              style: AppTextStyles.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: _inboundPickups.length,
+      itemBuilder: (_, i) => _DeliveryCard(
+        order: _inboundPickups[i],
+        actionLabel: 'Confirm pickup from customer',
+        actionColor: const Color(0xFF00BCD4),
+        onAction: () => _confirmInboundPickup(_inboundPickups[i]),
+        onDecline: () =>
+            _declineAssignedTask(_inboundPickups[i], 'declineInbound'),
+        onAiBrief: () => _showDeliveryAiBrief(context, _inboundPickups[i]),
+      ),
+    );
+  }
+
+  Future<void> _confirmInboundPickup(DressOrder order) async {
+    try {
+      final accountId = _deliveryAccountId;
+      final profileId = _deliveryProfileId;
+      if (accountId == null || profileId == null) {
+        throw StateError(
+          'An active, approved Delivery Partner profile is required.',
+        );
+      }
+      final photoResult = await showOptionalPickupPhotoDialog(
+        context: context,
+        orderId: order.id,
+      );
+      if (photoResult.cancelled) return;
+      final pickupPhotoPath = photoResult.storagePath;
+      await OrderLifecycleService.advanceDeliveryOrder(
+        orderId: order.id,
+        accountId: accountId,
+        profileId: profileId,
+        action: 'collectInbound',
+        pickupPhotoPath: pickupPhotoPath,
+      );
+      await _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              pickupPhotoPath == null
+                  ? 'Pickup recorded. The Tailor will confirm receipt.'
+                  : 'Pickup photo attached and pickup recorded. The Tailor will confirm receipt.',
+            ),
+          ),
+        );
+      }
+    } on FirebaseFunctionsException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message ?? 'Could not record pickup.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _declineAssignedTask(DressOrder order, String action) async {
+    final accountId = _deliveryAccountId;
+    final profileId = _deliveryProfileId;
+    if (accountId == null || profileId == null) return;
+    try {
+      await OrderLifecycleService.advanceDeliveryOrder(
+        orderId: order.id,
+        accountId: accountId,
+        profileId: profileId,
+        action: action,
+      );
+      await _loadData();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Task passed to the next eligible Partner.'),
+          ),
+        );
+      }
+    } on FirebaseFunctionsException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message ?? 'Could not pass this task.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not pass this task. Please retry.'),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _acceptDelivery(DressOrder order) async {
     final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
     final myEmail = AppState.instance.profile?.email ?? '';
-    await FirebaseFirestore.instance.collection('orders').doc(order.id).update({
-      'status': OrderStatus.outForDelivery.name,
-      'deliveryPartnerId': uid,
-    });
+    try {
+      if (order.usesProductionAssignment) {
+        final accountId = _deliveryAccountId;
+        final profileId = _deliveryProfileId;
+        if (accountId == null || profileId == null) {
+          throw StateError(
+            'An active, approved Delivery Partner profile is required.',
+          );
+        }
+        await OrderLifecycleService.advanceDeliveryOrder(
+          orderId: order.id,
+          accountId: accountId,
+          profileId: profileId,
+          action: 'accept',
+        );
+      } else {
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(order.id)
+            .update({
+              'status': OrderStatus.outForDelivery.name,
+              'deliveryPartnerId': uid,
+            });
+      }
+    } on FirebaseFunctionsException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message ?? 'Could not accept delivery.'),
+          ),
+        );
+      }
+      return;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          ),
+        );
+      }
+      return;
+    }
     // Increment total deliveries count
     if (myEmail.isNotEmpty) {
       await FirebaseFirestore.instance
@@ -378,9 +688,62 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   }
 
   Future<void> _markDelivered(DressOrder order) async {
-    await FirebaseFirestore.instance.collection('orders').doc(order.id).update({
-      'status': OrderStatus.delivered.name,
-    });
+    String? deliveryPin;
+    if (order.usesProductionAssignment) {
+      deliveryPin = await showDeliveryPinDialog(context);
+      if (deliveryPin == null) return;
+      if (!RegExp(r'^\d{4}$').hasMatch(deliveryPin)) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Enter the 4-digit customer delivery PIN.'),
+            ),
+          );
+        }
+        return;
+      }
+    }
+    try {
+      if (order.usesProductionAssignment) {
+        final accountId = _deliveryAccountId;
+        final profileId = _deliveryProfileId;
+        if (accountId == null || profileId == null) {
+          throw StateError(
+            'An active, approved Delivery Partner profile is required.',
+          );
+        }
+        await OrderLifecycleService.advanceDeliveryOrder(
+          orderId: order.id,
+          accountId: accountId,
+          profileId: profileId,
+          action: 'delivered',
+          deliveryPin: deliveryPin,
+        );
+      } else {
+        await FirebaseFirestore.instance
+            .collection('orders')
+            .doc(order.id)
+            .update({'status': OrderStatus.delivered.name});
+      }
+    } on FirebaseFunctionsException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message ?? 'Could not mark delivery complete.'),
+          ),
+        );
+      }
+      return;
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.toString().replaceFirst('Bad state: ', '')),
+          ),
+        );
+      }
+      return;
+    }
     _loadData();
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -398,11 +761,12 @@ class _StatCard extends StatelessWidget {
   final String value;
   final Color color;
   final IconData icon;
-  const _StatCard(
-      {required this.label,
-      required this.value,
-      required this.color,
-      required this.icon});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -414,9 +778,10 @@ class _StatCard extends StatelessWidget {
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-                color: AppColors.cardShadow,
-                blurRadius: 6,
-                offset: const Offset(0, 2)),
+              color: AppColors.cardShadow,
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
           ],
         ),
         child: Column(
@@ -424,9 +789,13 @@ class _StatCard extends StatelessWidget {
           children: [
             Icon(icon, color: color, size: 20),
             const SizedBox(height: 6),
-            Text(value,
-                style: AppTextStyles.displayMedium
-                    .copyWith(color: color, fontSize: 20)),
+            Text(
+              value,
+              style: AppTextStyles.displayMedium.copyWith(
+                color: color,
+                fontSize: 20,
+              ),
+            ),
             Text(label, style: AppTextStyles.bodySmall),
           ],
         ),
@@ -439,7 +808,11 @@ class _TabBtn extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
-  const _TabBtn({required this.label, required this.selected, required this.onTap});
+  const _TabBtn({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -452,7 +825,8 @@ class _TabBtn extends StatelessWidget {
           color: selected ? AppColors.primary : AppColors.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-              color: selected ? AppColors.primary : AppColors.divider),
+            color: selected ? AppColors.primary : AppColors.divider,
+          ),
         ),
         child: Text(
           label,
@@ -509,7 +883,9 @@ class _DeliveryPayoutStrip extends StatelessWidget {
           if (line.creditToUpi != null && line.creditToUpi!.isNotEmpty)
             Text(
               'Ledger UPI: ${line.creditToUpi}',
-              style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+              ),
             ),
         ],
       ),
@@ -522,6 +898,7 @@ class _DeliveryCard extends StatelessWidget {
   final String actionLabel;
   final Color actionColor;
   final VoidCallback? onAction;
+  final VoidCallback? onDecline;
   final VoidCallback onAiBrief;
 
   const _DeliveryCard({
@@ -529,6 +906,7 @@ class _DeliveryCard extends StatelessWidget {
     required this.actionLabel,
     required this.actionColor,
     this.onAction,
+    this.onDecline,
     required this.onAiBrief,
   });
 
@@ -542,9 +920,10 @@ class _DeliveryCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-              color: AppColors.cardShadow,
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
+            color: AppColors.cardShadow,
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Column(
@@ -559,8 +938,11 @@ class _DeliveryCard extends StatelessWidget {
                   color: const Color(0xFF00BCD4).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.checkroom_rounded,
-                    color: Color(0xFF00BCD4), size: 22),
+                child: const Icon(
+                  Icons.checkroom_rounded,
+                  color: Color(0xFF00BCD4),
+                  size: 22,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -568,15 +950,29 @@ class _DeliveryCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(order.dressType, style: AppTextStyles.titleMedium),
-                    Text('₹${order.price.toInt()}',
-                        style: AppTextStyles.bodySmall
-                            .copyWith(color: AppColors.primary)),
+                    if (order.orderTrackingId?.isNotEmpty == true)
+                      Text(
+                        'Order ID · ${order.orderTrackingId}',
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textHint,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    OrderTrackingTag.button(context, order.orderTrackingId),
+                    Text(
+                      '₹${order.price.toInt()}',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.primary,
+                      ),
+                    ),
                   ],
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: order.status.color.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(20),
@@ -584,24 +980,42 @@ class _DeliveryCard extends StatelessWidget {
                 child: Text(
                   order.status.label,
                   style: AppTextStyles.bodySmall.copyWith(
-                      color: order.status.color, fontWeight: FontWeight.w600),
+                    color: order.status.color,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
           ),
-          if (order.deliveryAddress != null && order.deliveryAddress!.isNotEmpty) ...[
+          if (order.deliveryAddress != null &&
+              order.deliveryAddress!.isNotEmpty) ...[
             const SizedBox(height: 10),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.location_on_rounded,
-                    size: 16, color: AppColors.textHint),
+                const Icon(
+                  Icons.location_on_rounded,
+                  size: 16,
+                  color: AppColors.textHint,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
-                  child: Text(order.deliveryAddress!,
-                      style: AppTextStyles.bodySmall),
+                  child: Text(
+                    order.deliveryAddress!,
+                    style: AppTextStyles.bodySmall,
+                  ),
                 ),
               ],
+            ),
+          ],
+          if (order.usesProductionAssignment &&
+              order.inboundPickupStatus != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Inbound pickup · ${order.inboundPickupStatus!.replaceAll('_', ' ')}',
+              style: AppTextStyles.bodySmall.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
           if (order.payoutLedger != null) ...[
@@ -623,16 +1037,29 @@ class _DeliveryCard extends StatelessWidget {
             child: ElevatedButton(
               onPressed: onAction,
               style: ElevatedButton.styleFrom(
-                backgroundColor: onAction != null ? actionColor : AppColors.divider,
+                backgroundColor: onAction != null
+                    ? actionColor
+                    : AppColors.divider,
                 foregroundColor: Colors.white,
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10)),
+                  borderRadius: BorderRadius.circular(10),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 10),
               ),
-              child: Text(actionLabel,
-                  style: AppTextStyles.labelMedium.copyWith(color: Colors.white)),
+              child: Text(
+                actionLabel,
+                style: AppTextStyles.labelMedium.copyWith(color: Colors.white),
+              ),
             ),
           ),
+          if (onDecline != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: onDecline,
+                child: const Text('Can’t take this task'),
+              ),
+            ),
         ],
       ),
     );

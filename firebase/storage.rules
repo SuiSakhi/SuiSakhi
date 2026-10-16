@@ -3,6 +3,171 @@ rules_version = '2';
 // Or paste into Firebase Console → Storage → Rules → Publish
 service firebase.storage {
   match /b/{bucket}/o {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isConfiguredAdmin() {
+      return signedIn()
+        && firestore.get(
+          /databases/(default)/documents/config/admin
+        ).data.adminUids is list
+        && request.auth.uid in firestore.get(
+          /databases/(default)/documents/config/admin
+        ).data.adminUids;
+    }
+
+    function isApprovedFashionStorePartner(accountId, profileId) {
+      return signedIn()
+        && request.auth.token.phone_number is string
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+        ).data.mobileE164 == request.auth.token.phone_number
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.role == 'partner'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.partnerType in ['brand', 'boutique']
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.status == 'active'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.operationalStatus == 'active'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.activationStatus == 'active'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.approvalStatus == 'approved'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.kycStatus == 'verified';
+    }
+
+    function canReadFashionStoreProduct(accountId, profileId, productId) {
+      return firestore.get(
+        /databases/(default)/documents/store_products/$(productId)
+      ).data.partnerAccountId == accountId
+        && firestore.get(
+          /databases/(default)/documents/store_products/$(productId)
+        ).data.partnerProfileId == profileId
+        && firestore.get(
+          /databases/(default)/documents/store_products/$(productId)
+        ).data.status == 'published';
+    }
+
+    // Legacy uploads predate the immutable ownerUid object metadata. Keep
+    // partner access to those files with a single profile document read.
+    function isLegacyFashionStoreProfileOwner(accountId, profileId) {
+      return signedIn()
+        && request.auth.token.phone_number is string
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.accountId == accountId
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.mobileE164 == request.auth.token.phone_number
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.role == 'partner'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.partnerType in ['brand', 'boutique']
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.status == 'active'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.operationalStatus == 'active'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.activationStatus == 'active'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.approvalStatus == 'approved'
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+            /profiles/$(profileId)
+        ).data.kycStatus == 'verified';
+    }
+
+    function catalogueDesign(designId) {
+      return firestore.get(
+        /databases/(default)/documents/designs/$(designId)
+      ).data;
+    }
+
+    function canReadCatalogueDesign(designId) {
+      return signedIn()
+        && (
+          isConfiguredAdmin()
+          || catalogueDesign(designId).submittedByUid == request.auth.uid
+          || (
+            catalogueDesign(designId).lifecycleStatus == 'approved'
+            && catalogueDesign(designId).publicationStatus == 'published'
+          )
+        );
+    }
+
+    function canWriteCatalogueDesign(designId) {
+      return signedIn()
+        && (
+          isConfiguredAdmin()
+          || (
+            catalogueDesign(designId).ownerType == 'designer'
+            && catalogueDesign(designId).submittedByUid == request.auth.uid
+            && catalogueDesign(designId).publicationStatus != 'published'
+            && catalogueDesign(designId).lifecycleStatus in [
+              'draft', 'uploaded', 'changesRequested'
+            ]
+          )
+        );
+    }
+
+    function canReadCustomerFabric(userId, scopeType, scopeId) {
+      return signedIn()
+        && (
+          request.auth.uid == userId
+          || isConfiguredAdmin()
+          || (
+            scopeType == 'orders'
+            && firestore.get(
+              /databases/(default)/documents/orders/$(scopeId)
+            ).data.customerId == userId
+          )
+          || (
+            scopeType == 'orders'
+            && firestore.get(
+              /databases/(default)/documents/orders/$(scopeId)
+            ).data.assignedTailorAccountId == firestore.get(
+              /databases/(default)/documents/users/$(request.auth.uid)
+            ).data.accountId
+            && firestore.get(
+              /databases/(default)/documents/orders/$(scopeId)
+            ).data.assignedTailorProfileId == firestore.get(
+              /databases/(default)/documents/users/$(request.auth.uid)
+            ).data.activeProfileId
+          )
+        );
+    }
+
     // Profile photos (app path: users/{uid}/profile_*.jpg|png|heic|…)
     match /users/{userId}/{allPaths=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
@@ -13,10 +178,100 @@ service firebase.storage {
       allow write: if request.auth != null;
     }
 
+    // Immutable monochrome source files are scoped to their catalogue design.
+    // Cross-service checks bind each upload to the signed-in design owner and
+    // allow reads for that owner, configured Admins, and published designs.
+    match /catalogue_designs/{designId}/versions/{versionId}/views/{viewId}/original/{fileName} {
+      allow read: if canReadCatalogueDesign(designId);
+      allow create: if canWriteCatalogueDesign(designId)
+          && fileName.matches('source\\.(jpg|jpeg|png|webp)')
+          && request.resource.size > 0
+          && request.resource.size <= 12 * 1024 * 1024
+          && request.resource.contentType in [
+            'image/jpeg', 'image/png', 'image/webp'
+          ];
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // AI-generated counterpart images remain private until a partner/Admin
+    // selects one and its asset reference is added to the governed `views` collection.
+    match /catalogue_designs/{designId}/versions/{versionId}/generated_candidates/{fileName} {
+      allow read: if signedIn()
+          && (
+            isConfiguredAdmin()
+            || catalogueDesign(designId).submittedByUid == request.auth.uid
+          );
+      allow write: if false;
+    }
+
     // Private customer-uploaded design references.
     match /customer_designs/{userId}/{accountId}/{profileId}/{allPaths=**} {
       allow read, write: if request.auth != null
           && request.auth.uid == userId;
+    }
+
+    // Private customer fabric photo and selected preview. An assigned Tailor
+    // can read order assets after the order document exists; upload remains
+    // owner-only. Draft assets are visible only to the Customer/Admin.
+    match /customer_fabrics/{userId}/{scopeType}/{scopeId}/{assetId}/{fileName} {
+      allow read: if canReadCustomerFabric(userId, scopeType, scopeId);
+      allow create: if request.auth != null
+          && request.auth.uid == userId
+          && scopeType in ['orders', 'drafts', 'wishlists']
+          && request.resource.size > 0
+          && request.resource.size <= 10 * 1024 * 1024
+          && request.resource.contentType in [
+            'image/jpeg', 'image/png', 'image/webp'
+          ];
+      allow update: if false;
+      allow delete: if request.auth != null
+          && request.auth.uid == userId
+          && scopeType == 'wishlists';
+    }
+
+    // Pickup evidence is immutable once uploaded and names its uploader so
+    // the trusted handover callable can verify the attachment before saving it.
+    match /order_pickup_photos/{orderId}/{userId}/{fileName} {
+      allow read: if request.auth != null;
+      allow create: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.size > 0
+          && request.resource.size <= 10 * 1024 * 1024
+          && request.resource.contentType.matches('image/.*');
+      allow update, delete: if false;
+    }
+
+    // Store images are managed by the verified Brand/Boutique that owns the
+    // listing. Customers can read photos only after the listing is published.
+    match /fashion_store_products/{accountId}/{profileId}/{productId}/{fileName} {
+      allow read: if signedIn()
+        && (
+          resource.metadata.ownerUid == request.auth.uid
+          || (
+            resource.metadata.ownerUid == null
+            && isLegacyFashionStoreProfileOwner(accountId, profileId)
+          )
+          || canReadFashionStoreProduct(accountId, profileId, productId)
+          || isConfiguredAdmin()
+        );
+      allow create: if isApprovedFashionStorePartner(accountId, profileId)
+        && request.resource.metadata.ownerUid == request.auth.uid
+        && request.resource.size > 0
+        && request.resource.size <= 12 * 1024 * 1024
+        && request.resource.contentType in [
+          'image/jpeg', 'image/png', 'image/webp', 'image/heic'
+        ];
+      allow delete: if signedIn()
+        && (
+          resource.metadata.ownerUid == request.auth.uid
+          || (
+            resource.metadata.ownerUid == null
+            && isLegacyFashionStoreProfileOwner(accountId, profileId)
+          )
+          || isConfiguredAdmin()
+        );
+      allow update: if false;
     }
   }
 }

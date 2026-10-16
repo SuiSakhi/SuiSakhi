@@ -180,6 +180,12 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
           value: application.mobileE164 ?? 'Not provided',
         ),
         _ReviewDetail(
+          label: 'Additional contact numbers',
+          value: application.additionalContactNumbers.isEmpty
+              ? 'Not provided'
+              : application.additionalContactNumbers.join(', '),
+        ),
+        _ReviewDetail(
           label: 'Email',
           value: application.email ?? 'Not provided',
         ),
@@ -625,7 +631,7 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         _ReviewDetail(label: 'Pincode', value: _displayValue(details.pincode)),
         _ReviewDetail(
           label: 'Service-area pincodes',
-          value: _displayList(details.serviceAreaPincodes),
+          value: _serviceCoverageLabel(details),
         ),
         _ReviewDetail(
           label: 'Operating days',
@@ -723,6 +729,25 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
     }
 
     return normalizedValues.join(', ');
+  }
+
+  String _serviceCoverageLabel(PartnerWorkshopDetails details) {
+    final pincodes = details.serviceAreaPincodes
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty && value.toUpperCase() != 'ANY')
+        .toList(growable: false);
+    if (pincodes.isNotEmpty) return pincodes.join(', ');
+    if (details.serviceCoverageMode == 'pincodes') {
+      return 'No service-area pincodes set';
+    }
+
+    final city = details.city?.trim() ?? '';
+    final state = details.state?.trim() ?? '';
+    if (city.isNotEmpty && state.isNotEmpty) {
+      return 'ANY within $city, $state';
+    }
+    if (city.isNotEmpty) return 'ANY within $city';
+    return 'ANY within business city (city details required)';
   }
 
   // ==========================================================================

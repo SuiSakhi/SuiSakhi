@@ -34,6 +34,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
   final _businessNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
+  final _additionalContactNumbersController = TextEditingController();
   final _serviceAreaPincodesController = TextEditingController();
   final _teamSizeController = TextEditingController();
   final _normalDailyCapacityController = TextEditingController();
@@ -103,6 +104,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     _businessNameController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
+    _additionalContactNumbersController.dispose();
     _serviceAreaPincodesController.dispose();
     _teamSizeController.dispose();
     _normalDailyCapacityController.dispose();
@@ -186,9 +188,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       _accountId = accountId;
       _customerProfileId = customerProfileId;
-      _application = application;
-
-      _contactNameController.text =
+      _application = application; _contactNameController.text =
           application.contactName ?? (profileName.isEmpty ? '' : profileName);
 
       _businessNameController.text = application.businessName ?? '';
@@ -197,6 +197,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       _emailController.text =
           application.email ?? (profileEmail.isEmpty ? '' : profileEmail);
+      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
 
       _loadWorkshopDetails(application.workshopDetails);
 
@@ -226,7 +227,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       addressLine2: details?.addressLine2,
       locality: details?.locality,
       cityName: details?.city,
+      cityCode: details?.cityCode,
       stateName: details?.state,
+      stateCode: details?.stateCode,
       pincode: details?.pincode,
       countryCode: 'IN',
       placeId: details?.placeId,
@@ -302,6 +305,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -389,6 +394,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
   PartnerWorkshopDetails _buildWorkshopDetails() {
     final existingDetails = _application?.workshopDetails;
+    final serviceAreaPincodes = _commaSeparatedValues(
+      _serviceAreaPincodesController.text,
+    );
 
     return PartnerWorkshopDetails(
       workshopTypeCode: _workshopTypeCode,
@@ -396,7 +404,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       addressLine2: _businessAddress.addressLine2,
       locality: _businessAddress.locality,
       city: _businessAddress.cityName,
+      cityCode: _businessAddress.cityCode,
       state: _businessAddress.stateName,
+      stateCode: _businessAddress.stateCode,
       pincode: _businessAddress.pincode,
 
       // Preserve shared map-derived values until the map picker is added.
@@ -404,9 +414,10 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       latitude: _businessAddress.latitude ?? existingDetails?.latitude,
       longitude: _businessAddress.longitude ?? existingDetails?.longitude,
 
-      serviceAreaPincodes: _commaSeparatedValues(
-        _serviceAreaPincodesController.text,
-      ),
+      serviceAreaPincodes: serviceAreaPincodes,
+      serviceCoverageMode: serviceAreaPincodes.isEmpty
+          ? 'citywide'
+          : 'pincodes',
       operatingDays: _operatingSchedule.normalizedOperatingDays,
       openingTime: OperatingSchedule.normalizedTimeOrNull(
         _operatingSchedule.openingTime,
@@ -572,6 +583,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       businessNameController: _businessNameController,
       mobileController: _mobileController,
       emailController: _emailController,
+                  additionalContactNumbersController: _additionalContactNumbersController,
       editable: _isEditable,
       description: 'These details will be used for the Tailor application.',
       businessNameLabel: 'Business or workshop name',
@@ -701,12 +713,16 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
             controller: _serviceAreaPincodesController,
             readOnly: !_isEditable,
             keyboardType: TextInputType.text,
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Service-area pincodes',
-              hintText: 'Example: 411001, 411002',
+              hintText: _businessAddress.cityName?.trim().isNotEmpty == true
+                  ? 'ANY in ${_businessAddress.cityName}, or 411001, 411002'
+                  : 'Enter pincodes to limit service coverage',
               prefixIcon: Icon(Icons.route_outlined),
               border: OutlineInputBorder(),
-              helperText: 'Optional. Separate multiple pincodes with commas.',
+              helperText: _businessAddress.cityName?.trim().isNotEmpty == true
+                  ? 'Leave blank for ANY within ${_businessAddress.cityName}. Enter one or more pincodes to replace citywide coverage.'
+                  : 'Select a business city first. Leave blank for ANY within that city, or enter service-area pincodes.',
             ),
           ),
           const SizedBox(height: 18),
@@ -1064,6 +1080,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -1171,12 +1189,11 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         return;
       }
 
-      _application = newApplication;
-
-      _contactNameController.text = newApplication.contactName ?? '';
+      _application = newApplication; _contactNameController.text = newApplication.contactName ?? '';
       _businessNameController.text = newApplication.businessName ?? '';
       _mobileController.text = newApplication.mobileE164 ?? '';
       _emailController.text = newApplication.email ?? '';
+      _additionalContactNumbersController.text = newApplication.additionalContactNumbers.join(', ');
 
       _loadWorkshopDetails(newApplication.workshopDetails);
 

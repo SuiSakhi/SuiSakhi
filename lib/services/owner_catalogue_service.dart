@@ -101,11 +101,11 @@ class OwnerCatalogueService {
         .orderBy('displayOrder')
         .get();
 
-    if (snapshot.docs.isNotEmpty) {
-      return snapshot.docs
-          .map((document) => CatalogueDesignView.fromMap(document.data()))
-          .toList(growable: false);
-    }
+    final views = snapshot.docs
+        .where((document) => document.data()['excludedFromVersion'] != true)
+        .map((document) => CatalogueDesignView.fromMap(document.data()))
+        .toList(growable: false);
+    if (views.isNotEmpty) return views;
 
     final legacy = version.legacyView;
     return legacy == null

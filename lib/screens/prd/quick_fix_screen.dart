@@ -7,7 +7,7 @@ import '../../models/prd_catalog.dart';
 import '../../services/order_service.dart';
 import '../../widgets/common/custom_button.dart';
 
-/// PRD Module 2 — Quick Fix & Essentials (minimal input, fast estimate).
+/// PRD Module 2 — Quick Care & Home Services (minimal input, fast estimate).
 class QuickFixScreen extends StatefulWidget {
   const QuickFixScreen({super.key});
 
@@ -59,9 +59,9 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
       return;
     }
     if (_address.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add your address')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Add your address')));
       return;
     }
     setState(() => _submitting = true);
@@ -78,7 +78,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
     setState(() => _submitting = false);
     if (id != null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Quick Fix request submitted')),
+        const SnackBar(content: Text('Quick Care request submitted')),
       );
       context.push('/orders');
     } else {
@@ -93,7 +93,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Quick Fix & Essentials'),
+        title: const Text('Quick Care & Home Services'),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_ios_rounded),
           onPressed: () => context.pop(),
@@ -135,7 +135,9 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
               padding: const EdgeInsets.only(bottom: 4),
               child: Text(
                 '• ${s.title}: ₹${s.minInr}–${s.maxInr}',
-                style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                ),
               ),
             );
           }),
@@ -191,7 +193,9 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
             decoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: AppColors.primary.withValues(alpha: 0.25)),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.25),
+              ),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -205,14 +209,16 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                 const SizedBox(height: 8),
                 Text(
                   '₹${_estimate.toStringAsFixed(0)}',
-                  style: AppTextStyles.headlineMedium.copyWith(color: AppColors.primary),
+                  style: AppTextStyles.headlineMedium.copyWith(
+                    color: AppColors.primary,
+                  ),
                 ),
               ],
             ),
           ),
           const SizedBox(height: 24),
           PrimaryButton(
-            label: _submitting ? 'Submitting…' : 'Submit Quick Fix request',
+            label: _submitting ? 'Submitting…' : 'Submit service request',
             icon: Icons.bolt_rounded,
             onTap: _submitting ? () {} : _submit,
           ),

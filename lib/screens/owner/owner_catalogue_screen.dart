@@ -4,7 +4,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/catalogue_design.dart';
-import '../../models/catalogue_design_version.dart';
 import '../../services/owner_catalogue_service.dart';
 
 class OwnerCatalogueScreen extends StatefulWidget {
@@ -127,11 +126,12 @@ class _DesignCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<CatalogueDesignVersion?>(
-      future: OwnerCatalogueService.getActiveVersion(design),
+    return FutureBuilder<OwnerCatalogueVersionBundle?>(
+      future: OwnerCatalogueService.getActiveVersionBundle(design),
       builder: (context, snapshot) {
-        final version = snapshot.data;
-        final imageUrl = version?.originalAsset?.downloadUrl;
+        final bundle = snapshot.data;
+        final version = bundle?.version;
+        final imageUrl = bundle?.primaryView?.bestPreviewUrl;
         final processing = version?.processing.status.name ?? 'notRequested';
         return InkWell(
           borderRadius: BorderRadius.circular(18),
@@ -189,6 +189,10 @@ class _DesignCard extends StatelessWidget {
                         spacing: 6,
                         runSpacing: 6,
                         children: [
+                          _chip(
+                            bundle?.contributor.displayName ??
+                                _label(design.ownerType.name),
+                          ),
                           _chip(_label(design.commercial.commercialType.name)),
                           _chip(_label(design.lifecycleStatus.name)),
                           _chip(_label(processing)),

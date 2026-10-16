@@ -32,6 +32,7 @@ class _RentalApplicationScreenState extends State<RentalApplicationScreen> {
   final _business = TextEditingController();
   final _mobile = TextEditingController();
   final _email = TextEditingController();
+  final _additionalContactNumbers = TextEditingController();
   final _serviceArea = TextEditingController();
   final _teamSize = TextEditingController();
   final _normalCapacity = TextEditingController();
@@ -61,7 +62,7 @@ class _RentalApplicationScreenState extends State<RentalApplicationScreen> {
 
   @override
   void dispose() {
-    for (final controller in [_contact, _business, _mobile, _email, _serviceArea, _teamSize, _normalCapacity, _peakCapacity, _notes, _inventorySummary, _rentalTermsSummary, _cleaningReadinessSummary]) { controller.dispose(); }
+    for (final controller in [_contact, _business, _mobile, _email, _additionalContactNumbers, _serviceArea, _teamSize, _normalCapacity, _peakCapacity, _notes, _inventorySummary, _rentalTermsSummary, _cleaningReadinessSummary]) { controller.dispose(); }
     super.dispose();
   }
 
@@ -86,6 +87,7 @@ class _RentalApplicationScreenState extends State<RentalApplicationScreen> {
 
   void _hydrateApplication(PartnerApplication app) {
     _application = app; _contact.text = app.contactName ?? ''; _business.text = app.businessName ?? ''; _mobile.text = app.mobileE164 ?? ''; _email.text = app.email ?? '';
+    _additionalContactNumbers.text = app.additionalContactNumbers.join(', ');
     _hydrateBusiness(app); _hydrate(RentalPartnerDetails.fromOnboardingData(app.onboardingData));
   }
 
@@ -122,7 +124,8 @@ class _RentalApplicationScreenState extends State<RentalApplicationScreen> {
     if (app == null || accountId == null || profileId == null) { _message('Application context is unavailable.', true); return; }
     setState(() => _saving = true); var stage = 'basic details';
     try {
-      await PartnerService.updateDraft(applicationId: app.id, accountId: accountId, customerProfileId: profileId, contactName: _contact.text, businessName: _business.text, mobileE164: _mobile.text, email: _email.text);
+      await PartnerService.updateDraft(applicationId: app.id, accountId: accountId, customerProfileId: profileId, contactName: _contact.text, businessName: _business.text, mobileE164: _mobile.text, additionalContactNumbers: _additionalContactNumbers.text,
+ email: _email.text);
       stage = 'address and operating schedule';
       await PartnerService.updatePartnerBusinessDetails(applicationId: app.id, accountId: accountId, customerProfileId: profileId, partnerType: PartnerType.rental, workshopDetails: _businessDetails());
       stage = 'Rental Partner capabilities and operations';
@@ -151,7 +154,8 @@ class _RentalApplicationScreenState extends State<RentalApplicationScreen> {
     if (_error != null) return Scaffold(appBar: AppBar(title: const Text('Rental Partner Application')), body: Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!, textAlign: TextAlign.center))));
     return Scaffold(backgroundColor: AppColors.background, appBar: AppBar(title: const Text('Rental Partner Application'), centerTitle: true, elevation: 0), body: Form(key: _formKey, child: ListView(padding: const EdgeInsets.all(16), children: [
       PartnerApplicationStatusNotice(application: _application!, partnerLabel: 'Rental Partner'), const SizedBox(height: 14),
-      _card('Common Partner Details', 'Common identity and contact information.', [PartnerBasicDetailsSection(contactNameController: _contact, businessNameController: _business, mobileController: _mobile, emailController: _email, editable: _editable, description: 'Common Partner identity and contact information.', businessNameLabel: 'Rental business name')]), const SizedBox(height: 14),
+      _card('Common Partner Details', 'Common identity and contact information.', [PartnerBasicDetailsSection(contactNameController: _contact, businessNameController: _business, mobileController: _mobile, emailController: _email,
+                  additionalContactNumbersController: _additionalContactNumbers, editable: _editable, description: 'Common Partner identity and contact information.', businessNameLabel: 'Rental business name')]), const SizedBox(height: 14),
       _card('Business / Service Address', 'Provide the primary address and service area.', [AddressFormSection(key: ValueKey('rental-address-${_address.stateCode ?? _address.stateName ?? 'none'}-${_address.cityCode ?? _address.cityName ?? 'none'}'), metadataProvider: IndiaAddressMetadata.instance, initialValue: _address, enabled: _editable, sectionTitle: 'Business Address', addressLine1Label: 'Address', addressLine2Label: 'Address line 2', localityLabel: 'Locality or area', stateLabel: 'State', cityLabel: 'City', pincodeLabel: 'Pincode', addressLine1Required: true, addressLine2Required: false, localityRequired: false, landmarkRequired: false, stateRequired: true, cityRequired: true, pincodeRequired: true, showAddressLine2: true, showLocality: true, showLandmark: false, onChanged: (value) => _address = value), const SizedBox(height: 14), _field('Service-area pincodes', _serviceArea)]), const SizedBox(height: 14),
       _card('Operating Schedule', 'Select normal operating days and times.', [OperatingScheduleField(key: ValueKey('rental-schedule-${_schedule.normalizedOperatingDays.join('-')}-${_schedule.openingTime ?? 'none'}-${_schedule.closingTime ?? 'none'}'), initialValue: _schedule, enabled: _editable, operatingDaysRequired: true, openingTimeRequired: true, closingTimeRequired: true, requireClosingAfterOpening: true, sectionTitle: 'Operating Schedule', operatingDaysLabel: 'Operating days', openingTimeLabel: 'Opening time', closingTimeLabel: 'Closing time', onChanged: (value) => _schedule = value)]), const SizedBox(height: 14),
       _card('Rental Profile', 'Select rental categories, event inventory and fulfillment capabilities.', [CapabilityMultiSelector(metadataProvider: RentalPartnerCapabilityMetadata.instance, partnerCategoryCode: RentalPartnerCapabilityMetadata.categoryCode, initialValue: _capabilities, enabled: _editable, minimumSelectionCount: 0, requireOtherExpertiseDescription: false, sectionTitle: 'Rental Partner capabilities', onChanged: (value) => setState(() => _capabilities = value)), SwitchListTile.adaptive(contentPadding: EdgeInsets.zero, value: _trialFacilityAvailable, onChanged: _editable ? (value) => setState(() => _trialFacilityAvailable = value) : null, title: const Text('Trial facility available')), SwitchListTile.adaptive(contentPadding: EdgeInsets.zero, value: _homeTrialAvailable, onChanged: _editable ? (value) => setState(() => _homeTrialAvailable = value) : null, title: const Text('Home trial available')), SwitchListTile.adaptive(contentPadding: EdgeInsets.zero, value: _securityDepositRequired, onChanged: _editable ? (value) => setState(() => _securityDepositRequired = value) : null, title: const Text('Security deposit required')),]), const SizedBox(height: 14),

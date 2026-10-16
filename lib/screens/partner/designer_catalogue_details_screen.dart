@@ -7,6 +7,7 @@ import '../../models/catalogue_design.dart';
 import '../../models/catalogue_design_view.dart';
 import '../../services/designer_catalogue_access_service.dart';
 import '../../services/designer_catalogue_service.dart';
+import '../../widgets/catalogue/catalogue_view_candidates_panel.dart';
 
 class DesignerCatalogueDetailsScreen extends StatefulWidget {
   const DesignerCatalogueDetailsScreen({
@@ -117,6 +118,14 @@ class _DesignerCatalogueDetailsScreenState
                             ),
                           )
                           .toList(growable: false),
+                    ),
+                  ],
+                  if (bundle?.version.versionId.isNotEmpty == true) ...[
+                    const SizedBox(height: 18),
+                    CatalogueViewCandidatesPanel(
+                      designId: design.designId,
+                      versionId: bundle!.version.versionId,
+                      onSelected: () => setState(() {}),
                     ),
                   ],
                   const SizedBox(height: 14),

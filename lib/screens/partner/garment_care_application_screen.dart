@@ -41,6 +41,7 @@ class _GarmentCareApplicationScreenState
   final _businessNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
+  final _additionalContactNumbersController = TextEditingController();
 
   // Common Partner business location and schedule.
   AddressDetails _businessAddress = const AddressDetails();
@@ -86,6 +87,7 @@ class _GarmentCareApplicationScreenState
     _businessNameController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
+    _additionalContactNumbersController.dispose();
     _serviceAreaPincodesController.dispose();
     _experienceYearsController.dispose();
     _teamSizeController.dispose();
@@ -154,14 +156,13 @@ class _GarmentCareApplicationScreenState
 
       _accountId = accountId;
       _customerProfileId = customerProfileId;
-      _application = application;
-
-      _contactNameController.text =
+      _application = application; _contactNameController.text =
           application.contactName ?? (profileName.isEmpty ? '' : profileName);
       _businessNameController.text = application.businessName ?? '';
       _mobileController.text = application.mobileE164 ?? phone;
       _emailController.text =
           application.email ?? (profileEmail.isEmpty ? '' : profileEmail);
+      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
 
       _hydrateCommonBusiness(application);
       _hydrateGarmentCareDetails(
@@ -336,6 +337,8 @@ class _GarmentCareApplicationScreenState
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -399,11 +402,11 @@ class _GarmentCareApplicationScreenState
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application;
-    _contactNameController.text = application.contactName ?? '';
+    _application = application; _contactNameController.text = application.contactName ?? '';
     _businessNameController.text = application.businessName ?? '';
     _mobileController.text = application.mobileE164 ?? '';
     _emailController.text = application.email ?? '';
+    _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
     _hydrateCommonBusiness(application);
     _hydrateGarmentCareDetails(
       GarmentCarePartnerDetails.fromOnboardingData(application.onboardingData),
@@ -590,6 +593,7 @@ class _GarmentCareApplicationScreenState
                   businessNameController: _businessNameController,
                   mobileController: _mobileController,
                   emailController: _emailController,
+                  additionalContactNumbersController: _additionalContactNumbersController,
                   editable: _isEditable,
                   description:
                       'Common Partner identity and contact information.',

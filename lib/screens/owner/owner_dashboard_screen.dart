@@ -100,13 +100,25 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 .map((d) => DressOrder.fromFirestore(d.id, d.data()))
                 .toList()
               ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
+        final productionOrders = all
+            .where((order) => order.usesProductionAssignment)
+            .toList();
 
         setState(() {
-          _totalOrders = all.length;
-          _pendingOrders = all
-              .where((o) => o.status == OrderStatus.pending)
+          _totalOrders = productionOrders.length;
+          _pendingOrders = productionOrders
+              .where((order) => [
+                'searching',
+                'queued_for_dispatch',
+                'offered',
+                'needs_admin_follow_up',
+              ].contains(order.assignmentStatus))
               .length;
-          _recentOrders = all.take(3).toList();
+          _recentOrders = (productionOrders.isNotEmpty
+                  ? productionOrders
+                  : all)
+              .take(3)
+              .toList();
           _loadingOrders = false;
         });
       }
@@ -377,11 +389,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   Widget _buildStatRow() {
     final stats = [
       (
-        'Total Orders',
+        'Production Orders',
         '$_totalOrders',
         Icons.receipt_long_rounded,
         AppColors.primary,
-        () => context.push('/orders'),
+        () => context.push('/owner/order-routing'),
       ),
       (
         'Active Tailors',
@@ -391,11 +403,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         () => _showTailorsSheet(context),
       ),
       (
-        'Pending',
+        'Pending Routing',
         '$_pendingOrders',
         Icons.access_time_rounded,
         const Color(0xFFF5A623),
-        () => context.push('/orders'),
+        () => context.push('/owner/order-routing'),
       ),
     ];
     return Row(
@@ -702,6 +714,18 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         () => context.push('/owner/designs'),
       ),
       (
+        'Partner Catalogue Review',
+        Icons.rate_review_outlined,
+        const Color(0xFF673AB7),
+        () => context.push('/owner/catalogue'),
+      ),
+      (
+        'Customer Home Groups',
+        Icons.dashboard_customize_outlined,
+        const Color(0xFF009688),
+        () => context.push('/owner/customer-home'),
+      ),
+      (
         'Manage Rates',
         Icons.payments_rounded,
         AppColors.primary,
@@ -714,10 +738,16 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         () => context.push('/owner/payouts'),
       ),
       (
-        'All Orders',
+        'Order Routing by PIN',
         Icons.receipt_long_rounded,
         const Color(0xFF4CAF50),
-        () => context.push('/orders'),
+        () => context.push('/owner/order-routing'),
+      ),
+      (
+        'Support Requests',
+        Icons.support_agent_rounded,
+        const Color(0xFFAB47BC),
+        () => context.push('/owner/support-requests'),
       ),
       (
         'Partner Applications',

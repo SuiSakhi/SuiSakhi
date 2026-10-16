@@ -48,7 +48,7 @@ class FabricEstimationService {
     } else {
       meters = 3.0;
     }
-    
+
     double heightFactor = 1.0;
 
     if (body.height != null && body.height! > 0) {
@@ -107,8 +107,7 @@ class FabricEstimationService {
           'Dress customization added '
               '${customizationEstimate!.additionalFabricMeters.toStringAsFixed(2)} '
               'meters to the fabric allowance.',
-        if (customizationEstimate != null)
-          ...customizationEstimate.notes,
+        if (customizationEstimate != null) ...customizationEstimate.notes,
       ],
     );
   }

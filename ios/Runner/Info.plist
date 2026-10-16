@@ -27,7 +27,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>StitchSmart uses your camera to scan body pose and calculate measurements for tailoring</string>
+	<string>SuiSakhi uses your camera to capture fabric photos for design previews and optional tailoring measurements</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>StitchSmart needs photo access so you can set your profile picture and upload design images</string>
 	<key>CFBundleURLTypes</key>
@@ -38,6 +38,14 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>com.googleusercontent.apps.711179561782-lburh09oomnddita7ue09sti46lfo76o</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>suisakhi</string>
 			</array>
 		</dict>
 	</array>

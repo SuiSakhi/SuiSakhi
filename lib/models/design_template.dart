@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+import 'design_metadata.dart';
+
 enum DesignCatalogType { free, premium, customerUpload }
 
 class DesignTemplate {
@@ -14,6 +16,9 @@ class DesignTemplate {
     this.createdBy,
     this.ownerProfileId,
     this.isActive = true,
+    this.catalogueVersionId,
+    this.catalogueCommercialType,
+    this.constructionMetadata,
   });
 
   final String id;
@@ -52,6 +57,11 @@ class DesignTemplate {
   /// Inactive designs remain available for historical orders
   /// but should not appear in new catalog selections.
   final bool isActive;
+
+  /// Set only for a design selected from the Admin-published partner catalogue.
+  final String? catalogueVersionId;
+  final String? catalogueCommercialType;
+  final DesignMetadata? constructionMetadata;
 
   bool get isFree => catalogType == DesignCatalogType.free;
 

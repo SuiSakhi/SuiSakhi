@@ -65,12 +65,15 @@ class PartnerWorkshopDetails {
     this.addressLine2,
     this.locality,
     this.city,
+    this.cityCode,
     this.state,
+    this.stateCode,
     this.pincode,
     this.placeId,
     this.latitude,
     this.longitude,
     this.serviceAreaPincodes = const [],
+    this.serviceCoverageMode,
     this.operatingDays = const [],
     this.openingTime,
     this.closingTime,
@@ -90,7 +93,9 @@ class PartnerWorkshopDetails {
   final String? addressLine2;
   final String? locality;
   final String? city;
+  final String? cityCode;
   final String? state;
+  final String? stateCode;
   final String? pincode;
 
   /// Map provider place reference.
@@ -101,6 +106,11 @@ class PartnerWorkshopDetails {
   final double? longitude;
 
   final List<String> serviceAreaPincodes;
+
+  /// Tailor coverage is either citywide (ANY within the business city) or
+  /// limited to the explicit service-area pincodes. Other partner types may
+  /// leave this unset until they use the same matching rule.
+  final String? serviceCoverageMode;
   final List<String> operatingDays;
 
   /// Stored using 24-hour HH:mm format.
@@ -139,12 +149,16 @@ class PartnerWorkshopDetails {
       'addressLine2': addressLine2,
       'locality': locality,
       'city': city,
+      if (cityCode?.trim().isNotEmpty == true) 'cityCode': cityCode!.trim(),
       'state': state,
+      if (stateCode?.trim().isNotEmpty == true) 'stateCode': stateCode!.trim(),
       'pincode': pincode,
       'placeId': placeId,
       'latitude': latitude,
       'longitude': longitude,
       'serviceAreaPincodes': serviceAreaPincodes,
+      if (serviceCoverageMode?.trim().isNotEmpty == true)
+        'serviceCoverageMode': serviceCoverageMode!.trim(),
       'operatingDays': operatingDays,
       'openingTime': openingTime,
       'closingTime': closingTime,
@@ -166,12 +180,15 @@ class PartnerWorkshopDetails {
       addressLine2: data['addressLine2']?.toString(),
       locality: data['locality']?.toString(),
       city: data['city']?.toString(),
+      cityCode: data['cityCode']?.toString(),
       state: data['state']?.toString(),
+      stateCode: data['stateCode']?.toString(),
       pincode: data['pincode']?.toString(),
       placeId: data['placeId']?.toString(),
       latitude: _doubleFromValue(data['latitude']),
       longitude: _doubleFromValue(data['longitude']),
       serviceAreaPincodes: _stringListFromValue(data['serviceAreaPincodes']),
+      serviceCoverageMode: data['serviceCoverageMode']?.toString(),
       operatingDays: _stringListFromValue(data['operatingDays']),
       openingTime: data['openingTime']?.toString(),
       closingTime: data['closingTime']?.toString(),
@@ -227,6 +244,7 @@ class PartnerApplication {
     this.businessName,
     this.contactName,
     this.mobileE164,
+    this.additionalContactNumbers = const <String>[],
     this.email,
     this.submittedAt,
     this.reviewedAt,
@@ -272,6 +290,9 @@ class PartnerApplication {
 
   /// Normalized authenticated or verified mobile number.
   final String? mobileE164;
+
+  /// Optional non-login numbers the operations team may use to reach the Partner.
+  final List<String> additionalContactNumbers;
 
   /// Optional business or communication email.
   final String? email;
@@ -369,13 +390,13 @@ class PartnerApplication {
       return null;
     }
 
-    final tailor = extensions['tailor'];
+    final category = extensions[partnerType.name];
 
-    if (tailor is! Map) {
+    if (category is! Map) {
       return null;
     }
 
-    final workshop = tailor['workshopDetails'];
+    final workshop = category['workshopDetails'];
 
     if (workshop is! Map) {
       return null;
@@ -501,6 +522,7 @@ class PartnerApplication {
       'businessName': businessName,
       'contactName': contactName,
       'mobileE164': mobileE164,
+      'additionalContactNumbers': additionalContactNumbers,
       'email': email,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
@@ -551,6 +573,9 @@ class PartnerApplication {
       businessName: data['businessName']?.toString(),
       contactName: data['contactName']?.toString(),
       mobileE164: data['mobileE164']?.toString(),
+      additionalContactNumbers: _stringListFromValue(
+        data['additionalContactNumbers'],
+      ),
       email: data['email']?.toString(),
       createdAt: _dateFromValue(data['createdAt']) ?? DateTime.now(),
       updatedAt: _dateFromValue(data['updatedAt']) ?? DateTime.now(),
@@ -618,6 +643,14 @@ class PartnerApplication {
     }
 
     return Map<String, dynamic>.from(value);
+  }
+
+  static List<String> _stringListFromValue(dynamic value) {
+    if (value is! Iterable) return const <String>[];
+    return value
+        .map((item) => item?.toString().trim() ?? '')
+        .where((item) => item.isNotEmpty)
+        .toList(growable: false);
   }
 
   static Map<PartnerOnboardingSection, PartnerOnboardingSectionStatus>

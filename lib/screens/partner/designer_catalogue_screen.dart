@@ -73,10 +73,10 @@ class _DesignerCatalogueScreenState extends State<DesignerCatalogueScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         leading: IconButton(
-          tooltip: 'Back to Partner Profile',
+          tooltip: 'Back to Partner Account',
           onPressed: () {
             context.go(
-              '/partner/workspace'
+              '/partner/account'
               '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
               '&profileId=${Uri.encodeQueryComponent(widget.designerProfileId)}'
               '&category=designer',
@@ -88,10 +88,10 @@ class _DesignerCatalogueScreenState extends State<DesignerCatalogueScreen> {
         centerTitle: true,
         actions: [
           IconButton(
-            tooltip: 'Partner Workspace',
+            tooltip: 'Partner Account',
             onPressed: () {
               context.push(
-                '/partner/workspace'
+                '/partner/account'
                 '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
                 '&profileId=${Uri.encodeQueryComponent(widget.designerProfileId)}'
                 '&category=designer',

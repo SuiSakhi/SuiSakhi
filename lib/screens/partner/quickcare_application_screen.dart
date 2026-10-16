@@ -36,6 +36,7 @@ class _QuickCareApplicationScreenState
   final _business = TextEditingController();
   final _mobile = TextEditingController();
   final _email = TextEditingController();
+  final _additionalContactNumbers = TextEditingController();
   final _serviceArea = TextEditingController();
   final _experience = TextEditingController();
   final _experienceSummary = TextEditingController();
@@ -121,7 +122,7 @@ class _QuickCareApplicationScreenState
       _contact,
       _business,
       _mobile,
-      _email,
+      _email, _additionalContactNumbers,
       _serviceArea,
       _experience,
       _experienceSummary,
@@ -199,11 +200,11 @@ class _QuickCareApplicationScreenState
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application;
-    _contact.text = application.contactName ?? '';
+    _application = application; _contact.text = application.contactName ?? '';
     _business.text = application.businessName ?? '';
     _mobile.text = application.mobileE164 ?? '';
     _email.text = application.email ?? '';
+    _additionalContactNumbers.text = application.additionalContactNumbers.join(', ');
     _hydrateCommonBusiness(application);
     _hydrate(
       QuickCarePartnerDetails.fromOnboardingData(application.onboardingData),
@@ -333,6 +334,8 @@ class _QuickCareApplicationScreenState
         contactName: _contact.text,
         businessName: _business.text,
         mobileE164: _mobile.text,
+        additionalContactNumbers: _additionalContactNumbers.text,
+
         email: _email.text,
       );
 
@@ -553,6 +556,7 @@ class _QuickCareApplicationScreenState
                   businessNameController: _business,
                   mobileController: _mobile,
                   emailController: _email,
+                  additionalContactNumbersController: _additionalContactNumbers,
                   editable: _editable,
                   description:
                       'Common Partner identity and contact information.',

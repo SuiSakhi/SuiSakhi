@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
 import '../core/app_state.dart';
 import '../models/payment_models.dart';
 import 'payout_config_service.dart';
+import 'order_lifecycle_service.dart';
 import 'whatsapp_notify_service.dart';
 
 /// Marks advance as paid, writes payout ledger, optional WhatsApp ping.
@@ -52,6 +54,35 @@ class PaymentCompletionService {
           'Razorpay server setup.';
     }
 
+    if (data['assignmentVersion'] == 'v1') {
+      if (data['assignmentStatus'] != 'awaiting_customer_decision') {
+        return 'This order is not waiting for your decision.';
+      }
+      final deadline = data['customerDecisionExpiresAt'];
+      if (deadline is Timestamp && deadline.toDate().isBefore(DateTime.now())) {
+        return 'The customer decision deadline has passed. Please contact SuiSakhi support.';
+      }
+      try {
+        await FirebaseFunctions.instance
+            .httpsCallable('completeSandboxOrderAdvance')
+            .call({
+              'orderId': orderId,
+              'paymentMethod': method.name,
+            });
+      } on FirebaseFunctionsException catch (error) {
+        return error.message ?? 'Could not complete the advance payment.';
+      } catch (_) {
+        return 'Could not complete the advance payment. Please retry.';
+      }
+
+      final dressType = data['dressType'] as String? ?? 'Order';
+      await WhatsAppNotifyService.tryNotifyOrderPlaced(
+        dressType: dressType,
+        userOptIn: AppState.instance.profile?.notifyWhatsApp ?? true,
+      );
+      return null;
+    }
+
     final advance = (data['advanceAmount'] as num?)?.toDouble() ?? 0;
     if (advance <= 0) return 'Invalid advance amount.';
 
@@ -80,6 +111,36 @@ class PaymentCompletionService {
     );
 
     return null;
+  }
+
+  static Future<String?> completeBalancePayment({
+    required String orderId,
+    required OnlinePaymentMethod method,
+  }) async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return 'Sign in to pay.';
+    final snapshot = await _db.collection('orders').doc(orderId).get();
+    if (!snapshot.exists || snapshot.get('customerId') != uid) {
+      return 'This order does not belong to you.';
+    }
+    final data = snapshot.data() ?? const <String, dynamic>{};
+    if (data['assignmentVersion'] != 'v1' ||
+        data['status'] != 'readyForPickup' ||
+        data['paymentStatus'] != 'advancePaid') {
+      return 'The remaining payment becomes available when the order is ready for delivery.';
+    }
+    final config = await PayoutConfigService.fetch();
+    if (!config.sandboxMode) {
+      return 'Live card/UPI is not enabled yet. Complete the payment gateway setup first.';
+    }
+    try {
+      await OrderLifecycleService.payBalance(orderId: orderId, method: method);
+      return null;
+    } on FirebaseFunctionsException catch (error) {
+      return error.message ?? 'Could not complete the remaining payment.';
+    } catch (_) {
+      return 'Could not complete the remaining payment. Please retry.';
+    }
   }
 
   static List<OrderPayoutLine> _applyUpiOverride(

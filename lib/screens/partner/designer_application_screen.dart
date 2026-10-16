@@ -56,6 +56,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
   final _businessNameController = TextEditingController();
   final _mobileController = TextEditingController();
   final _emailController = TextEditingController();
+  final _additionalContactNumbersController = TextEditingController();
 
   // ==========================================================================
   // DESIGNER PARTNER EXTENSION
@@ -128,6 +129,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
     _businessNameController.dispose();
     _mobileController.dispose();
     _emailController.dispose();
+    _additionalContactNumbersController.dispose();
 
     _professionalTypeController.dispose();
     _experienceYearsController.dispose();
@@ -239,6 +241,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
           (_emailController.text.trim().isEmpty
               ? profileEmail
               : _emailController.text);
+      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
 
       // DESIGNER EXTENSION
       final details = DesignerPartnerDetails.fromOnboardingData(
@@ -254,8 +257,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
       setState(() {
         _accountId = accountId;
         _customerProfileId = customerProfileId;
-        _application = application;
-        _loading = false;
+        _application = application; _loading = false;
         _loadError = null;
       });
     } catch (error) {
@@ -361,6 +363,8 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -437,6 +441,8 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
         contactName: _contactNameController.text,
         businessName: _businessNameController.text,
         mobileE164: _mobileController.text,
+        additionalContactNumbers: _additionalContactNumbersController.text,
+
         email: _emailController.text,
       );
 
@@ -846,11 +852,11 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application;
-    _contactNameController.text = application.contactName ?? '';
+    _application = application; _contactNameController.text = application.contactName ?? '';
     _businessNameController.text = application.businessName ?? '';
     _mobileController.text = application.mobileE164 ?? '';
     _emailController.text = application.email ?? '';
+    _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
     _hydrateDesignerDetails(
       DesignerPartnerDetails.fromOnboardingData(application.onboardingData),
     );
@@ -1033,6 +1039,7 @@ class _DesignerApplicationScreenState extends State<DesignerApplicationScreen> {
               businessNameController: _businessNameController,
               mobileController: _mobileController,
               emailController: _emailController,
+                  additionalContactNumbersController: _additionalContactNumbersController,
               editable: _isEditable,
               description:
                   'These details will be used for your Designer Partner '

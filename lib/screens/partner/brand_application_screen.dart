@@ -53,6 +53,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
   final _business = TextEditingController();
   final _mobile = TextEditingController();
   final _email = TextEditingController();
+  final _additionalContactNumbers = TextEditingController();
 
   // ---------------------------------------------------------------------------
   // COMMON PARTNER FOUNDATION: BUSINESS LOCATION / SCHEDULE
@@ -106,7 +107,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
       _contact,
       _business,
       _mobile,
-      _email,
+      _email, _additionalContactNumbers,
       _serviceArea,
       _specialization,
       _experience,
@@ -184,6 +185,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
           application.email ??
           (customer?['email'] ?? user.email)?.toString() ??
           '';
+    _additionalContactNumbers.text = application.additionalContactNumbers.join(', ');
 
       _hydrateCommonBusiness(application);
       _hydrate(
@@ -195,8 +197,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
       setState(() {
         _accountId = accountId;
         _customerProfileId = customerProfileId;
-        _application = application;
-        _loading = false;
+        _application = application; _loading = false;
         _error = null;
       });
     } catch (error) {
@@ -361,6 +362,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
         contactName: _contact.text,
         businessName: _business.text,
         mobileE164: _mobile.text,
+        additionalContactNumbers: _additionalContactNumbers.text,
         email: _email.text,
       );
 
@@ -407,11 +409,11 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application;
-    _contact.text = application.contactName ?? '';
+    _application = application; _contact.text = application.contactName ?? '';
     _business.text = application.businessName ?? '';
     _mobile.text = application.mobileE164 ?? '';
     _email.text = application.email ?? '';
+    _additionalContactNumbers.text = application.additionalContactNumbers.join(', ');
     _hydrateCommonBusiness(application);
     _hydrate(
       BrandPartnerDetails.fromOnboardingData(application.onboardingData),
@@ -586,6 +588,7 @@ class _BrandApplicationScreenState extends State<BrandApplicationScreen> {
                   businessNameController: _business,
                   mobileController: _mobile,
                   emailController: _email,
+                  additionalContactNumbersController: _additionalContactNumbers,
                   editable: _editable,
                   description:
                       'Common Partner identity and contact information.',

@@ -12,6 +12,8 @@ import '../../widgets/partner_workspace/partner_workspace_header.dart';
 import '../../widgets/partner_workspace/partner_workspace_menu_tile.dart';
 import '../../widgets/partner_workspace/partner_workspace_section.dart';
 import '../profile/profile_selection_screen.dart';
+import 'measurement_partner_assignments_screen.dart';
+import 'store_product_management_screen.dart';
 
 class PartnerWorkspaceScreen extends StatefulWidget {
   const PartnerWorkspaceScreen({
@@ -19,11 +21,13 @@ class PartnerWorkspaceScreen extends StatefulWidget {
     required this.accountId,
     required this.partnerProfileId,
     this.partnerCategoryCode,
+    this.showAccountCenter = false,
   });
 
   final String accountId;
   final String partnerProfileId;
   final String? partnerCategoryCode;
+  final bool showAccountCenter;
 
   @override
   State<PartnerWorkspaceScreen> createState() => _PartnerWorkspaceScreenState();
@@ -157,7 +161,10 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
     );
   }
 
-  Future<void> _openModule(PartnerWorkspaceModule module) async {
+  Future<void> _openModule(
+    PartnerWorkspaceModule module,
+    PartnerWorkspaceProfile profile,
+  ) async {
     switch (module.route) {
       case 'profile':
         await context.push('/partner/profile$_query');
@@ -170,6 +177,16 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         return;
       case 'designer-catalogue':
         await context.push('/partner/designer/catalogue$_query');
+        return;
+      case 'measurement-assignments':
+        await context.push('/partner/measurement/assignments$_query');
+        return;
+      case 'store-products':
+        await context.push(
+          '/partner/store$_query'
+          '&partnerType=${Uri.encodeQueryComponent(profile.partnerType)}'
+          '&sellerName=${Uri.encodeQueryComponent(profile.businessDisplayName)}',
+        );
         return;
       case 'change-profile':
         await _changeProfile();
@@ -226,12 +243,47 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         final definition = PartnerWorkspaceRegistry.definitionFor(
           profile.partnerType,
         );
+        final isMeasurementPartner =
+            profile.partnerType == 'measurementPartner';
+        if (isMeasurementPartner && !widget.showAccountCenter) {
+          return MeasurementPartnerAssignmentsScreen(
+            accountId: widget.accountId,
+            profileId: widget.partnerProfileId,
+            partnerName: profile.businessDisplayName,
+          );
+        }
+        if (!widget.showAccountCenter &&
+            (profile.partnerType == 'brand' ||
+                profile.partnerType == 'boutique')) {
+          return StoreProductManagementScreen(
+            accountId: widget.accountId,
+            profileId: widget.partnerProfileId,
+            partnerType: profile.partnerType,
+            sellerName: profile.businessDisplayName,
+          );
+        }
 
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(
-            title: const Text('Partner Workspace'),
             centerTitle: true,
+            title: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  widget.showAccountCenter
+                      ? 'Partner Account'
+                      : 'Partner Workspace',
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+                Text(
+                  profile.businessDisplayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ],
+            ),
           ),
           body: RefreshIndicator(
             onRefresh: _refresh,
@@ -251,7 +303,7 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
                         PartnerWorkspaceMenuTile(
                           module: module,
                           onTap: module.isEnabled
-                              ? () => _openModule(module)
+                              ? () => _openModule(module, profile)
                               : () => _showComingSoon(module),
                         ),
                     ],

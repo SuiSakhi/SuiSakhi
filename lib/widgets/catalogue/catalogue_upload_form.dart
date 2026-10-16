@@ -134,7 +134,7 @@ class _CatalogueUploadFormState extends State<CatalogueUploadForm> {
             title: 'Design Views',
             description:
                 'Add 1 to 10 images. Select exactly one Primary View. '
-                'Front, Combined Front + Back, and Single View can be Primary.',
+                'Front, Back, Combined Front + Back, and Single View can be Primary.',
             children: [
               CatalogueViewUploadSection(
                 enabled: widget.enabled,

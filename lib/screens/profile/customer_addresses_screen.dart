@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/app_state.dart';
+import '../../core/metadata/india_address_metadata.dart';
 
 class CustomerAddressesScreen extends StatefulWidget {
   const CustomerAddressesScreen({super.key});
@@ -433,7 +434,9 @@ class _CustomerAddress {
   final String addressLine2;
   final String landmark;
   final String city;
+  final String? cityCode;
   final String state;
+  final String? stateCode;
   final String pincode;
   final bool isDefault;
 
@@ -446,7 +449,9 @@ class _CustomerAddress {
     required this.addressLine2,
     required this.landmark,
     required this.city,
+    this.cityCode,
     required this.state,
+    this.stateCode,
     required this.pincode,
     required this.isDefault,
   });
@@ -460,7 +465,9 @@ class _CustomerAddress {
     String? addressLine2,
     String? landmark,
     String? city,
+    String? cityCode,
     String? state,
+    String? stateCode,
     String? pincode,
     bool? isDefault,
   }) {
@@ -473,7 +480,9 @@ class _CustomerAddress {
       addressLine2: addressLine2 ?? this.addressLine2,
       landmark: landmark ?? this.landmark,
       city: city ?? this.city,
+      cityCode: cityCode ?? this.cityCode,
       state: state ?? this.state,
+      stateCode: stateCode ?? this.stateCode,
       pincode: pincode ?? this.pincode,
       isDefault: isDefault ?? this.isDefault,
     );
@@ -488,7 +497,9 @@ class _CustomerAddress {
         'addressLine2': addressLine2,
         'landmark': landmark,
         'city': city,
+        if (cityCode?.trim().isNotEmpty == true) 'cityCode': cityCode,
         'state': state,
+        if (stateCode?.trim().isNotEmpty == true) 'stateCode': stateCode,
         'pincode': pincode,
         'isDefault': isDefault,
         'status': 'active',
@@ -510,7 +521,9 @@ class _CustomerAddress {
       addressLine2: data['addressLine2']?.toString() ?? '',
       landmark: data['landmark']?.toString() ?? '',
       city: data['city']?.toString() ?? '',
+      cityCode: data['cityCode']?.toString(),
       state: data['state']?.toString() ?? '',
+      stateCode: data['stateCode']?.toString(),
       pincode: data['pincode']?.toString() ?? '',
       isDefault: data['isDefault'] == true,
     );
@@ -652,7 +665,18 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
       addressLine2: _line2Ctrl.text.trim(),
       landmark: _landmarkCtrl.text.trim(),
       city: _cityCtrl.text.trim(),
+      cityCode: IndiaAddressMetadata.instance.cityCodeForLabel(
+        stateCode: IndiaAddressMetadata.instance.stateCodeForLabel(
+              _stateCtrl.text,
+            ) ??
+            'MH',
+        cityLabel: _cityCtrl.text.trim(),
+      ),
       state: _stateCtrl.text.trim(),
+      stateCode: IndiaAddressMetadata.instance.stateCodeForLabel(
+            _stateCtrl.text,
+          ) ??
+          'MH',
       pincode: _pincodeCtrl.text.trim(),
       isDefault: _isDefault,
     );

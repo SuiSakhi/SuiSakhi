@@ -2,12 +2,7 @@ import 'package:flutter/material.dart';
 
 /// PRD-aligned taxonomy (scope_Tailoring0.2): occasions, modules, quick-fix SKUs.
 
-enum OrderModuleType {
-  coreTailoring,
-  quickFix,
-  bulkOrder,
-  marketplace,
-}
+enum OrderModuleType { coreTailoring, quickFix, bulkOrder, marketplace }
 
 OrderModuleType orderModuleTypeFromFirestore(String? raw) {
   if (raw == null || raw.isEmpty) return OrderModuleType.coreTailoring;
@@ -74,7 +69,6 @@ extension OccasionCategoryApi on OccasionCategory {
     }
   }
 }
-
 
 /// PRD Step 2 — Ladies row.
 const List<OccasionCategory> kLadiesOccasions = [
@@ -201,6 +195,12 @@ class ShopExploreCategory {
 
   static const List<ShopExploreCategory> items = [
     ShopExploreCategory(
+      id: 'ready_to_wear',
+      title: 'Ready-to-wear & boutique collections',
+      subtitle: 'Branded garments and curated clothing',
+      icon: Icons.storefront_outlined,
+    ),
+    ShopExploreCategory(
       id: 'rent',
       title: 'Rent outfits',
       subtitle: 'Fancy dress, dance, occasions',
@@ -235,6 +235,12 @@ class ShopExploreCategory {
       title: 'T-shirt printing',
       subtitle: 'Custom prints',
       icon: Icons.print_outlined,
+    ),
+    ShopExploreCategory(
+      id: 'garment_care',
+      title: 'Garment Care',
+      subtitle: 'Laundry, dry cleaning, pressing and fabric care',
+      icon: Icons.local_laundry_service_outlined,
     ),
   ];
 }

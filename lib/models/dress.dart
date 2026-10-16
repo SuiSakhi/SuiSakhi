@@ -79,20 +79,108 @@ class DressOrder {
   final DateTime? deliveryDate;
   final double price;
   final String? fabricDescription;
+  final String? designTemplateTitle;
+  final String? designImageUrl;
+  final String? designDescription;
+  final String? catalogueVersionId;
+  final String? catalogueCommercialType;
+  final double approvedDesignCharge;
+  final String? fabricChoice;
+  final String? fabricImageUrl;
+  final Map<String, dynamic>? customerFabricAssets;
+  final Map<String, dynamic>? fabricPurchaseEstimate;
+  final Map<String, dynamic>? fabricRequirementReview;
   final String? customerId;
+  final String? customerPhone;
   final String? deliveryAddress;
   final String? deliveryPartnerId;
   final double deliveryFee;
   final PaymentStatus paymentStatus;
+
+  /// Production assignment is separate from the fulfillment [status].
+  final String? assignmentVersion;
+  final String? assignmentStatus;
+  final String? orderTrackingId;
+  final String? measurementStatus;
+  final String? measurementMethod;
+  final String? measurementPartnerAccountId;
+  final String? measurementPartnerProfileId;
+  final String? measurementPartnerName;
+  final DateTime? measurementAppointmentAt;
+  final String? measurementAppointmentLink;
+  final String? measurementNotes;
+  final String? measurementSubmissionStatus;
+  final Map<String, String>? measurementSubmittedValues;
+  final String? measurementSubmittedUnit;
+  final String? measurementPartnerCompletionNote;
+  final DateTime? measurementAppointmentScheduledAt;
+  final DateTime? measurementPartnerCompletedAt;
+  final DateTime? measurementConfirmedAt;
+  final String? inboundPickupStatus;
+  final DateTime? inboundPickupAssignedAt;
+  final DateTime? inboundPickupCollectedAt;
+  final DateTime? inboundPickupReceivedAt;
+  final String? inboundPickupPartnerType;
+  final String? inboundPickupPartnerAccountId;
+  final String? inboundPickupPartnerProfileId;
+  final String? inboundPickupPartnerName;
+  final String? inboundPickupPartnerPhone;
+  final String? inboundPickupPhotoPath;
+  final String? outboundHandoverStatus;
+  final DateTime? outboundHandoverAssignedAt;
+  final DateTime? outboundHandoverAcceptedAt;
+  final String? outboundHandoverPartnerType;
+  final String? outboundHandoverPartnerAccountId;
+  final String? outboundHandoverPartnerProfileId;
+  final String? deliveryPartnerType;
+  final String? deliveryPartnerAccountId;
+  final String? deliveryPartnerProfileId;
+  final String? deliveryPartnerName;
+  final String? deliveryPartnerPhone;
+  final Map<String, dynamic>? garmentRecordDraft;
+  final Map<String, dynamic>? garmentRecord;
+  final DateTime? garmentRecordPublishedAt;
+  final String? assignedTailorName;
+  final String? adminQueueReason;
+  final DateTime? nextDispatchAt;
+  final DateTime? customerDecisionExpiresAt;
+  final DateTime? orderFinalizedAt;
+  final DateTime? expectedReadyAt;
+  final DateTime? deliveredAt;
+  final DateTime? closedAt;
+  final DateTime? warrantyEndsAt;
+  final DateTime? warrantyIssueReportedAt;
+  final DateTime? feedbackSubmittedAt;
+  final int? feedbackRating;
+  final String? feedbackText;
+  final String? warrantyClaimStatus;
+  final String? warrantyIssueDescription;
+  final String? warrantyResolution;
+  final double cancellationFeeAmount;
+  final double cancellationFeePercent;
+  final double cancellationRefundDue;
+  final double cancellationFeeOutstanding;
+  final bool cancellationFeeWaived;
+
+  /// Shared account/profile ownership for new orders. Older documents may omit these.
+  final String? customerAccountId;
+  final String? customerProfileId;
+
+  /// Delivery-area snapshot used for Partner service-area eligibility.
+  final String? deliveryPincode;
+
   /// PRD Step 11 — advance share (30–50%). Persisted for payment breakdown.
   final int advancePercent;
   final double advanceAmount;
   final double balanceAmount;
+
   /// PRD module: core tailoring, quick fix, bulk, or marketplace referral.
   final OrderModuleType orderModuleType;
+
   /// PRD occasion (e.g. dailyWear) when [orderModuleType] is core.
   final String? occasionCategory;
   final bool kidsFlow;
+
   /// Core tailoring: selected person/customer name, fit, structured measurements, free-form notes (Firestore).
   final String? clientName;
 
@@ -102,6 +190,7 @@ class DressOrder {
   final String? personId;
   final String? personName;
   final String? relationship;
+
   /// Bulk order / event consultation snapshot fields.
   final String? requestedByName;
   final String? eventType;
@@ -111,6 +200,7 @@ class DressOrder {
   final String? fit;
   final Map<String, String>? measurements;
   final String? notes;
+
   /// After online advance: how much was charged and provider metadata.
   final double? amountPaid;
   final DateTime? paidAt;
@@ -127,12 +217,90 @@ class DressOrder {
     this.deliveryDate,
     required this.price,
     this.fabricDescription,
+    this.designTemplateTitle,
+    this.designImageUrl,
+    this.designDescription,
+    this.catalogueVersionId,
+    this.catalogueCommercialType,
+    this.approvedDesignCharge = 0,
+    this.fabricChoice,
+    this.fabricImageUrl,
+    this.customerFabricAssets,
+    this.fabricPurchaseEstimate,
+    this.fabricRequirementReview,
     this.customerId,
+    this.customerPhone,
     this.deliveryAddress,
     this.deliveryPartnerId,
     this.deliveryFee = 0,
     this.paymentStatus = PaymentStatus.unpaid,
-    this.advancePercent = 40,
+    this.assignmentVersion,
+    this.assignmentStatus,
+    this.orderTrackingId,
+    this.measurementStatus,
+    this.measurementMethod,
+    this.measurementPartnerAccountId,
+    this.measurementPartnerProfileId,
+    this.measurementPartnerName,
+    this.measurementAppointmentAt,
+    this.measurementAppointmentLink,
+    this.measurementNotes,
+    this.measurementSubmissionStatus,
+    this.measurementSubmittedValues,
+    this.measurementSubmittedUnit,
+    this.measurementPartnerCompletionNote,
+    this.measurementAppointmentScheduledAt,
+    this.measurementPartnerCompletedAt,
+    this.measurementConfirmedAt,
+    this.inboundPickupStatus,
+    this.inboundPickupAssignedAt,
+    this.inboundPickupCollectedAt,
+    this.inboundPickupReceivedAt,
+    this.inboundPickupPartnerType,
+    this.inboundPickupPartnerAccountId,
+    this.inboundPickupPartnerProfileId,
+    this.inboundPickupPartnerName,
+    this.inboundPickupPartnerPhone,
+    this.inboundPickupPhotoPath,
+    this.outboundHandoverStatus,
+    this.outboundHandoverAssignedAt,
+    this.outboundHandoverAcceptedAt,
+    this.outboundHandoverPartnerType,
+    this.outboundHandoverPartnerAccountId,
+    this.outboundHandoverPartnerProfileId,
+    this.deliveryPartnerType,
+    this.deliveryPartnerAccountId,
+    this.deliveryPartnerProfileId,
+    this.deliveryPartnerName,
+    this.deliveryPartnerPhone,
+    this.garmentRecordDraft,
+    this.garmentRecord,
+    this.garmentRecordPublishedAt,
+    this.assignedTailorName,
+    this.adminQueueReason,
+    this.nextDispatchAt,
+    this.customerDecisionExpiresAt,
+    this.orderFinalizedAt,
+    this.expectedReadyAt,
+    this.deliveredAt,
+    this.closedAt,
+    this.warrantyEndsAt,
+    this.warrantyIssueReportedAt,
+    this.feedbackSubmittedAt,
+    this.feedbackRating,
+    this.feedbackText,
+    this.warrantyClaimStatus,
+    this.warrantyIssueDescription,
+    this.warrantyResolution,
+    this.cancellationFeeAmount = 0,
+    this.cancellationFeePercent = 10,
+    this.cancellationRefundDue = 0,
+    this.cancellationFeeOutstanding = 0,
+    this.cancellationFeeWaived = false,
+    this.customerAccountId,
+    this.customerProfileId,
+    this.deliveryPincode,
+    this.advancePercent = 50,
     this.advanceAmount = 0,
     this.balanceAmount = 0,
     this.orderModuleType = OrderModuleType.coreTailoring,
@@ -160,8 +328,8 @@ class DressOrder {
     final name = (personName?.trim().isNotEmpty == true)
         ? personName!.trim()
         : (clientName?.trim().isNotEmpty == true)
-            ? clientName!.trim()
-            : '';
+        ? clientName!.trim()
+        : '';
 
     final rel = relationship?.trim() ?? '';
 
@@ -175,6 +343,53 @@ class DressOrder {
 
     return name;
   }
+
+  String? get customerFabricPhotoPath =>
+      _dynamicMapFromFirestore(customerFabricAssets?['fabricPhoto'])?['storagePath']
+          ?.toString();
+
+  String? get customerFabricPreviewPath =>
+      _dynamicMapFromFirestore(customerFabricAssets?['selectedPreview'])?['storagePath']
+          ?.toString();
+
+  List<Map<String, dynamic>> get customerFabricPreviewAssets {
+    final rawPreviews = customerFabricAssets?['previews'];
+    final previews = rawPreviews is Iterable
+        ? rawPreviews
+              .whereType<Map>()
+              .map(
+                (preview) => Map<String, dynamic>.fromEntries(
+                  preview.entries.map(
+                    (entry) => MapEntry(entry.key.toString(), entry.value),
+                  ),
+                ),
+              )
+              .where(
+                (preview) =>
+                    preview['storagePath']?.toString().trim().isNotEmpty ==
+                    true,
+              )
+              .toList(growable: false)
+        : const <Map<String, dynamic>>[];
+    if (previews.isNotEmpty) return previews;
+    final selectedPreview =
+        _dynamicMapFromFirestore(customerFabricAssets?['selectedPreview']);
+    return selectedPreview?['storagePath']?.toString().trim().isNotEmpty == true
+        ? [selectedPreview!]
+        : const [];
+  }
+
+  bool get usesProductionAssignment => assignmentVersion == 'v1';
+
+  bool get canCancelBeforeStitching =>
+      usesProductionAssignment &&
+      status != OrderStatus.inStitching &&
+      status != OrderStatus.qcPending &&
+      status != OrderStatus.qcPassed &&
+      status != OrderStatus.readyForPickup &&
+      status != OrderStatus.outForDelivery &&
+      status != OrderStatus.delivered &&
+      status != OrderStatus.cancelled;
 
   String get requestedByText {
     final name = requestedByName?.trim();
@@ -224,6 +439,13 @@ class DressOrder {
     return out.isEmpty ? null : out;
   }
 
+  static Map<String, dynamic>? _dynamicMapFromFirestore(dynamic raw) {
+    if (raw == null || raw is! Map) return null;
+    return Map<String, dynamic>.fromEntries(
+      raw.entries.map((entry) => MapEntry(entry.key.toString(), entry.value)),
+    );
+  }
+
   static PaymentStatus _parsePaymentStatus(String? s) {
     switch (s) {
       case 'pending_payment':
@@ -242,16 +464,25 @@ class DressOrder {
     final rawStatus = data['status'] as String? ?? 'pending';
     final migrated = rawStatus == 'inProgress' ? 'inStitching' : rawStatus;
     final price = (data['price'] as num?)?.toDouble() ?? 0;
-    final advPct = (data['advancePercent'] as num?)?.round() ?? 40;
+    final advPct = (data['advancePercent'] as num?)?.round() ?? 50;
     final advAmt = (data['advanceAmount'] as num?)?.toDouble();
     final balAmt = (data['balanceAmount'] as num?)?.toDouble();
     final computedAdvance = advAmt ?? (price * advPct / 100.0);
-    final computedBalance = balAmt ?? (price - computedAdvance).clamp(0.0, double.infinity);
+    final computedBalance =
+        balAmt ?? (price - computedAdvance).clamp(0.0, double.infinity);
+    final customerFabricAssets =
+        _dynamicMapFromFirestore(data['customerFabricAssets']);
     return DressOrder(
       id: id,
       dressType: data['dressType'] as String? ?? '',
       tailorName: data['tailorName'] as String? ?? '',
       customerId: data['customerId'] as String?,
+      customerPhone:
+          (data['customerPhone'] ??
+                  data['warrantyCustomerPhone'] ??
+                  data['phone'] ??
+                  data['mobileE164'])
+              as String?,
       status: OrderStatus.values.firstWhere(
         (s) => s.name == migrated,
         orElse: () => OrderStatus.pending,
@@ -260,14 +491,125 @@ class DressOrder {
       deliveryDate: (data['deliveryDate'] as Timestamp?)?.toDate(),
       price: price,
       fabricDescription: data['fabricDescription'] as String?,
+      designTemplateTitle: data['designTemplateTitle'] as String?,
+      designImageUrl: data['designImageUrl'] as String?,
+      designDescription: data['designDescription'] as String?,
+      catalogueVersionId: data['catalogueVersionId'] as String?,
+      catalogueCommercialType: data['catalogueCommercialType'] as String?,
+      approvedDesignCharge:
+          (data['approvedDesignCharge'] as num?)?.toDouble() ?? 0,
+      fabricChoice: data['fabricChoice'] as String?,
+      fabricImageUrl:
+          (data['fabricImageUrl'] ?? data['materialImageUrl']) as String?,
+      customerFabricAssets: customerFabricAssets,
+      fabricPurchaseEstimate:
+          _dynamicMapFromFirestore(data['fabricPurchaseEstimate']),
+      fabricRequirementReview:
+          _dynamicMapFromFirestore(data['fabricRequirementReview']),
       deliveryAddress: _parseOrderDeliveryAddress(data['deliveryAddress']),
       deliveryPartnerId: data['deliveryPartnerId'] as String?,
       deliveryFee: (data['deliveryFee'] as num?)?.toDouble() ?? 0,
       paymentStatus: _parsePaymentStatus(data['paymentStatus'] as String?),
+      assignmentVersion: data['assignmentVersion'] as String?,
+      assignmentStatus: data['assignmentStatus'] as String?,
+      orderTrackingId: data['orderTrackingId'] as String?,
+      measurementStatus: data['measurementStatus'] as String?,
+      measurementMethod: data['measurementMethod'] as String?,
+      measurementPartnerAccountId:
+          data['measurementPartnerAccountId'] as String?,
+      measurementPartnerProfileId:
+          data['measurementPartnerProfileId'] as String?,
+      measurementPartnerName: data['measurementPartnerName'] as String?,
+      measurementAppointmentAt: (data['measurementAppointmentAt'] as Timestamp?)
+          ?.toDate(),
+      measurementAppointmentLink: data['measurementAppointmentLink'] as String?,
+      measurementNotes: data['measurementNotes'] as String?,
+      measurementSubmissionStatus:
+          data['measurementSubmissionStatus'] as String?,
+      measurementSubmittedValues: _stringMapFromFirestore(
+        data['measurementSubmittedValues'],
+      ),
+      measurementSubmittedUnit: data['measurementSubmittedUnit'] as String?,
+      measurementPartnerCompletionNote:
+          data['measurementPartnerCompletionNote'] as String?,
+      measurementAppointmentScheduledAt:
+          (data['measurementAppointmentScheduledAt'] as Timestamp?)?.toDate(),
+      measurementPartnerCompletedAt:
+          (data['measurementPartnerCompletedAt'] as Timestamp?)?.toDate(),
+      measurementConfirmedAt: (data['measurementConfirmedAt'] as Timestamp?)
+          ?.toDate(),
+      inboundPickupStatus: data['inboundPickupStatus'] as String?,
+      inboundPickupAssignedAt: (data['inboundPickupAssignedAt'] as Timestamp?)
+          ?.toDate(),
+      inboundPickupCollectedAt: (data['inboundPickupCollectedAt'] as Timestamp?)
+          ?.toDate(),
+      inboundPickupReceivedAt: (data['inboundPickupReceivedAt'] as Timestamp?)
+          ?.toDate(),
+      inboundPickupPartnerType: data['inboundPickupPartnerType'] as String?,
+      inboundPickupPartnerAccountId:
+          data['inboundPickupPartnerAccountId'] as String?,
+      inboundPickupPartnerProfileId:
+          data['inboundPickupPartnerProfileId'] as String?,
+      inboundPickupPartnerName: data['inboundPickupPartnerName'] as String?,
+      inboundPickupPartnerPhone: data['inboundPickupPartnerPhone'] as String?,
+      inboundPickupPhotoPath: data['inboundPickupPhotoPath'] as String?,
+      outboundHandoverStatus: data['outboundHandoverStatus'] as String?,
+      outboundHandoverAssignedAt:
+          (data['outboundHandoverAssignedAt'] as Timestamp?)?.toDate(),
+      outboundHandoverAcceptedAt:
+          (data['outboundHandoverAcceptedAt'] as Timestamp?)?.toDate(),
+      outboundHandoverPartnerType:
+          data['outboundHandoverPartnerType'] as String?,
+      outboundHandoverPartnerAccountId:
+          data['outboundHandoverPartnerAccountId'] as String?,
+      outboundHandoverPartnerProfileId:
+          data['outboundHandoverPartnerProfileId'] as String?,
+      deliveryPartnerType: data['deliveryPartnerType'] as String?,
+      deliveryPartnerAccountId: data['deliveryPartnerAccountId'] as String?,
+      deliveryPartnerProfileId: data['deliveryPartnerProfileId'] as String?,
+      deliveryPartnerName: data['deliveryPartnerName'] as String?,
+      deliveryPartnerPhone: data['deliveryPartnerPhone'] as String?,
+      garmentRecordDraft: _dynamicMapFromFirestore(data['garmentRecordDraft']),
+      garmentRecord: _dynamicMapFromFirestore(data['garmentRecord']),
+      garmentRecordPublishedAt: (data['garmentRecordPublishedAt'] as Timestamp?)
+          ?.toDate(),
+      assignedTailorName: data['assignedTailorName'] as String?,
+      adminQueueReason: data['adminQueueReason'] as String?,
+      nextDispatchAt: (data['nextDispatchAt'] as Timestamp?)?.toDate(),
+      customerDecisionExpiresAt:
+          (data['customerDecisionExpiresAt'] as Timestamp?)?.toDate(),
+      orderFinalizedAt: (data['orderFinalizedAt'] as Timestamp?)?.toDate(),
+      expectedReadyAt: (data['expectedReadyAt'] as Timestamp?)?.toDate(),
+      deliveredAt: (data['deliveredAt'] as Timestamp?)?.toDate(),
+      closedAt: (data['closedAt'] as Timestamp?)?.toDate(),
+      warrantyEndsAt: (data['warrantyEndsAt'] as Timestamp?)?.toDate(),
+      warrantyIssueReportedAt: (data['warrantyIssueReportedAt'] as Timestamp?)
+          ?.toDate(),
+      feedbackSubmittedAt: (data['feedbackSubmittedAt'] as Timestamp?)
+          ?.toDate(),
+      feedbackRating: (data['feedbackRating'] as num?)?.toInt(),
+      feedbackText: data['feedbackText'] as String?,
+      warrantyClaimStatus: data['warrantyClaimStatus'] as String?,
+      warrantyIssueDescription: data['warrantyIssueDescription'] as String?,
+      warrantyResolution: data['warrantyResolution'] as String?,
+      cancellationFeeAmount:
+          (data['cancellationFeeAmount'] as num?)?.toDouble() ?? 0,
+      cancellationFeePercent:
+          (data['cancellationFeePercent'] as num?)?.toDouble() ?? 10,
+      cancellationRefundDue:
+          (data['cancellationRefundDue'] as num?)?.toDouble() ?? 0,
+      cancellationFeeOutstanding:
+          (data['cancellationFeeOutstanding'] as num?)?.toDouble() ?? 0,
+      cancellationFeeWaived: data['cancellationFeeWaived'] as bool? ?? false,
+      customerAccountId: data['customerAccountId'] as String?,
+      customerProfileId: data['customerProfileId'] as String?,
+      deliveryPincode: data['deliveryPincode'] as String?,
       advancePercent: advPct.clamp(30, 50).toInt(),
       advanceAmount: computedAdvance,
       balanceAmount: computedBalance,
-      orderModuleType: orderModuleTypeFromFirestore(data['orderModuleType'] as String?),
+      orderModuleType: orderModuleTypeFromFirestore(
+        data['orderModuleType'] as String?,
+      ),
       occasionCategory: data['occasionCategory'] as String?,
       kidsFlow: data['kidsFlow'] as bool? ?? false,
       clientName: data['clientName'] as String?,
@@ -275,19 +617,22 @@ class DressOrder {
       personName: data['personName'] as String?,
       relationship: data['relationship'] as String?,
 
-      requestedByName: (data['requestedByName'] ??
-              data['customerName'] ??
-              data['clientName'])
-          ?.toString(),
-      eventType: (data['eventType'] ??
-              data['bulkEventType'] ??
-              data['packageType'] ??
-              data['occasionCategory'])
-          ?.toString(),
-      consultationType: (data['consultationType'] ??
-              data['consultationMode'] ??
-              data['consultation'])
-          ?.toString(),
+      requestedByName:
+          (data['requestedByName'] ??
+                  data['customerName'] ??
+                  data['clientName'])
+              ?.toString(),
+      eventType:
+          (data['eventType'] ??
+                  data['bulkEventType'] ??
+                  data['packageType'] ??
+                  data['occasionCategory'])
+              ?.toString(),
+      consultationType:
+          (data['consultationType'] ??
+                  data['consultationMode'] ??
+                  data['consultation'])
+              ?.toString(),
       eventDate: (data['eventDate'] as Timestamp?)?.toDate(),
 
       fit: data['fit'] as String?,

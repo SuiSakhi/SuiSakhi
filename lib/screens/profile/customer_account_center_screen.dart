@@ -98,7 +98,7 @@ class _CustomerAccountCenterScreenState
             icon: Icons.local_shipping_outlined,
             title: 'Order Tracking',
             subtitle: 'Track active orders',
-            onTap: () => _comingSoon(context, 'Order Tracking'),
+            onTap: () => context.push('/orders?filter=active'),
           ),
           _MenuItem(
             icon: Icons.history,
@@ -113,7 +113,7 @@ class _CustomerAccountCenterScreenState
             icon: Icons.favorite_border,
             title: 'Wishlist',
             subtitle: 'Saved designs and favorites',
-            onTap: () => _comingSoon(context, 'Wishlist'),
+            onTap: () => context.push('/wishlist'),
           ),
           _MenuItem(
             icon: Icons.style_outlined,
@@ -153,16 +153,16 @@ class _CustomerAccountCenterScreenState
             onTap: () => _comingSoon(context, 'Notifications'),
           ),
           _MenuItem(
-            icon: Icons.support_agent,
-            title: 'Help & Support',
-            subtitle: 'Contact support or raise an issue',
-            onTap: () => _comingSoon(context, 'Help & Support'),
-          ),
-          _MenuItem(
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy & Security',
             subtitle: 'Privacy, terms and account security',
             onTap: () => _comingSoon(context, 'Privacy & Security'),
+          ),
+          _MenuItem(
+            icon: Icons.support_agent,
+            title: 'Help & Support',
+            subtitle: 'Smart help, order questions and support requests',
+            onTap: () => context.push('/customer-help-support'),
           ),
 
           const SizedBox(height: 16),

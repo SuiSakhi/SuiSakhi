@@ -39,12 +39,16 @@ class CatalogueViewUploadSection extends StatefulWidget {
 }
 
 class _DraftView {
-  _DraftView({required this.localId, required this.displayOrder});
+  _DraftView({
+    required this.localId,
+    required this.displayOrder,
+    this.viewType = CatalogueDesignViewType.front,
+  });
 
   final String localId;
   final int displayOrder;
   XFile? file;
-  CatalogueDesignViewType viewType = CatalogueDesignViewType.singleView;
+  CatalogueDesignViewType viewType;
   bool isPrimary = false;
   String? error;
 }
@@ -61,9 +65,21 @@ class _CatalogueViewUploadSectionState
 
   void _addView({bool initial = false}) {
     if (_views.length >= 10) return;
+    final hasFront = _views.any(
+      (view) => view.viewType == CatalogueDesignViewType.front,
+    );
+    final hasBack = _views.any(
+      (view) => view.viewType == CatalogueDesignViewType.back,
+    );
+    final defaultViewType = !hasFront
+        ? CatalogueDesignViewType.front
+        : !hasBack
+        ? CatalogueDesignViewType.back
+        : CatalogueDesignViewType.detail;
     final item = _DraftView(
       localId: DateTime.now().microsecondsSinceEpoch.toString(),
       displayOrder: _views.length + 1,
+      viewType: defaultViewType,
     );
     if (_views.isEmpty) item.isPrimary = true;
     if (initial) {
@@ -147,7 +163,7 @@ class _CatalogueViewUploadSectionState
         final primary = completed.where((item) => item.isPrimary).toList();
         if (primary.length != 1) return 'Select exactly one Primary View';
         if (!primary.single.viewType.canBePrimary) {
-          return 'Primary View must be Front, Combined Front + Back, or Single View';
+          return 'Primary View must be Front, Back, Combined Front + Back, or Single View';
         }
         return null;
       },
@@ -240,9 +256,7 @@ class _CatalogueViewUploadSectionState
           CheckboxListTile(
             contentPadding: EdgeInsets.zero,
             value: view.isPrimary,
-            onChanged:
-                widget.enabled &&
-                    view.viewType.canBePrimary
+            onChanged: widget.enabled && view.viewType.canBePrimary
                 ? (selected) {
                     if (selected == true) {
                       _setPrimary(view);
@@ -253,7 +267,7 @@ class _CatalogueViewUploadSectionState
             subtitle: Text(
               view.viewType.canBePrimary
                   ? 'Used as the default Catalogue preview'
-                  : 'Back, Side and Detail are supporting views',
+                  : 'Side and Detail are supporting views',
             ),
           ),
         ],

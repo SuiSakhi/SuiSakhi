@@ -3,6 +3,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/garment_measurement_catalog.dart';
+import '../../services/customer_measurement_history_service.dart';
 import '../../services/measurement_draft_service.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
@@ -30,8 +32,15 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
 
   final List<_MeasurementPerson> _people = [];
   _MeasurementPerson? _selectedPerson;
+  final Map<String, TextEditingController> _manualControllers = {
+    for (final spec in GarmentMeasurementCatalog.all)
+      spec.key: TextEditingController(),
+  };
+  final TextEditingController _manualNoteController = TextEditingController();
 
   String _selectedMethod = 'ai_camera';
+  String _manualUnit = 'cm';
+  bool _savingReference = false;
 
   static const List<_MeasurementMethod> _methods = [
     _MeasurementMethod(
@@ -41,45 +50,33 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
       icon: Icons.camera_alt_outlined,
     ),
     _MeasurementMethod(
-      id: 'design_existing',
-      title: 'Design from Measurements',
-      subtitle: 'Use existing dress designer flow',
-      icon: Icons.design_services_outlined,
-    ),
-    _MeasurementMethod(
       id: 'manual',
       title: 'Enter Manually',
-      subtitle: 'Manual measurement entry - coming soon',
+      subtitle: 'Enter any of the 22 saved measurement fields',
       icon: Icons.edit_note_outlined,
     ),
     _MeasurementMethod(
       id: 'video_call',
       title: 'Video Call with Tailor',
-      subtitle: 'Remote guided measurement - coming soon',
+      subtitle: 'A tailor will be assigned automatically when you place an order',
       icon: Icons.video_call_outlined,
     ),
     _MeasurementMethod(
       id: 'home_visit',
       title: 'Home Visit',
-      subtitle: 'Measurement partner visit - coming soon',
+      subtitle: 'A measurement partner will be assigned automatically when you place an order',
       icon: Icons.home_work_outlined,
-    ),
-    _MeasurementMethod(
-      id: 'nearest_tailor',
-      title: 'Nearest Tailor for Measurement',
-      subtitle: 'Measurement only, not stitching assignment',
-      icon: Icons.location_on_outlined,
     ),
     _MeasurementMethod(
       id: 'old_dress',
       title: 'Old Dress Reference',
-      subtitle: 'Upload/send old dress reference - coming soon',
+      subtitle: 'Choose a previous order and keep its image and measurement reference',
       icon: Icons.checkroom_outlined,
     ),
     _MeasurementMethod(
       id: 'history',
-      title: 'Use Previous Measurement',
-      subtitle: 'Select from measurement history - coming soon',
+      title: 'All Measurement History',
+      subtitle: 'View the latest 10 saved or tailor-confirmed measurements',
       icon: Icons.history_outlined,
     ),
   ];
@@ -99,6 +96,15 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
     _initialPersonId ??= params['personId'];
     _initialClientName ??= params['clientName'];
     _initialRelationship ??= params['relationship'];
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _manualControllers.values) {
+      controller.dispose();
+    }
+    _manualNoteController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadPeople() async {
@@ -270,24 +276,362 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         );
         break;
 
-      case 'design_existing':
-        if (!mounted) return;
+      case 'manual':
+        await _showManualMeasurementEntry(person);
+        break;
 
-        context.push(
-          '/designer'
-          '?clientName=${Uri.encodeComponent(person.name)}'
-          '&personId=${Uri.encodeComponent(person.id)}'
-          '&relationship=${Uri.encodeComponent(person.relationship)}',
-        );
+      case 'history':
+        await _showMeasurementHistory(person);
+        break;
+
+      case 'old_dress':
+        await _showOldDressReferences(person);
+        break;
+
+      case 'video_call':
+      case 'home_visit':
+        await _showAutomaticAssignmentInfo();
         break;
 
       default:
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('This measurement method will be added next'),
+            content: Text('Please select a measurement method.'),
           ),
         );
     }
+  }
+
+  Future<void> _showAutomaticAssignmentInfo() async {
+    final isHomeVisit = _selectedMethod == 'home_visit';
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(isHomeVisit ? 'Home visit' : 'Video call with tailor'),
+        content: Text(
+          'When you place your tailoring order, the app will automatically assign an available ${isHomeVisit ? 'measurement partner for a home visit' : 'tailor for a video measurement'} based on your service area. You do not need to book the partner here.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showManualMeasurementEntry(_MeasurementPerson person) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.background,
+      builder: (sheetContext) => StatefulBuilder(
+        builder: (context, setSheetState) => Padding(
+          padding: EdgeInsets.fromLTRB(
+            18,
+            20,
+            18,
+            MediaQuery.of(context).viewInsets.bottom + 18,
+          ),
+          child: SizedBox(
+            height: MediaQuery.of(context).size.height * .88,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Enter measurements', style: AppTextStyles.headlineMedium),
+                const SizedBox(height: 6),
+                Text(
+                  'For ${person.name}. These are saved as your reference only; the Tailor confirms final measurements.',
+                  style: AppTextStyles.bodySmall,
+                ),
+                const SizedBox(height: 12),
+                SegmentedButton<String>(
+                  segments: const [
+                    ButtonSegment(value: 'cm', label: Text('cm')),
+                    ButtonSegment(value: 'in', label: Text('in')),
+                  ],
+                  selected: {_manualUnit},
+                  onSelectionChanged: (selection) => setSheetState(
+                    () => _manualUnit = selection.first,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: ListView(
+                    children: [
+                      for (final spec in GarmentMeasurementCatalog.all)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 9),
+                          child: TextField(
+                            controller: _manualControllers[spec.key],
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            decoration: InputDecoration(
+                              labelText: spec.key,
+                              suffixText: _manualUnit,
+                              filled: true,
+                              fillColor: AppColors.surface,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
+                        ),
+                      TextField(
+                        controller: _manualNoteController,
+                        minLines: 2,
+                        maxLines: 4,
+                        decoration: const InputDecoration(
+                          labelText: 'Reference note (optional)',
+                          hintText: 'Add a note for your own reference',
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _savingReference
+                        ? null
+                        : () => _saveManualReference(
+                            person,
+                            setSheetState,
+                            context,
+                          ),
+                    icon: _savingReference
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.save_outlined),
+                    label: const Text('Save customer reference'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _saveManualReference(
+    _MeasurementPerson person,
+    StateSetter setSheetState,
+    BuildContext sheetContext,
+  ) async {
+    final values = <String, double>{};
+    for (final spec in GarmentMeasurementCatalog.all) {
+      final raw = _manualControllers[spec.key]!.text.trim();
+      if (raw.isEmpty) continue;
+      final value = double.tryParse(raw);
+      final maximum = _manualUnit == 'cm' ? 500 : 200;
+      if (value == null || !value.isFinite || value <= 0 || value > maximum) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Check ${spec.label}; enter a valid $_manualUnit value.')),
+        );
+        return;
+      }
+      values[spec.key] = value;
+    }
+    if (values.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter at least one measurement.')),
+      );
+      return;
+    }
+    final saved = await _saveReferenceRecord(
+      person: person,
+      source: 'manual_customer_reference',
+      values: values,
+      unit: _manualUnit,
+      title: 'Manual customer reference',
+      note: _manualNoteController.text.trim(),
+      setSaving: (saving) {
+        if (sheetContext.mounted) {
+          setSheetState(() => _savingReference = saving);
+        }
+      },
+    );
+    if (saved && sheetContext.mounted) Navigator.of(sheetContext).pop();
+  }
+
+  Future<void> _showMeasurementHistory(_MeasurementPerson person) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    final accountId = _accountId;
+    if (uid == null || accountId == null) {
+      _showLoadError();
+      return;
+    }
+    try {
+      final history = await CustomerMeasurementHistoryService.loadHistory(
+        customerUid: uid,
+        accountId: accountId,
+        personId: person.id,
+        personName: person.name,
+        limit: 10,
+      );
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: AppColors.background,
+        builder: (sheetContext) => _HistorySheet(
+          records: history,
+          onUse: (record) async {
+            final saved = await _saveReferenceRecord(
+              person: person,
+              source: 'previous_measurement_reference',
+              values: _numericValues(record.values),
+              unit: record.unit,
+              title: record.title,
+              note: 'Saved from measurement history: ${record.title}',
+              referenceImageUrl: record.referenceImageUrl,
+              sourceOrderId: record.sourceOrderId,
+              referenceOfId: record.id,
+              setSaving: (_) {},
+            );
+            if (saved && sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
+            }
+          },
+        ),
+      );
+    } catch (_) {
+      _showLoadError();
+    }
+  }
+
+  Future<void> _showOldDressReferences(_MeasurementPerson person) async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) {
+      _showLoadError();
+      return;
+    }
+    try {
+      final references =
+          await CustomerMeasurementHistoryService.loadDressReferences(
+        customerUid: uid,
+        personId: person.id,
+        personName: person.name,
+      );
+      if (!mounted) return;
+      await showModalBottomSheet<void>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        backgroundColor: AppColors.background,
+        builder: (sheetContext) => _DressReferenceSheet(
+          references: references,
+          onSave: (reference) async {
+            final saved = await _saveReferenceRecord(
+              person: person,
+              source: 'old_dress_reference',
+              values: _numericValues(reference.values),
+              unit: reference.unit,
+              title: reference.title,
+              note: 'Old dress reference from order ${reference.orderId}',
+              referenceImageUrl: reference.imageUrl,
+              sourceOrderId: reference.orderId,
+              setSaving: (_) {},
+            );
+            if (saved && sheetContext.mounted) {
+              Navigator.of(sheetContext).pop();
+            }
+          },
+        ),
+      );
+    } catch (_) {
+      _showLoadError();
+    }
+  }
+
+  Map<String, double> _numericValues(Map<String, String> values) => {
+        for (final entry in values.entries)
+          if (double.tryParse(entry.value) case final value? when value > 0)
+            entry.key: value,
+      };
+
+  Future<bool> _saveReferenceRecord({
+    required _MeasurementPerson person,
+    required String source,
+    required Map<String, double> values,
+    required String unit,
+    required String title,
+    required String note,
+    String? referenceImageUrl,
+    String? sourceOrderId,
+    String? referenceOfId,
+    required void Function(bool saving) setSaving,
+  }) async {
+    final accountId = _accountId;
+    final customerProfileId = _customerProfileId;
+    if (accountId == null || customerProfileId == null) {
+      _showLoadError();
+      return false;
+    }
+    setSaving(true);
+    try {
+      final ref = _db.collection('measurements').doc();
+      await ref.set({
+        'draftId': ref.id,
+        'accountId': accountId,
+        'customerProfileId': customerProfileId,
+        'personId': person.id,
+        'personName': person.name,
+        'relationship': person.relationship,
+        'source': source,
+        'status': 'customer_reference',
+        'referenceOnly': true,
+        'measurementValues': values,
+        'measurementUnit': unit,
+        'customerNote': note,
+        'referenceTitle': title,
+        if (referenceImageUrl?.trim().isNotEmpty == true)
+          'referenceImageUrl': referenceImageUrl!.trim(),
+        if (sourceOrderId?.trim().isNotEmpty == true)
+          'sourceOrderId': sourceOrderId!.trim(),
+        if (referenceOfId?.trim().isNotEmpty == true)
+          'referenceOfId': referenceOfId!.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return false;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Customer reference saved.')),
+      );
+      return true;
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to save this reference. Please try again.'),
+          ),
+        );
+      }
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  void _showLoadError() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Could not load this information. Please try again.')),
+    );
   }
   @override
   Widget build(BuildContext context) {
@@ -436,7 +780,7 @@ class _InfoCard extends StatelessWidget {
           SizedBox(width: 14),
           Expanded(
             child: Text(
-              'Select the person and measurement method. Wear type, template, fabric and final confirmation will be connected step by step.',
+              'Your saved measurements and references are for your guidance. Customer-entered values do not replace the final measurement confirmed by your Tailor or measurement partner.',
               style: TextStyle(
                 fontSize: 14,
                 color: Colors.black54,
@@ -599,4 +943,214 @@ class _SelectableCard extends StatelessWidget {
       ),
     );
   }
+}
+
+class _HistorySheet extends StatelessWidget {
+  const _HistorySheet({required this.records, required this.onUse});
+
+  final List<CustomerMeasurementRecord> records;
+  final ValueChanged<CustomerMeasurementRecord> onUse;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * .82,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('All Measurement History', style: AppTextStyles.headlineMedium),
+            const SizedBox(height: 6),
+            Text(
+              'Latest 10 records. Tailor-confirmed values remain the final fit reference.',
+              style: AppTextStyles.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: records.isEmpty
+                  ? const Center(
+                      child: Text('No saved measurement history is available.'),
+                    )
+                  : ListView.separated(
+                      itemCount: records.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final record = records[index];
+                        final entries = record.values.entries.take(4).toList();
+                        return Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.divider),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(record.title, style: AppTextStyles.titleMedium),
+                              const SizedBox(height: 4),
+                              Text(
+                                '${_formatDate(record.capturedAt)} · ${_measurementStatusLabel(record)}',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textHint,
+                                ),
+                              ),
+                              if (entries.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                Text(
+                                  entries
+                                      .map((entry) => '${_shortLabel(entry.key)}: ${entry.value} ${record.unit}')
+                                      .join('   ·   '),
+                                  maxLines: 3,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: AppTextStyles.bodySmall,
+                                ),
+                              ],
+                              if (record.values.length > entries.length)
+                                Text(
+                                  '+ ${record.values.length - entries.length} more measurements',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.textHint,
+                                  ),
+                                ),
+                              const SizedBox(height: 10),
+                              OutlinedButton.icon(
+                                onPressed: () => onUse(record),
+                                icon: const Icon(Icons.bookmark_add_outlined),
+                                label: const Text('Keep as customer reference'),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DressReferenceSheet extends StatelessWidget {
+  const _DressReferenceSheet({
+    required this.references,
+    required this.onSave,
+  });
+
+  final List<CustomerDressReference> references;
+  final ValueChanged<CustomerDressReference> onSave;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: MediaQuery.of(context).size.height * .82,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Old Dress Reference', style: AppTextStyles.headlineMedium),
+            const SizedBox(height: 6),
+            Text(
+              'Choose a previous order to keep its garment image and any saved measurements as your reference.',
+              style: AppTextStyles.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: references.isEmpty
+                  ? const Center(
+                      child: Text('No previous orders are available for this person.'),
+                    )
+                  : ListView.separated(
+                      itemCount: references.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 10),
+                      itemBuilder: (context, index) {
+                        final reference = references[index];
+                        final image = reference.imageUrl;
+                        return Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: AppColors.divider),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: SizedBox(
+                                  width: 76,
+                                  height: 92,
+                                  child: image?.isNotEmpty == true
+                                      ? Image.network(
+                                          image!,
+                                          fit: BoxFit.contain,
+                                          errorBuilder: (_, _, _) =>
+                                              _dressPlaceholder(),
+                                        )
+                                      : _dressPlaceholder(),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(reference.title, style: AppTextStyles.titleMedium),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      '${reference.date == null ? 'Previous order' : _formatDate(reference.date!)} · ${reference.status}',
+                                      style: AppTextStyles.bodySmall.copyWith(
+                                        color: AppColors.textHint,
+                                      ),
+                                    ),
+                                    Text(
+                                      reference.values.isEmpty
+                                          ? 'No saved measurements on this order'
+                                          : '${reference.values.length} saved measurement fields',
+                                      style: AppTextStyles.bodySmall,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    TextButton.icon(
+                                      onPressed: () => onSave(reference),
+                                      icon: const Icon(Icons.bookmark_add_outlined),
+                                      label: const Text('Keep this reference'),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Widget _dressPlaceholder() => Container(
+      color: const Color(0xFFF3EAFB),
+      child: const Icon(Icons.checkroom_outlined, color: AppColors.primary),
+    );
+
+String _formatDate(DateTime date) =>
+    '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
+
+String _shortLabel(String key) {
+  final label = key.replaceFirst(RegExp(r'^\s*\d+\s*[·.\-:]?\s*'), '');
+  return label.length > 22 ? '${label.substring(0, 19)}…' : label;
+}
+
+String _measurementStatusLabel(CustomerMeasurementRecord record) {
+  if (record.isCustomerReference) return 'Customer reference';
+  if (record.source == 'partner_confirmed') return 'Tailor confirmed';
+  if (record.source == 'ai_camera') return 'AI estimate · review needed';
+  return 'Needs confirmation';
 }

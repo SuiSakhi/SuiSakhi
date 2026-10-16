@@ -348,7 +348,7 @@ class _LoginScreenState extends State<LoginScreen> {
     return 'User';
   }
 
-  String _destinationFor(UserRole role, {bool returning = false}) {
+  String _destinationFor(UserRole role) {
     return switch (role) {
       UserRole.owner => '/owner',
 
@@ -360,7 +360,10 @@ class _LoginScreenState extends State<LoginScreen> {
       // cannot determine the category-specific destination.
       UserRole.partner => '/profile-selection',
 
-      UserRole.customer => returning ? '/home' : '/onboarding',
+      // The signed-in flow creates/loads the Customer Profile before routing.
+      // Send first-time and returning customers straight to the home screen;
+      // onboarding and profile setup remain available as explicit routes.
+      UserRole.customer => '/home',
     };
   }
 
@@ -393,7 +396,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // COMMON CUSTOMER FOUNDATION
     if (role == 'customer') {
-      return returning ? '/home' : '/onboarding';
+      return '/home';
     }
 
     // ADMIN / OWNER
@@ -708,7 +711,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (navCtx.mounted) {
         GoRouter.of(
           navCtx,
-        ).go(_destinationFor(finalRole, returning: returning));
+        ).go(_destinationFor(finalRole));
       }
     }
   }
