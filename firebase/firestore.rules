@@ -401,6 +401,26 @@ service cloud.firestore {
             ]);
 
         // =====================================================
+        // RULE-ID: AP-OWNER-SELECTION-AUDIT
+        // ACTOR: Account owner
+        // RESOURCE: Legacy Owner profile
+        // OPERATION: Record profile selection
+        // PURPOSE: Allows the account owner to select an existing Owner
+        //          profile while limiting the write to audit timestamps.
+        // =====================================================
+        allow update: if ownsExistingAccount(accountId)
+          && resource.data.role == 'owner'
+          && request.resource.data.role == resource.data.role
+          && request.resource.data.accountId == resource.data.accountId
+          && request.resource.data.profileId == resource.data.profileId
+          && request.resource.data.diff(resource.data)
+            .affectedKeys()
+            .hasOnly([
+              'lastSelectedAt',
+              'updatedAt'
+            ]);
+
+        // =====================================================
         // RULE-ID: AP-PARTNER-ADMIN-UPDATE
         // ACTOR: Configured Admin
         // RESOURCE: Partner Business Profile
