@@ -13,6 +13,7 @@ import '../../widgets/partner_workspace/partner_workspace_menu_tile.dart';
 import '../../widgets/partner_workspace/partner_workspace_section.dart';
 import '../profile/profile_selection_screen.dart';
 import 'measurement_partner_assignments_screen.dart';
+import 'garment_care_jobs_screen.dart';
 import 'store_product_management_screen.dart';
 
 class PartnerWorkspaceScreen extends StatefulWidget {
@@ -105,7 +106,11 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         return;
       case 'delivery':
       case 'delivery_partner':
-        context.go('/delivery');
+        context.go(
+          '/delivery/services'
+          '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
+          '&profileId=${Uri.encodeQueryComponent(widget.partnerProfileId)}',
+        );
         return;
       case 'partner':
         if (partnerType == 'tailor') {
@@ -127,7 +132,11 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         }
 
         if (partnerType == 'deliveryPartner') {
-          context.go('/delivery');
+          context.go(
+            '/delivery/services'
+            '?accountId=${Uri.encodeQueryComponent(widget.accountId)}'
+            '&profileId=${Uri.encodeQueryComponent(profileId)}',
+          );
           return;
         }
 
@@ -177,6 +186,9 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         return;
       case 'designer-catalogue':
         await context.push('/partner/designer/catalogue$_query');
+        return;
+      case 'garment-care-jobs':
+        await context.push('/partner/garment-care$_query');
         return;
       case 'measurement-assignments':
         await context.push('/partner/measurement/assignments$_query');
@@ -245,6 +257,13 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
         );
         final isMeasurementPartner =
             profile.partnerType == 'measurementPartner';
+        if (profile.partnerType == 'garmentCare' && !widget.showAccountCenter) {
+          return GarmentCareJobsScreen(
+            accountId: widget.accountId,
+            profileId: widget.partnerProfileId,
+            partnerName: profile.businessDisplayName,
+          );
+        }
         if (isMeasurementPartner && !widget.showAccountCenter) {
           return MeasurementPartnerAssignmentsScreen(
             accountId: widget.accountId,

@@ -16,10 +16,13 @@ import '../../widgets/orders/pickup_photo_attachment_button.dart';
 import '../../widgets/orders/order_design_references.dart';
 
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key, this.initialFilter});
+  const OrdersScreen({super.key, this.initialFilter, this.initialModuleType});
 
   /// Optional status filter to select when opening the order list.
   final String? initialFilter;
+
+  /// Optional service category used by the customer Orders hub.
+  final String? initialModuleType;
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -27,6 +30,7 @@ class OrdersScreen extends StatefulWidget {
 
 class _OrdersScreenState extends State<OrdersScreen> {
   _OrdersFilter _filter = _OrdersFilter.all;
+  OrderModuleType? _moduleFilter;
   List<DressOrder> _orders = [];
   List<_OrderDraftSummary> _draftOrders = [];
   List<_OrderDraftSummary> _archivedDraftOrders = [];
@@ -44,6 +48,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
       'onTheWay' => _OrdersFilter.onTheWay,
       _ => _OrdersFilter.all,
     };
+    for (final module in OrderModuleType.values) {
+      if (module.name == widget.initialModuleType) {
+        _moduleFilter = module;
+        break;
+      }
+    }
     _loadOrders();
     _loadDraftOrders();
   }
@@ -393,15 +403,23 @@ class _OrdersScreenState extends State<OrdersScreen> {
       await OrderLifecycleService.confirmCustomerFabricShortfall(order.id);
       await _refreshOrdersAndDrafts();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Confirmation sent. Your Tailor can continue after the fabric is arranged.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Confirmation sent. Your Tailor can continue after the fabric is arranged.',
+            ),
+          ),
+        );
       }
     } on FirebaseFunctionsException catch (error) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(error.message ?? 'Could not confirm the fabric update.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              error.message ?? 'Could not confirm the fabric update.',
+            ),
+          ),
+        );
       }
     }
   }
@@ -631,27 +649,52 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   List<DressOrder> get _filtered {
+    final orders = _ordersForModule;
     bool active(DressOrder o) =>
         o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled;
     switch (_filter) {
       case _OrdersFilter.all:
-        return _orders;
+        return orders;
       case _OrdersFilter.active:
-        return _orders.where(active).toList();
+        return orders.where(active).toList();
       case _OrdersFilter.pending:
-        return _orders
+        return orders
             .where((order) => order.status == OrderStatus.pending)
             .toList();
       case _OrdersFilter.delivered:
-        return _orders
+        return orders
             .where((order) => order.status == OrderStatus.delivered)
             .toList();
       case _OrdersFilter.onTheWay:
-        return _orders
+        return orders
             .where((order) => order.status == OrderStatus.outForDelivery)
             .toList();
     }
   }
+
+  List<DressOrder> get _ordersForModule {
+    final module = _moduleFilter;
+    if (module == null) return _orders;
+    return _orders.where((order) => order.orderModuleType == module).toList();
+  }
+
+  bool get _showTailoringDrafts =>
+      _moduleFilter == null || _moduleFilter == OrderModuleType.coreTailoring;
+
+  String get _pageTitle => switch (_moduleFilter) {
+    OrderModuleType.coreTailoring => 'Tailoring Orders',
+    OrderModuleType.quickFix => 'Quick Care & Home Services',
+    OrderModuleType.bulkOrder => 'Weddings & Event Orders',
+    OrderModuleType.marketplace => 'Fashion Store Requests',
+    null => 'My Orders',
+  };
+
+  String get _newOrderRoute => switch (_moduleFilter) {
+    OrderModuleType.quickFix => '/quick-fix',
+    OrderModuleType.bulkOrder => '/bulk-orders',
+    OrderModuleType.marketplace => '/shop-explore',
+    _ => '/designer',
+  };
 
   /// [context.go('/orders')] leaves no stack entry, so [pop] does nothing.
   void _leaveOrders(BuildContext context) {
@@ -673,7 +716,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       child: Scaffold(
         backgroundColor: AppColors.background,
         appBar: AppBar(
-          title: const Text('My Orders'),
+          title: Text(_pageTitle),
           leading: IconButton(
             icon: const Icon(Icons.arrow_back_ios_rounded),
             onPressed: () => _leaveOrders(context),
@@ -692,17 +735,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 children: [
                   _buildSummaryCards(),
                   _buildFilterChips(),
+                  if (_moduleFilter == null) _buildGarmentCareShortcut(),
                   Expanded(
                     child:
                         _filtered.isEmpty &&
                             (_filter != _OrdersFilter.all ||
+                                !_showTailoringDrafts ||
                                 (_draftOrders.isEmpty &&
                                     _archivedDraftOrders.isEmpty))
                         ? _buildEmptyState()
                         : ListView(
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 80),
                             children: [
-                              if (_filter == _OrdersFilter.all) ...[
+                              if (_filter == _OrdersFilter.all &&
+                                  _showTailoringDrafts) ...[
                                 _buildDraftOrdersSection(),
                                 if (_draftOrders.isNotEmpty &&
                                     _archivedDraftOrders.isNotEmpty)
@@ -739,7 +785,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
               ),
         floatingActionButton: FloatingActionButton.extended(
           onPressed: () async {
-            await context.push('/designer');
+            await context.push(_newOrderRoute);
 
             await _refreshOrdersAndDrafts();
           },
@@ -766,19 +812,39 @@ class _OrdersScreenState extends State<OrdersScreen> {
     await _loadDraftOrders();
   }
 
+  Widget _buildGarmentCareShortcut() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: Card(
+        color: AppColors.surface,
+        child: ListTile(
+          leading: Icon(
+            Icons.local_laundry_service_outlined,
+            color: AppColors.primary,
+          ),
+          title: const Text('Garment Care orders'),
+          subtitle: const Text('Track each care group as its own order'),
+          trailing: const Icon(Icons.chevron_right_rounded),
+          onTap: () => context.push('/garment-care/orders'),
+        ),
+      ),
+    );
+  }
+
   Widget _buildSummaryCards() {
-    final active = _orders
+    final orders = _ordersForModule;
+    final active = orders
         .where(
           (o) =>
               o.status != OrderStatus.delivered &&
               o.status != OrderStatus.cancelled,
         )
         .length;
-    final ready = _orders
+    final ready = orders
         .where((o) => o.status == OrderStatus.readyForPickup)
         .length;
-    final total = _orders.length;
-    final drafts = _draftOrders.length;
+    final total = orders.length;
+    final drafts = _showTailoringDrafts ? _draftOrders.length : 0;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -809,12 +875,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   Widget _buildFilterChips() {
+    final orders = _ordersForModule;
     final filters = [
-      ('All', _OrdersFilter.all, _orders.length),
+      ('All', _OrdersFilter.all, orders.length),
       (
         'Active',
         _OrdersFilter.active,
-        _orders
+        orders
             .where(
               (order) =>
                   order.status != OrderStatus.delivered &&
@@ -825,17 +892,17 @@ class _OrdersScreenState extends State<OrdersScreen> {
       (
         'Pending',
         _OrdersFilter.pending,
-        _orders.where((order) => order.status == OrderStatus.pending).length,
+        orders.where((order) => order.status == OrderStatus.pending).length,
       ),
       (
         'Delivered',
         _OrdersFilter.delivered,
-        _orders.where((order) => order.status == OrderStatus.delivered).length,
+        orders.where((order) => order.status == OrderStatus.delivered).length,
       ),
       (
         'On the way',
         _OrdersFilter.onTheWay,
-        _orders
+        orders
             .where((order) => order.status == OrderStatus.outForDelivery)
             .length,
       ),
@@ -1751,7 +1818,9 @@ class _OrderCard extends StatelessWidget {
                     'Tailor needs ${(order.fabricRequirementReview?['shortfallMeters'] as num?)?.toStringAsFixed(1) ?? '0.0'} m more than the estimate.',
                     style: AppTextStyles.bodySmall,
                   ),
-                  if ((order.fabricRequirementReview?['note']?.toString() ?? '').trim().isNotEmpty)
+                  if ((order.fabricRequirementReview?['note']?.toString() ?? '')
+                      .trim()
+                      .isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
@@ -1766,7 +1835,8 @@ class _OrderCard extends StatelessWidget {
                     label: const Text('I will arrange additional fabric'),
                   ),
                   TextButton.icon(
-                    onPressed: () => context.push('/fabric-help?orderId=${order.id}'),
+                    onPressed: () =>
+                        context.push('/fabric-help?orderId=${order.id}'),
                     icon: const Icon(Icons.video_call_outlined),
                     label: const Text('Ask for fabric help'),
                   ),

@@ -744,6 +744,24 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         () => context.push('/owner/order-routing'),
       ),
       (
+        'Garment Care Pricing',
+        Icons.price_change_outlined,
+        const Color(0xFF8E44AD),
+        () => context.push('/owner/garment-care/pricing'),
+      ),
+      (
+        'Garment Care Completion Templates',
+        Icons.note_alt_outlined,
+        const Color(0xFF8E44AD),
+        () => context.push('/owner/garment-care/completion-templates'),
+      ),
+      (
+        'Garment Care Routing',
+        Icons.local_laundry_service_outlined,
+        const Color(0xFF8E44AD),
+        () => context.push('/owner/garment-care/routing'),
+      ),
+      (
         'Support Requests',
         Icons.support_agent_rounded,
         const Color(0xFFAB47BC),

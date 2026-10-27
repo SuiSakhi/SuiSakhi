@@ -5,6 +5,7 @@ import 'core/theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
 import 'screens/profile/profile_selection_screen.dart';
 import 'screens/profile/customer_account_center_screen.dart';
+import 'screens/profile/customer_orders_hub_screen.dart';
 import 'screens/profile/customer_addresses_screen.dart';
 import 'screens/profile/customer_profile_screen.dart';
 import 'screens/profile/customer_edit_profile_screen.dart';
@@ -29,6 +30,9 @@ import 'screens/prd/tailor_style_hub_screen.dart';
 import 'screens/prd/quick_fix_screen.dart';
 import 'screens/prd/bulk_orders_screen.dart';
 import 'screens/prd/shop_explore_screen.dart';
+import 'screens/prd/garment_care_screen.dart';
+import 'screens/partner/garment_care_jobs_screen.dart';
+import 'screens/partner/garment_care_completion_templates_screen.dart';
 import 'screens/prd/fashion_store_screen.dart';
 import 'screens/prd/offers_membership_screen.dart';
 import 'screens/prd/customer_fabric_help_screen.dart';
@@ -40,6 +44,9 @@ import 'screens/owner/owner_partner_applications_screen.dart';
 import 'screens/owner/owner_partner_application_review_screen.dart';
 import 'screens/owner/rates_management_screen.dart';
 import 'screens/owner/owner_payout_settings_screen.dart';
+import 'screens/owner/garment_care_pricing_screen.dart';
+import 'screens/owner/garment_care_inspection_templates_screen.dart';
+import 'screens/owner/garment_care_routing_screen.dart';
 import 'screens/checkout/order_checkout_screen.dart';
 import 'screens/measurements/measurement_context_screen.dart';
 import 'screens/tailor/tailor_dashboard_screen.dart';
@@ -57,6 +64,7 @@ import 'screens/partner/delivery_partner_application_screen.dart';
 import 'screens/partner/measurement_partner_application_screen.dart';
 import 'screens/partner/quickcare_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
+import 'screens/delivery/delivery_services_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
 import 'screens/partner/partner_workspace_screen.dart';
 import 'screens/partner/partner_profile_view_screen.dart';
@@ -206,6 +214,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerAccountCenterScreen(),
     ),
     GoRoute(
+      path: '/customer-orders',
+      builder: (ctx, state) => const CustomerOrdersHubScreen(),
+    ),
+    GoRoute(
       path: '/partner/landing',
       builder: (context, state) => PartnerProfileLandingScreen(
         accountId: state.uri.queryParameters['accountId'],
@@ -235,6 +247,50 @@ final _router = GoRouter(
       builder: (context, state) => PartnerProfileViewScreen(
         accountId: state.uri.queryParameters['accountId'] ?? '',
         profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/garment-care',
+      builder: (ctx, state) => GarmentCareJobsScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+        partnerName: 'Garment Care Partner',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/garment-care/completion-templates',
+      builder: (ctx, state) => GarmentCareCompletionTemplatesScreen(
+        isAdmin: false,
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/garment-care/custody',
+      builder: (ctx, state) => GarmentCareCustodyScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+        pickupOnly: state.uri.queryParameters['filter'] == 'pickup',
+        customerDeliveryOnly:
+            state.uri.queryParameters['filter'] == 'customer_delivery',
+        readyDeliveryOnly:
+            state.uri.queryParameters['filter'] == 'ready_delivery',
+        paymentPendingOnly:
+            state.uri.queryParameters['filter'] == 'payment_pending',
+        focusOrderId: state.uri.queryParameters['orderId'] ?? '',
+        focusOrderNumber: state.uri.queryParameters['orderNumber'] ?? '',
+        focusDeliveryGroupId:
+            state.uri.queryParameters['deliveryGroupId'] ?? '',
+        focusSubOrderNumber: state.uri.queryParameters['subOrderNumber'] ?? '',
+        focusShipmentId: state.uri.queryParameters['shipmentId'] ?? '',
+      ),
+    ),
+    GoRoute(
+      path: '/delivery/garment-care-returns',
+      builder: (ctx, state) => GarmentCareCustodyScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+        deliveryPartnerOnly: true,
       ),
     ),
     GoRoute(
@@ -347,6 +403,31 @@ final _router = GoRouter(
       builder: (ctx, state) => const OwnerDashboardScreen(),
     ),
     GoRoute(
+      path: '/owner/garment-care/pricing',
+      builder: (ctx, state) => const GarmentCarePricingScreen(),
+    ),
+    GoRoute(
+      path: '/owner/garment-care/inspection-templates',
+      builder: (ctx, state) => const GarmentCareInspectionTemplatesScreen(),
+    ),
+    GoRoute(
+      path: '/owner/garment-care/completion-templates',
+      builder: (ctx, state) =>
+          const GarmentCareCompletionTemplatesScreen(isAdmin: true),
+    ),
+    GoRoute(
+      path: '/owner/garment-care',
+      builder: (ctx, state) => const GarmentCareRoutingScreen(),
+    ),
+    GoRoute(
+      path: '/owner/garment-care/pickups',
+      builder: (ctx, state) => const GarmentCareRoutingScreen(),
+    ),
+    GoRoute(
+      path: '/owner/garment-care/routing',
+      builder: (ctx, state) => const GarmentCareRoutingScreen(),
+    ),
+    GoRoute(
       path: '/owner/support-requests',
       builder: (ctx, state) => const OwnerSupportInboxScreen(),
     ),
@@ -398,6 +479,13 @@ final _router = GoRouter(
       builder: (ctx, state) => const tailor_account.TailorAccountCenterScreen(),
     ),
     // ── Delivery routes ───────────────────────────────────────────────────
+    GoRoute(
+      path: '/delivery/services',
+      builder: (ctx, state) => DeliveryServicesScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
+    ),
     GoRoute(
       path: '/delivery',
       builder: (ctx, state) => const DeliveryDashboardScreen(),
@@ -529,6 +617,7 @@ final _router = GoRouter(
       path: '/shop-explore',
       builder: (ctx, state) {
         final category = state.uri.queryParameters['category'];
+        if (category == 'garment_care') return const GarmentCareScreen();
         const storeCategories = {
           'ready_to_wear',
           'fabric',
@@ -540,6 +629,25 @@ final _router = GoRouter(
         }
         return ShopExploreScreen(initialCategoryId: category);
       },
+    ),
+    GoRoute(
+      path: '/garment-care',
+      builder: (ctx, state) => const GarmentCareScreen(),
+    ),
+    GoRoute(
+      path: '/garment-care/orders',
+      builder: (ctx, state) => GarmentCareOrdersScreen(
+        activeOnly: state.uri.queryParameters['filter'] == 'active',
+      ),
+    ),
+    GoRoute(
+      path: '/garment-care/dna',
+      builder: (ctx, state) => const GarmentCareDnaScreen(),
+    ),
+    GoRoute(
+      path: '/garment-care/orders/:orderId',
+      builder: (ctx, state) =>
+          GarmentCareOrdersScreen(orderId: state.pathParameters['orderId']),
     ),
     GoRoute(
       path: '/offers',
@@ -555,6 +663,7 @@ final _router = GoRouter(
       path: '/orders',
       builder: (ctx, state) => OrdersScreen(
         initialFilter: state.uri.queryParameters['filter'],
+        initialModuleType: state.uri.queryParameters['module'],
       ),
     ),
     GoRoute(

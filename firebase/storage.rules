@@ -242,6 +242,83 @@ service firebase.storage {
       allow update, delete: if false;
     }
 
+
+    function isGarmentCarePickupPartner(orderId, shipmentId, garmentId, userId) {
+      let shipment = firestore.get(
+        /databases/(default)/documents/garment_care_shipments/$(shipmentId)
+      ).data;
+      let accountId = shipment.toPartnerAccountId;
+      let profileId = shipment.toPartnerProfileId;
+      let account = firestore.get(
+        /databases/(default)/documents/accounts/$(accountId)
+      ).data;
+      // Shipment account/profile assignments are created by trusted
+      // Garment Care routing. This binds uploads to the assigned account's
+      // authenticated phone while keeping the rule to two Firestore reads.
+      return signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.phone_number is string
+        && request.resource.metadata.partnerUid == request.auth.uid
+        && shipment.orderId == orderId
+        && shipment.shipmentType == 'customer_pickup'
+        && shipment.status == 'assigned'
+        && garmentId in shipment.garmentIds
+        && accountId is string
+        && profileId is string
+        && account.mobileE164 == request.auth.token.phone_number;
+    }
+
+    function canReadGarmentCareEvidence(orderId, userId) {
+      return signedIn()
+        && (
+          request.auth.uid == userId
+          || isConfiguredAdmin()
+          || firestore.get(
+            /databases/(default)/documents/garment_care_orders/$(orderId)
+          ).data.customerUid == request.auth.uid
+        );
+    }
+
+    function isGarmentCareInspectionPartner(orderId, jobId, garmentId, userId) {
+      let job = firestore.get(
+        /databases/(default)/documents/garment_care_service_jobs/$(jobId)
+      ).data;
+      let accountId = job.assignedPartnerAccountId;
+      return signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.phone_number is string
+        && request.resource.metadata.partnerUid == request.auth.uid
+        && job.orderId == orderId
+        && job.garmentId == garmentId
+        && job.status == 'inspectionPending'
+        && accountId is string
+        && job.assignedPartnerProfileId is string
+        && firestore.get(
+          /databases/(default)/documents/accounts/$(accountId)
+        ).data.mobileE164 == request.auth.token.phone_number;
+    }
+
+    // Private pickup condition evidence. Upload is limited to the assigned Partner.
+    match /garment_care_evidence/{orderId}/{shipmentId}/{garmentId}/{userId}/{fileName} {
+      allow read: if canReadGarmentCareEvidence(orderId, userId);
+      allow create: if isGarmentCarePickupPartner(orderId, shipmentId, garmentId, userId)
+          && request.resource.size > 0
+          && request.resource.size <= 10 * 1024 * 1024
+          && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+      allow update, delete: if false;
+    }
+
+    // Inspection evidence is uploaded by the assigned service Partner and is
+    // readable by the Customer named on the parent Care Order.
+    match /garment_care_evidence/{orderId}/inspection/{jobId}/{garmentId}/{userId}/{fileName} {
+      allow read: if canReadGarmentCareEvidence(orderId, userId);
+      allow create: if isGarmentCareInspectionPartner(orderId, jobId, garmentId, userId)
+          && request.resource.size > 0
+          && request.resource.size <= 10 * 1024 * 1024
+          && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+      allow update, delete: if false;
+    }
+
     // Store images are managed by the verified Brand/Boutique that owns the
     // listing. Customers can read photos only after the listing is published.
     match /fashion_store_products/{accountId}/{profileId}/{productId}/{fileName} {

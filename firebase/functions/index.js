@@ -38,6 +38,52 @@ exports.processCatalogueViewOriginal = createCatalogueStorageTrigger({
   admin,
 });
 
+const garmentCare = require("./garment_care");
+exports.getAdminGarmentCarePricing = garmentCare.getAdminGarmentCarePricing;
+exports.publishGarmentCarePricingVersion = garmentCare.publishGarmentCarePricingVersion;
+exports.getGarmentCareInspectionTemplates = garmentCare.getGarmentCareInspectionTemplates;
+exports.publishGarmentCareInspectionTemplates = garmentCare.publishGarmentCareInspectionTemplates;
+exports.getGarmentCareCompletionTemplates = garmentCare.getGarmentCareCompletionTemplates;
+exports.publishGarmentCareCompletionTemplates = garmentCare.publishGarmentCareCompletionTemplates;
+exports.savePartnerGarmentCareCompletionTemplate = garmentCare.savePartnerGarmentCareCompletionTemplate;
+exports.deletePartnerGarmentCareCompletionTemplate = garmentCare.deletePartnerGarmentCareCompletionTemplate;
+exports.createGarmentCareOrder = garmentCare.createGarmentCareOrder;
+exports.ensureGarmentCareSubOrderNumbers = garmentCare.ensureGarmentCareSubOrderNumbers;
+exports.getCustomerGarmentCarePricing = garmentCare.getCustomerGarmentCarePricing;
+exports.getGarmentCarePartnerCandidates = garmentCare.getGarmentCarePartnerCandidates;
+exports.getGarmentCareDeliveryCandidates = garmentCare.getGarmentCareDeliveryCandidates;
+exports.assignGarmentCareReturnPartner = garmentCare.assignGarmentCareReturnPartner;
+exports.respondToGarmentCareDeliveryAssignment = garmentCare.respondToGarmentCareDeliveryAssignment;
+exports.getGarmentCareDeliveryPaymentDetails = garmentCare.getGarmentCareDeliveryPaymentDetails;
+exports.completeSandboxGarmentCarePayment = garmentCare.completeSandboxGarmentCarePayment;
+exports.completeSandboxGarmentCarePaymentBatch = garmentCare.completeSandboxGarmentCarePaymentBatch;
+exports.recordGarmentCarePaymentAtDelivery = garmentCare.recordGarmentCarePaymentAtDelivery;
+exports.lookupGarmentCareOrderTag = garmentCare.lookupGarmentCareOrderTag;
+exports.updateGarmentCarePartnerPreferences = garmentCare.updateGarmentCarePartnerPreferences;
+exports.updateGarmentCareDeliveryPartnerAvailability = garmentCare.updateGarmentCareDeliveryPartnerAvailability;
+exports.updateGarmentCarePartnerPriority = garmentCare.updateGarmentCarePartnerPriority;
+exports.requestGarmentCareJobReassignment = garmentCare.requestGarmentCareJobReassignment;
+exports.respondToGarmentCareItemRevision = garmentCare.respondToGarmentCareItemRevision;
+exports.submitGarmentCareFeedback = garmentCare.submitGarmentCareFeedback;
+exports.reportGarmentCareWarrantyIssue = garmentCare.reportGarmentCareWarrantyIssue;
+exports.assignGarmentCarePickup = garmentCare.assignGarmentCarePickup;
+exports.getGarmentCarePickupPartnerDetails = garmentCare.getGarmentCarePickupPartnerDetails;
+exports.getGarmentCarePickupWorkDetails = garmentCare.getGarmentCarePickupWorkDetails;
+exports.getGarmentCarePartnerServiceJobDetails = garmentCare.getGarmentCarePartnerServiceJobDetails;
+exports.sendGarmentCarePartnerOrderNote = garmentCare.sendGarmentCarePartnerOrderNote;
+exports.acceptGarmentCarePickup = garmentCare.acceptGarmentCarePickup;
+exports.getGarmentCareServicePartnerDetails = garmentCare.getGarmentCareServicePartnerDetails;
+exports.getGarmentCareInspectionContext = garmentCare.getGarmentCareInspectionContext;
+exports.getGarmentCareOrderCustomerDetails = garmentCare.getGarmentCareOrderCustomerDetails;
+exports.assignGarmentCareServiceJob = garmentCare.assignGarmentCareServiceJob;
+exports.recordGarmentCareHandover = garmentCare.recordGarmentCareHandover;
+exports.confirmGarmentCareCustomerDelivery = garmentCare.confirmGarmentCareCustomerDelivery;
+exports.advanceGarmentCareServiceJob = garmentCare.advanceGarmentCareServiceJob;
+exports.autoRouteGarmentCareOrders = garmentCare.autoRouteGarmentCareOrders;
+exports.submitGarmentCareInspectionQuote = garmentCare.submitGarmentCareInspectionQuote;
+exports.respondToGarmentCareConsent = garmentCare.respondToGarmentCareConsent;
+exports.allocateGarmentCareCapturedPayment = garmentCare.allocateGarmentCareCapturedPayment;
+
 /**
  * @param {string} raw E.164 or digits
  */

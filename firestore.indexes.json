@@ -50,6 +50,108 @@
         {"fieldPath": "status", "order": "ASCENDING"},
         {"fieldPath": "categoryCode", "order": "ASCENDING"}
       ]
+    },
+    {
+      "collectionGroup": "garment_care_orders",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "customerUid", "order": "ASCENDING"},
+        {"fieldPath": "createdAt", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_invoices",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "orderId", "order": "ASCENDING"},
+        {"fieldPath": "customerUid", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_service_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "assignedPartnerAccountId", "order": "ASCENDING"},
+        {"fieldPath": "assignedPartnerProfileId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "profiles",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        {"fieldPath": "role", "order": "ASCENDING"},
+        {"fieldPath": "partnerType", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "operationalStatus", "order": "ASCENDING"},
+        {"fieldPath": "activationStatus", "order": "ASCENDING"},
+        {"fieldPath": "approvalStatus", "order": "ASCENDING"},
+        {"fieldPath": "kycStatus", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_shipments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "shipmentType", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_shipments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "toPartnerAccountId", "order": "ASCENDING"},
+        {"fieldPath": "toPartnerProfileId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_shipments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "deliveryPartnerAccountId", "order": "ASCENDING"},
+        {"fieldPath": "deliveryPartnerProfileId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_shipments",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "fromPartnerAccountId", "order": "ASCENDING"},
+        {"fieldPath": "fromPartnerProfileId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_service_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "orderId", "order": "ASCENDING"},
+        {"fieldPath": "deliveryGroupId", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_history_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "customerUid", "order": "ASCENDING"},
+        {"fieldPath": "garmentId", "order": "ASCENDING"},
+        {"fieldPath": "completedAt", "order": "DESCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_service_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "status", "order": "ASCENDING"},
+        {"fieldPath": "dispatchEligible", "order": "ASCENDING"}
+      ]
+    },
+    {
+      "collectionGroup": "garment_care_service_jobs",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "dependsOnJobId", "order": "ASCENDING"},
+        {"fieldPath": "status", "order": "ASCENDING"}
+      ]
     }
   ],
   "fieldOverrides": [

@@ -89,6 +89,60 @@ service cloud.firestore {
             /profiles/$(profileId)
         ).data.status == 'active';
     }
+    // Garment Care Partner identity helper: all operational records are scoped
+    // to an approved Partner profile under the authenticated account.
+    function isActiveGarmentCarePartner(accountId, profileId) {
+      return accountId is string
+        && profileId is string
+        && hasAuthenticatedPhone()
+        && get(/databases/$(database)/documents/accounts/$(accountId)).data.mobileE164
+            == request.auth.token.phone_number
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.role
+            == 'partner'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.partnerType
+            == 'garmentCare'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.status
+            == 'active'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.operationalStatus
+            == 'active'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.activationStatus
+            == 'active'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.approvalStatus
+            == 'approved'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.kycStatus
+            == 'verified';
+    }
+
+    // A registered Delivery Partner can read only Garment Care return
+    // shipments explicitly routed to or currently held by that profile.
+    function isActiveGarmentCareDeliveryPartner(accountId, profileId) {
+      return accountId is string
+        && profileId is string
+        && hasAuthenticatedPhone()
+        && get(/databases/$(database)/documents/accounts/$(accountId)).data.mobileE164
+            == request.auth.token.phone_number
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.role
+            == 'partner'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.partnerType
+            == 'deliveryPartner'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.status
+            == 'active'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.operationalStatus
+            == 'active'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.activationStatus
+            == 'active'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.approvalStatus
+            == 'approved'
+        && get(/databases/$(database)/documents/accounts/$(accountId)/profiles/$(profileId)).data.kycStatus
+            == 'verified';
+    }
+
+    function ownsGarmentCareOrder(orderId) {
+      return signedIn()
+        && get(/databases/$(database)/documents/garment_care_orders/$(orderId)).data.customerUid
+            == request.auth.uid;
+    }
+
     // =====================================================
     // RULE-ID: FN-ADMIN-AUTHORIZATION
     // ACTOR: Rules engine
@@ -1678,6 +1732,239 @@ service cloud.firestore {
       match /private/{privateDocumentId} {
         allow read, write: if false;
       }
+    }
+
+    // Garment Care uses isolated collections so it cannot change the legacy
+    // tailoring order or payment state machines. All workflow writes are made
+    // by authenticated Admin SDK callables; clients receive scoped reads only.
+    // The one exception is an explicitly owner-scoped, private cart draft.
+    match /accounts/{accountId}/profiles/{profileId}/garment_care_cart_drafts/{draftId} {
+      // A direct get of the reserved draft path must also succeed when no
+      // draft exists yet. The screen treats a missing document as an empty
+      // cart; checking resource.data here would deny that first-time read.
+      // The account/profile path is already scoped to the authenticated owner.
+      allow get: if draftId == 'current'
+          && ownsActiveCustomerProfile(accountId, profileId);
+      allow list: if false;
+
+      allow create, update: if draftId == 'current'
+          && ownsActiveCustomerProfile(accountId, profileId)
+          && request.resource.data.customerUid == request.auth.uid
+          && request.resource.data.accountId == accountId
+          && request.resource.data.profileId == profileId
+          && request.resource.data.schemaVersion == 1
+          && request.resource.data.items is list
+          && request.resource.data.items.size() <= 50
+          && request.resource.data.pickupSlotsByGroup is map
+          && request.resource.data.pickupSlotsByGroup.size() <= 6
+          && request.resource.data.pickupDatesByGroup is map
+          && request.resource.data.pickupDatesByGroup.size() <= 6
+          && (request.resource.data.pickupAddressId == null
+            || request.resource.data.pickupAddressId is string)
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.keys().hasOnly([
+            'customerUid', 'accountId', 'profileId', 'schemaVersion', 'items',
+            'pickupAddressId', 'pickupSlotsByGroup', 'pickupDatesByGroup',
+            'updatedAt'
+          ]);
+
+      // Clearing an already-empty draft is intentionally idempotent too.
+      allow delete: if draftId == 'current'
+          && ownsActiveCustomerProfile(accountId, profileId);
+    }
+
+    match /garment_identities/{garmentId} {
+      allow read: if signedIn() && resource.data.customerUid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /garment_care_checkouts/{checkoutId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+
+    match /garment_care_orders/{orderId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
+
+      match /items/{itemId} {
+        allow read: if ownsGarmentCareOrder(orderId) || isConfiguredAdmin();
+        allow create, update, delete: if false;
+      }
+      match /delivery_groups/{groupId} {
+        allow read: if ownsGarmentCareOrder(orderId) || isConfiguredAdmin();
+        allow create, update, delete: if false;
+      }
+      match /events/{eventId} {
+        allow read: if ownsGarmentCareOrder(orderId) || isConfiguredAdmin();
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /garment_care_service_jobs/{jobId} {
+      allow read: if signedIn()
+          && (isConfiguredAdmin()
+            || ownsGarmentCareOrder(resource.data.orderId)
+            || isActiveGarmentCarePartner(
+              resource.data.assignedPartnerAccountId,
+              resource.data.assignedPartnerProfileId
+            ));
+      allow create, update, delete: if false;
+
+      match /events/{eventId} {
+        allow read: if signedIn()
+          && (isConfiguredAdmin()
+            || ownsGarmentCareOrder(get(
+              /databases/$(database)/documents/garment_care_service_jobs/$(jobId)
+            ).data.orderId)
+            || isActiveGarmentCarePartner(
+              get(/databases/$(database)/documents/garment_care_service_jobs/$(jobId)).data.assignedPartnerAccountId,
+              get(/databases/$(database)/documents/garment_care_service_jobs/$(jobId)).data.assignedPartnerProfileId
+            ));
+        allow create, update, delete: if false;
+      }
+    }
+
+    match /garment_care_quote_versions/{quoteId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_invoices/{invoiceId} {
+      allow read: if signedIn()
+          && (resource.data.get('customerUid', null) == request.auth.uid
+            || (resource.data.get('orderId', null) is string
+              && ownsGarmentCareOrder(resource.data.orderId))
+            || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_consents/{consentId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_shipments/{shipmentId} {
+      allow read: if signedIn()
+          && (ownsGarmentCareOrder(resource.data.orderId)
+            || isConfiguredAdmin()
+            || isActiveGarmentCarePartner(
+              resource.data.get('assignedPartnerAccountId', null),
+              resource.data.get('assignedPartnerProfileId', null)
+            )
+            || isActiveGarmentCarePartner(
+              resource.data.get('fromPartnerAccountId', null),
+              resource.data.get('fromPartnerProfileId', null)
+            )
+            || isActiveGarmentCarePartner(
+              resource.data.get('toPartnerAccountId', null),
+              resource.data.get('toPartnerProfileId', null)
+            )
+            || isActiveGarmentCareDeliveryPartner(
+              resource.data.get('deliveryPartnerAccountId', null),
+              resource.data.get('deliveryPartnerProfileId', null)
+            )
+            || isActiveGarmentCareDeliveryPartner(
+              resource.data.get('fromPartnerAccountId', null),
+              resource.data.get('fromPartnerProfileId', null)
+            )
+            || isActiveGarmentCareDeliveryPartner(
+              resource.data.get('toPartnerAccountId', null),
+              resource.data.get('toPartnerProfileId', null)
+            ));
+      allow create, update, delete: if false;
+    }
+    match /garment_care_custody_events/{eventId} {
+      allow read: if signedIn()
+          && (ownsGarmentCareOrder(resource.data.orderId)
+            || isConfiguredAdmin()
+            || (resource.data.releasingPartnerAccountId is string
+              && isActiveGarmentCarePartner(
+                resource.data.releasingPartnerAccountId,
+                resource.data.releasingPartnerProfileId
+              ))
+            || (resource.data.receivingPartnerAccountId is string
+              && isActiveGarmentCarePartner(
+                resource.data.receivingPartnerAccountId,
+                resource.data.receivingPartnerProfileId
+              ))
+            || isActiveGarmentCareDeliveryPartner(
+              resource.data.get('releasingPartnerAccountId', null),
+              resource.data.get('releasingPartnerProfileId', null)
+            )
+            || isActiveGarmentCareDeliveryPartner(
+              resource.data.get('receivingPartnerAccountId', null),
+              resource.data.get('receivingPartnerProfileId', null)
+            ));
+      allow create, update, delete: if false;
+    }
+    match /garment_care_history_events/{eventId} {
+      allow read: if signedIn()
+          && resource.data.customerUid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+    match /garment_care_packages/{packageId} {
+      allow read: if signedIn()
+          && (ownsGarmentCareOrder(resource.data.orderId) || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_package_events/{eventId} {
+      allow read: if signedIn()
+          && (ownsGarmentCareOrder(resource.data.orderId) || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_payments/{paymentId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_payment_batches/{paymentBatchId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
+    }
+    match /garment_care_payment_allocations/{allocationId} {
+      allow read: if isConfiguredAdmin();
+      allow create, update, delete: if false;
+    }
+    match /garment_care_payment_events/{eventId} {
+      allow read: if isConfiguredAdmin();
+      allow create, update, delete: if false;
+    }
+    match /garment_care_partner_quote_rates/{quoteId} {
+      allow read: if isConfiguredAdmin();
+      allow create, update, delete: if false;
+    }
+    match /garment_care_partner_payables/{entryId} {
+      allow read: if isConfiguredAdmin()
+          || isActiveGarmentCarePartner(
+            resource.data.partnerAccountId,
+            resource.data.partnerProfileId
+          );
+      allow create, update, delete: if false;
+    }
+    match /garment_care_settlement_cycles/{cycleId} {
+      allow read: if isConfiguredAdmin();
+      allow create, update, delete: if false;
+    }
+    match /garment_care_settlement_transfers/{transferId} {
+      allow read: if isConfiguredAdmin()
+          || (resource.data.partnerAccountId is string
+            && isActiveGarmentCarePartner(
+              resource.data.partnerAccountId,
+              resource.data.partnerProfileId
+            ));
+      allow create, update, delete: if false;
+    }
+    match /garment_care_reconciliation_batches/{batchId} {
+      allow read: if isConfiguredAdmin();
+      allow create, update, delete: if false;
+    }
+    match /garment_care_claims/{claimId} {
+      allow read: if signedIn()
+          && (resource.data.customerUid == request.auth.uid || isConfiguredAdmin());
+      allow create, update, delete: if false;
     }
 
     // Customer-owned design references. Catalogue images remain in their

@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -24,7 +25,24 @@ class _OrderTagLookupScreenState extends State<OrderTagLookupScreen> {
         .where('orderTrackingId', isEqualTo: widget.trackingId)
         .limit(1)
         .get();
-    if (matches.docs.isEmpty) return null;
+    if (matches.docs.isEmpty) {
+      try {
+        final result = await FirebaseFunctions.instance
+            .httpsCallable('lookupGarmentCareOrderTag')
+            .call({'orderNumber': widget.trackingId});
+        final fields = Map<String, dynamic>.from(result.data as Map);
+        return _OrderTagData(
+          documentId: (fields['orderId'] ?? '').toString(),
+          fields: fields,
+          isGarmentCare: true,
+        );
+      } on FirebaseFunctionsException catch (error) {
+        if (error.code == 'not-found' || error.code == 'permission-denied') {
+          return null;
+        }
+        rethrow;
+      }
+    }
 
     final doc = matches.docs.first;
     final data = doc.data();
@@ -101,10 +119,15 @@ class _OrderTagLookupScreenState extends State<OrderTagLookupScreen> {
 }
 
 class _OrderTagData {
-  const _OrderTagData({required this.documentId, required this.fields});
+  const _OrderTagData({
+    required this.documentId,
+    required this.fields,
+    this.isGarmentCare = false,
+  });
 
   final String documentId;
   final Map<String, dynamic> fields;
+  final bool isGarmentCare;
 }
 
 class _OrderTagDetails extends StatelessWidget {
@@ -117,6 +140,48 @@ class _OrderTagDetails extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (order.isGarmentCare) {
+      final group = switch (value('serviceGroupCode')) {
+        'washing_cleaning' => 'Laundry and Dry Cleaning',
+        'pressing_finishing' => 'Pressing & Finishing',
+        'special_treatments' => 'Special Treatments & Fabric Restoration',
+        'designer_luxury' => 'Designer & Luxury Care',
+        'home_textile' => 'Home Textile Care',
+        'shoes_accessories' => 'Shoes & Accessories Care',
+        _ => 'Garment Care',
+      };
+      return ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(group, style: Theme.of(context).textTheme.headlineSmall),
+                  const SizedBox(height: 8),
+                  SelectableText('Order · ${value('orderNumber')}'),
+                  const SizedBox(height: 10),
+                  Chip(
+                    label: Text(value('statusProjection').replaceAll('_', ' ')),
+                  ),
+                  _detail('Garments', value('itemCount')),
+                  _detail('Service jobs', value('serviceCount')),
+                  OutlinedButton.icon(
+                    onPressed: () => Clipboard.setData(
+                      ClipboardData(text: order.documentId),
+                    ),
+                    icon: const Icon(Icons.copy_rounded),
+                    label: const Text('Copy order ID'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     final address = value('deliveryAddress');
     return ListView(
       padding: const EdgeInsets.all(16),

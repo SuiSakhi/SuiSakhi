@@ -208,7 +208,35 @@ class PartnerWorkspaceRegistry {
         order: 20,
       ),
     ];
-    if (partnerType == 'designer') {
+    if (partnerType == 'garmentCare') {
+      final preferencesIndex = modules.indexWhere(
+        (module) => module.code == 'profile.preferences',
+      );
+      if (preferencesIndex >= 0) {
+        modules[preferencesIndex] = const PartnerWorkspaceModule(
+          code: 'profile.preferences',
+          label: 'Operational Preferences',
+          subtitle: 'Set Garment Care availability and business hours',
+          icon: Icons.tune_rounded,
+          section: profileSection,
+          route: 'garment-care-jobs',
+          state: PartnerWorkspaceModuleState.available,
+          order: 50,
+        );
+      }
+      modules.add(
+        const PartnerWorkspaceModule(
+          code: 'garmentCare.jobs',
+          label: 'Garment Care Jobs',
+          subtitle: 'Review assigned garments, inspections and service work',
+          icon: Icons.local_laundry_service_outlined,
+          section: operationsSection,
+          route: 'garment-care-jobs',
+          state: PartnerWorkspaceModuleState.available,
+          order: 10,
+        ),
+      );
+    } else if (partnerType == 'designer') {
       modules.add(
         const PartnerWorkspaceModule(
           code: 'designer.catalogue',

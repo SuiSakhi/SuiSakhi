@@ -354,7 +354,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       // Legacy direct-role compatibility.
       UserRole.tailor => '/tailor',
-      UserRole.delivery => '/delivery',
+      UserRole.delivery => '/delivery/services',
 
       // Generic Partner requires profile selection because UserRole alone
       // cannot determine the category-specific destination.
@@ -411,7 +411,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     // LEGACY DIRECT DELIVERY PROFILE
     if (role == 'delivery' || role == 'delivery_partner') {
-      return '/delivery';
+      return '/delivery/services';
     }
 
     // GENERIC PARTNER BUSINESS PROFILE
@@ -423,7 +423,9 @@ class _LoginScreenState extends State<LoginScreen> {
               '&profileId=${Uri.encodeQueryComponent(profileId)}';
 
         case 'deliveryPartner':
-          return '/delivery';
+          return '/delivery/services'
+              '?accountId=${Uri.encodeQueryComponent(accountId.trim())}'
+              '&profileId=${Uri.encodeQueryComponent(profileId)}';
 
         case 'measurementPartner':
           return '/partner/landing'
@@ -709,9 +711,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _phoneAuthModel.setLoading(false);
 
       if (navCtx.mounted) {
-        GoRouter.of(
-          navCtx,
-        ).go(_destinationFor(finalRole));
+        GoRouter.of(navCtx).go(_destinationFor(finalRole));
       }
     }
   }

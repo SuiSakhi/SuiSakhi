@@ -107,6 +107,30 @@ class GarmentCarePartnerCapabilityMetadata
       displayOrder: 90,
       requiresVerification: true,
     ),
+    CapabilityDefinition(
+      code: 'garmentCare.homeTextileCare',
+      label: 'Home Textile Care',
+      partnerCategoryCode: categoryCode,
+      groupCode: 'garmentCare.services',
+      displayOrder: 100,
+      requiresVerification: true,
+    ),
+    CapabilityDefinition(
+      code: 'garmentCare.footwearCare',
+      label: 'Footwear Care',
+      partnerCategoryCode: categoryCode,
+      groupCode: 'garmentCare.services',
+      displayOrder: 110,
+      requiresVerification: true,
+    ),
+    CapabilityDefinition(
+      code: 'garmentCare.accessoriesCare',
+      label: 'Handbags & Accessories Care',
+      partnerCategoryCode: categoryCode,
+      groupCode: 'garmentCare.services',
+      displayOrder: 120,
+      requiresVerification: true,
+    ),
 
     // GARMENT AND MATERIAL SPECIALIZATION
     CapabilityDefinition(

@@ -96,15 +96,10 @@ class _CustomerAccountCenterScreenState
           _SectionTitle(title: 'Orders'),
           _MenuItem(
             icon: Icons.local_shipping_outlined,
-            title: 'Order Tracking',
-            subtitle: 'Track active orders',
-            onTap: () => context.push('/orders?filter=active'),
-          ),
-          _MenuItem(
-            icon: Icons.history,
-            title: 'Order History',
-            subtitle: 'View previous and archived orders',
-            onTap: () => context.push('/orders'),
+            title: 'My Orders',
+            subtitle:
+                'Choose Tailoring, Garment Care, Fashion Store, Home Services or Events',
+            onTap: () => context.push('/customer-orders'),
           ),
 
           const SizedBox(height: 16),
