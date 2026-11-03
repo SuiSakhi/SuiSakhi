@@ -1,22 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/app_state.dart';
-import '../../models/dress.dart';
-import '../../widgets/common/measurement_card.dart';
 import '../../widgets/home/customer_home_groups_section.dart';
-
-/// Uses the device local clock ([DateTime.now]).
-String _homeGreeting() {
-  final hour = DateTime.now().hour;
-  if (hour >= 5 && hour < 12) return 'Good Morning! 👋';
-  if (hour >= 12 && hour < 17) return 'Good Afternoon! 👋';
-  if (hour >= 17 && hour < 22) return 'Good Evening! 👋';
-  return 'Hello! 👋';
-}
+import '../../widgets/home/home_reference_artwork.dart';
 
 void _showHomeNotificationsSheet(BuildContext context) {
   showModalBottomSheet<void>(
@@ -108,6 +96,10 @@ class _HomeScreenState extends State<HomeScreen> {
               context.push('/orders');
               return;
             }
+            if (i == 4) {
+              context.push('/account');
+              return;
+            }
             setState(() => _bottomNavIndex = i);
           },
           items: const [
@@ -131,6 +123,11 @@ class _HomeScreenState extends State<HomeScreen> {
               activeIcon: Icon(Icons.receipt_long_rounded),
               label: 'Orders',
             ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.person_outline_rounded),
+              activeIcon: Icon(Icons.person_rounded),
+              label: 'Profile',
+            ),
           ],
         ),
       ),
@@ -149,340 +146,325 @@ class _HomeContent extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const SizedBox(height: 20),
+            const SizedBox(height: 10),
             _buildHeader(context),
-            const SizedBox(height: 24),
+            const SizedBox(height: 18),
+            _buildQuickActions(context),
+            const SizedBox(height: 20),
             const CustomerHomeGroupsSection(),
-            const SizedBox(height: 28),
-            _buildPartnerRegistration(context),
-            const SizedBox(height: 28),
-            SectionHeader(
-              title: 'Recent Orders',
-              actionLabel: 'View all',
-              onAction: () => context.push('/orders'),
-            ),
-            const SizedBox(height: 16),
-            _buildRecentOrders(context),
-            const SizedBox(height: 32),
+            const SizedBox(height: 24),
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildPartnerRegistration(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SectionHeader(title: 'Register as a Partner'),
-        const SizedBox(height: 12),
-        Material(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(16),
-            onTap: () => context.push('/partner/opportunities'),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  Container(
-                    width: 46,
-                    height: 46,
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.10),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Icon(
-                      Icons.handshake_outlined,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Become a Partner',
-                          style: AppTextStyles.titleMedium,
-                        ),
-                        const SizedBox(height: 3),
-                        Text(
-                          'Apply as a Tailor, Designer, Supplier or Service Partner',
-                          style: AppTextStyles.bodySmall.copyWith(
-                            color: AppColors.textHint,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: AppColors.textHint,
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ],
     );
   }
 
   Widget _buildHeader(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(28),
+        gradient: const LinearGradient(
+          colors: [Color(0xFFFFE5EF), Color(0xFFFFF8FA), Color(0xFFFFFFFF)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFE74783).withValues(alpha: 0.10),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(_homeGreeting(), style: AppTextStyles.bodyMedium),
-              ListenableBuilder(
-                listenable: AppState.instance,
-                builder: (context, _) => Text(
-                  AppState.instance.displayName,
-                  style: AppTextStyles.displayMedium,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+              ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: Image.asset(
+                  'assets/images/suisakhi_logo.png',
+                  width: 62,
+                  height: 62,
+                  fit: BoxFit.contain,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'SuiSakhi',
+                      style: TextStyle(
+                        color: Color(0xFF711344),
+                        fontSize: 22,
+                        height: 1,
+                        fontFamily: 'serif',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 5),
+                    Text(
+                      'Your Style. Our Care.',
+                      style: TextStyle(
+                        color: Color(0xFF23375D),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              _HeaderIconButton(
+                icon: Icons.notifications_none_rounded,
+                hasNotification: true,
+                onTap: () => _showHomeNotificationsSheet(context),
+              ),
+              const SizedBox(width: 8),
+              Material(
+                color: const Color(0xFFFF8BBB),
+                shape: const CircleBorder(),
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () => context.push('/account'),
+                  child: SizedBox(
+                    width: 44,
+                    height: 44,
+                    child: Center(
+                      child: ListenableBuilder(
+                        listenable: AppState.instance,
+                        builder: (context, _) {
+                          final photoUrl = AppState.instance.profile?.photoUrl;
+                          if (photoUrl != null && photoUrl.isNotEmpty) {
+                            return ClipOval(
+                              child: Image.network(
+                                photoUrl,
+                                width: 44,
+                                height: 44,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, _, _) => Text(
+                                  AppState.instance.initials,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }
+                          return Text(
+                            AppState.instance.initials,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ],
           ),
-        ),
-        Material(
-          color: AppColors.surfaceVariant,
-          borderRadius: BorderRadius.circular(14),
-          child: InkWell(
-            onTap: () => _showHomeNotificationsSheet(context),
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              width: 46,
-              height: 46,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  const Center(
-                    child: Icon(
-                      Icons.notifications_outlined,
-                      color: AppColors.textPrimary,
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 142,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Positioned(
+                  right: -18,
+                  top: 0,
+                  bottom: 0,
+                  width: 176,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(22),
+                    child: HomeReferenceArtwork(
+                      sourceRect: const Rect.fromLTWH(374, 108, 474, 308),
+                      placeholderColor: const Color(0xFFFFE5EF),
                     ),
                   ),
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        color: AppColors.secondary,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        Material(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          clipBehavior: Clip.antiAlias,
-          child: InkWell(
-            onTap: () => context.push('/account'),
-            child: Ink(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: Center(
-                child: ListenableBuilder(
-                  listenable: AppState.instance,
-                  builder: (context, _) {
-                    final url = AppState.instance.profile?.photoUrl;
-                    if (url != null && url.isNotEmpty) {
-                      return Image.network(
-                        url,
-                        width: 46,
-                        height: 46,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, _, _) => Text(
-                          AppState.instance.initials,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      );
-                    }
-                    return Text(
-                      AppState.instance.initials,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    );
-                  },
                 ),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildRecentOrders(BuildContext context) {
-    final uid = FirebaseAuth.instance.currentUser?.uid;
-    if (uid == null) return _emptyOrders(context);
-
-    return FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-      future: FirebaseFirestore.instance
-          .collection('orders')
-          .where('customerId', isEqualTo: uid)
-          .limit(2)
-          .get(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const Center(child: CircularProgressIndicator());
-        }
-        final docs = snapshot.data?.docs ?? [];
-        if (docs.isEmpty) return _emptyOrders(context);
-
-        final orders = docs.map((d) {
-          final data = d.data();
-          final status = OrderStatus.values.firstWhere(
-            (s) => s.name == (data['status'] as String? ?? 'pending'),
-            orElse: () => OrderStatus.pending,
-          );
-          return (
-            data['dressType'] as String? ?? '',
-            status.label,
-            status.color,
-          );
-        }).toList();
-
-        return Column(
-          children: orders.map((order) {
-            return Container(
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AppColors.surface,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: AppColors.cardShadow,
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: order.$3.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: Icon(
-                      Icons.checkroom_rounded,
-                      color: order.$3,
-                      size: 24,
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Color(0xFFFFF8FA),
+                        Color(0xE6FFF8FA),
+                        Color(0x00FFF8FA),
+                      ],
+                      stops: [0, 0.53, 1],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
                   ),
-                  const SizedBox(width: 14),
-                  Expanded(
+                ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: SizedBox(
+                    width: 226,
                     child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          order.$1,
-                          style: AppTextStyles.titleMedium,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                          'Look Good',
+                          style: AppTextStyles.displayLarge.copyWith(
+                            color: const Color(0xFF15284D),
+                            height: 1.02,
+                            fontFamily: 'serif',
+                            fontSize: 30,
+                          ),
+                        ),
+                        Text(
+                          'Feel Special',
+                          style: AppTextStyles.displayLarge.copyWith(
+                            color: const Color(0xFFE60065),
+                            height: 1.02,
+                            fontFamily: 'serif',
+                            fontSize: 30,
+                          ),
+                        ),
+                        const SizedBox(height: 7),
+                        Text(
+                          'Design, stitch, shop, care, rent and more — all in one place.',
+                          style: AppTextStyles.bodyLarge.copyWith(
+                            color: const Color(0xFF23375D),
+                            height: 1.2,
+                            fontSize: 12,
+                          ),
                         ),
                       ],
                     ),
                   ),
-                  Flexible(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 4,
-                      ),
-                      decoration: BoxDecoration(
-                        color: order.$3.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 15),
+          Material(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(28),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(28),
+              onTap: () => context.push('/service-guide'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 13,
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.search_rounded,
+                      color: Color(0xFFE60065),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
                       child: Text(
-                        order.$2,
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: order.$3,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        'What would you like to do today?',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.end,
+                        style: AppTextStyles.bodyMedium.copyWith(
+                          color: const Color(0xFF667695),
+                          fontSize: 13,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                    const Icon(
+                      Icons.auto_awesome_rounded,
+                      color: Color(0xFFE60065),
+                      size: 19,
+                    ),
+                  ],
+                ),
               ),
-            );
-          }).toList(),
-        );
-      },
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _emptyOrders(BuildContext context) {
-    return GestureDetector(
-      onTap: () => context.push('/smart-style-ideas'),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Row(
+  Widget _buildQuickActions(BuildContext context) {
+    const actions = [
+      (
+        label: 'Track Orders',
+        icon: Icons.local_shipping_outlined,
+        route: '/customer-orders',
+      ),
+      (
+        label: 'Saved Designs',
+        icon: Icons.favorite_border_rounded,
+        route: '/wishlist',
+      ),
+      (
+        label: 'My Measurements',
+        icon: Icons.straighten_rounded,
+        route: '/measurements',
+      ),
+      (label: 'Offers & Updates', icon: Icons.sell_outlined, route: '/offers'),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Quick Actions', style: AppTextStyles.headlineMedium),
+        const SizedBox(height: 10),
+        Row(
           children: [
-            const Icon(
-              Icons.receipt_long_outlined,
-              size: 36,
-              color: AppColors.textHint,
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('No orders yet', style: AppTextStyles.titleMedium),
-                  Text(
-                    'Browse designs or start your first order',
-                    style: AppTextStyles.bodySmall,
+            for (final action in actions)
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Material(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(18),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(18),
+                      onTap: () => context.push(action.route),
+                      child: SizedBox(
+                        height: 104,
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              action.icon,
+                              color: const Color(0xFFE60065),
+                              size: 28,
+                            ),
+                            const SizedBox(height: 7),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 3,
+                              ),
+                              child: Text(
+                                action.label,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF23375D),
+                                  fontSize: 10,
+                                  height: 1.15,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                ],
+                ),
               ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios_rounded,
-              size: 16,
-              color: AppColors.textHint,
-            ),
           ],
         ),
-      ),
+      ],
     );
   }
 }
@@ -505,4 +487,49 @@ class _PlaceholderPage extends StatelessWidget {
       ),
     );
   }
+}
+
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({
+    required this.icon,
+    required this.onTap,
+    this.hasNotification = false,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool hasNotification;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: const Color(0xFFF4EAFB),
+    borderRadius: BorderRadius.circular(16),
+    child: InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Center(child: Icon(icon, color: const Color(0xFF182B51))),
+            if (hasNotification)
+              Positioned(
+                top: 7,
+                right: 7,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFE60065),
+                    shape: BoxShape.circle,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
 }

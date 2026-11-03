@@ -3,17 +3,59 @@ import 'package:go_router/go_router.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/prd_catalog.dart';
 import '../../core/app_state.dart';
 import '../../services/order_lifecycle_service.dart';
+import '../profile/customer_help_support_screen.dart';
 import '../../widgets/orders/order_tracking_tag.dart';
 import '../../widgets/orders/garment_record_qr_dialog.dart';
 import '../../widgets/orders/pickup_photo_attachment_button.dart';
 import '../../widgets/orders/order_design_references.dart';
+
+String _normalizeQuickCareWorkflow(String? value) => (value ?? '')
+    .replaceAllMapped(
+      RegExp(r'([a-z])([A-Z])'),
+      (match) => '${match.group(1)}_${match.group(2)}',
+    )
+    .toLowerCase()
+    .replaceAll(RegExp(r'[\s-]+'), '_');
+
+String _formatOrderReference(Object? value) {
+  final reference = value?.toString().trim() ?? '';
+  if (RegExp(r'^\d{12}$').hasMatch(reference)) {
+    return '${reference.substring(0, 6)}-${reference.substring(6)}';
+  }
+  return reference;
+}
+
+bool _isActiveOrder(DressOrder order) {
+  if (order.orderModuleType == OrderModuleType.quickFix) {
+    return !const {
+      'completed',
+      'cancelled',
+    }.contains(_normalizeQuickCareWorkflow(order.quickCareWorkflowStatus));
+  }
+  return order.status != OrderStatus.delivered &&
+      order.status != OrderStatus.cancelled;
+}
+
+bool _isPendingOrder(DressOrder order) {
+  if (order.orderModuleType == OrderModuleType.quickFix) {
+    return const {
+      'request_submitted',
+      'partner_assigned',
+      'awaiting_customer_approval',
+      'payment_pending',
+    }.contains(_normalizeQuickCareWorkflow(order.quickCareWorkflowStatus));
+  }
+  return order.status == OrderStatus.pending;
+}
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key, this.initialFilter, this.initialModuleType});
@@ -241,10 +283,29 @@ class _OrdersScreenState extends State<OrdersScreen> {
       } catch (_) {
         _lifecyclePolicy = const OrderLifecyclePolicy();
       }
-      final snap = await FirebaseFirestore.instance
+      final orderQuery = FirebaseFirestore.instance
           .collection('orders')
-          .where('customerId', isEqualTo: uid)
-          .get();
+          .where('customerId', isEqualTo: uid);
+      var snap = await orderQuery.get();
+      final missingReferences = snap.docs
+          .where((document) {
+            final value = document.data()['orderTrackingId']?.toString().trim();
+            return value == null || value.isEmpty;
+          })
+          .map((document) => document.id)
+          .take(50)
+          .toList();
+      if (missingReferences.isNotEmpty) {
+        try {
+          await FirebaseFunctions.instance
+              .httpsCallable('ensureCustomerOrderTrackingId')
+              .call(<String, dynamic>{'orderIds': missingReferences});
+          snap = await orderQuery.get();
+        } catch (_) {
+          // Continue to show the Firestore ID if reference migration is
+          // temporarily unavailable in this Firebase environment.
+        }
+      }
       if (mounted) {
         setState(() {
           _orders = snap.docs.map((d) => _orderFromDoc(d)).toList()
@@ -373,6 +434,132 @@ class _OrdersScreenState extends State<OrdersScreen> {
           ),
         );
       }
+    }
+  }
+
+  Future<void> _cancelQuickCareOrder(DressOrder order) async {
+    final scheduledAt = order.quickCareScheduledAt;
+    final canCancelDirectly =
+        scheduledAt != null &&
+        scheduledAt.difference(DateTime.now()) > const Duration(hours: 2) &&
+        !order.quickCareServiceInProgress;
+
+    if (!canCancelDirectly) {
+      final reason = order.quickCareServiceInProgress
+          ? 'This service has already started. Helpdesk will review the cancellation with you.'
+          : 'This appointment is within two hours or its time is not confirmed. Helpdesk will review the cancellation with you.';
+      final contactHelpdesk = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Contact Helpdesk to cancel'),
+          content: Text(reason),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Keep booking'),
+            ),
+            FilledButton.icon(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              icon: const Icon(Icons.support_agent_outlined),
+              label: const Text('Contact Helpdesk'),
+            ),
+          ],
+        ),
+      );
+      if (contactHelpdesk != true || !mounted) return;
+      final user = FirebaseAuth.instance.currentUser;
+      final profileName = AppState.instance.profile?.name.trim() ?? '';
+      await CustomerHelpSupportScreen.openQuickCareCancellationTicket(
+        context,
+        customerName: profileName.isNotEmpty
+            ? profileName
+            : user?.displayName ?? 'Customer',
+        orderId: order.id,
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cancel this Quick Care booking?'),
+        content: const Text(
+          'This booking is more than two hours away and the service has not started. You can cancel it now with no cancellation fee.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep booking'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Cancel booking'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    try {
+      final result = await OrderLifecycleService.cancelQuickCareOrder(order.id);
+      await _refreshOrdersAndDrafts();
+      if (!mounted) return;
+      final refundDue = (result['refundDue'] as num?)?.toDouble() ?? 0;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            refundDue > 0
+                ? 'Booking cancelled with no fee. A refund is recorded for review.'
+                : 'Booking cancelled. No cancellation fee applies.',
+          ),
+        ),
+      );
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      final errorCode = error.code.toLowerCase().replaceAll('_', '-');
+      if (errorCode == 'failed-precondition') {
+        final message = (error.message ?? '').toLowerCase();
+        if (message.contains('quote has been approved') ||
+            message.contains('service has already started') ||
+            message.contains('already closed') ||
+            message.contains('awaiting payment')) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(error.message!)));
+          return;
+        }
+        final user = FirebaseAuth.instance.currentUser;
+        final profileName = AppState.instance.profile?.name.trim() ?? '';
+        await CustomerHelpSupportScreen.openQuickCareCancellationTicket(
+          context,
+          customerName: profileName.isNotEmpty
+              ? profileName
+              : user?.displayName ?? 'Customer',
+          orderId: order.id,
+        );
+        return;
+      }
+      if (errorCode == 'not-found') {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Direct cancellation is not deployed in this Firebase environment yet. Please deploy the updated backend or contact Helpdesk.',
+            ),
+          ),
+        );
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Could not cancel this booking.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not cancel this booking. Please retry.'),
+        ),
+      );
     }
   }
 
@@ -650,17 +837,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   List<DressOrder> get _filtered {
     final orders = _ordersForModule;
-    bool active(DressOrder o) =>
-        o.status != OrderStatus.delivered && o.status != OrderStatus.cancelled;
     switch (_filter) {
       case _OrdersFilter.all:
         return orders;
       case _OrdersFilter.active:
-        return orders.where(active).toList();
+        return orders.where(_isActiveOrder).toList();
       case _OrdersFilter.pending:
-        return orders
-            .where((order) => order.status == OrderStatus.pending)
-            .toList();
+        return orders.where(_isPendingOrder).toList();
       case _OrdersFilter.delivered:
         return orders
             .where((order) => order.status == OrderStatus.delivered)
@@ -769,6 +952,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                     onCustomerDecline: () =>
                                         _declineBeforeFinalization(order),
                                     onCancel: () => _cancelOrder(order),
+                                    onQuickCareCancel: () =>
+                                        _cancelQuickCareOrder(order),
+                                    onQuickCarePaymentReturn:
+                                        _showQuickCareOrdersAfterPayment,
                                     onFeedback: () => _submitFeedback(order),
                                     onWarrantyIssue: () =>
                                         _reportWarrantyIssue(order),
@@ -812,6 +999,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
     await _loadDraftOrders();
   }
 
+  Future<void> _showQuickCareOrdersAfterPayment() async {
+    if (!mounted) return;
+    setState(() {
+      _moduleFilter = OrderModuleType.quickFix;
+      _filter = _OrdersFilter.all;
+    });
+    await _refreshOrdersAndDrafts();
+  }
+
   Widget _buildGarmentCareShortcut() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
@@ -833,13 +1029,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Widget _buildSummaryCards() {
     final orders = _ordersForModule;
-    final active = orders
-        .where(
-          (o) =>
-              o.status != OrderStatus.delivered &&
-              o.status != OrderStatus.cancelled,
-        )
-        .length;
+    final active = orders.where(_isActiveOrder).length;
     final ready = orders
         .where((o) => o.status == OrderStatus.readyForPickup)
         .length;
@@ -878,22 +1068,8 @@ class _OrdersScreenState extends State<OrdersScreen> {
     final orders = _ordersForModule;
     final filters = [
       ('All', _OrdersFilter.all, orders.length),
-      (
-        'Active',
-        _OrdersFilter.active,
-        orders
-            .where(
-              (order) =>
-                  order.status != OrderStatus.delivered &&
-                  order.status != OrderStatus.cancelled,
-            )
-            .length,
-      ),
-      (
-        'Pending',
-        _OrdersFilter.pending,
-        orders.where((order) => order.status == OrderStatus.pending).length,
-      ),
+      ('Active', _OrdersFilter.active, orders.where(_isActiveOrder).length),
+      ('Pending', _OrdersFilter.pending, orders.where(_isPendingOrder).length),
       (
         'Delivered',
         _OrdersFilter.delivered,
@@ -1434,6 +1610,8 @@ class _OrderCard extends StatelessWidget {
   final double cancellationFeePercent;
   final VoidCallback? onCustomerDecline;
   final VoidCallback? onCancel;
+  final VoidCallback? onQuickCareCancel;
+  final Future<void> Function()? onQuickCarePaymentReturn;
   final VoidCallback? onFeedback;
   final VoidCallback? onWarrantyIssue;
   final VoidCallback? onPartnerContacts;
@@ -1443,11 +1621,49 @@ class _OrderCard extends StatelessWidget {
     required this.cancellationFeePercent,
     this.onCustomerDecline,
     this.onCancel,
+    this.onQuickCareCancel,
+    this.onQuickCarePaymentReturn,
     this.onFeedback,
     this.onWarrantyIssue,
     this.onPartnerContacts,
     this.onConfirmFabricShortfall,
   });
+
+  String get _quickCareWorkflow {
+    return _normalizeQuickCareWorkflow(order.quickCareWorkflowStatus);
+  }
+
+  bool get _quickCareNeedsCustomerPayment {
+    if (order.orderModuleType != OrderModuleType.quickFix) {
+      return false;
+    }
+    final verifiedPayment =
+        order.paymentStatus == PaymentStatus.fullyPaid &&
+        ((order.paymentProvider == 'razorpay' &&
+                (order.quickCareGatewayPaymentId?.isNotEmpty ?? false)) ||
+            (order.paymentProvider == 'sandbox' &&
+                (order.quickCarePaymentMethod?.isNotEmpty ?? false)));
+    if (verifiedPayment) return false;
+    return _quickCareWorkflow == 'payment_pending' ||
+        (_quickCareWorkflow == 'completed' &&
+            order.paymentStatus == PaymentStatus.fullyPaid);
+  }
+
+  String get _quickCareStatusLabel {
+    if (_quickCareNeedsCustomerPayment) return 'Payment pending';
+    return switch (_quickCareWorkflow) {
+      'request_submitted' => 'Request submitted',
+      'partner_assigned' => 'Partner assigned',
+      'accepted' => 'Accepted',
+      'in_progress' => 'In progress',
+      'paused' => 'Paused',
+      'awaiting_customer_approval' => 'Quote approval needed',
+      'payment_pending' => 'Payment pending',
+      'completed' => 'Completed',
+      'cancelled' => 'Cancelled',
+      _ => order.status.label,
+    };
+  }
 
   Future<void> _showDeliveryPin(BuildContext context) async {
     try {
@@ -1507,6 +1723,17 @@ class _OrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final estimateMeters = order.fabricPurchaseEstimate?['estimatedMeters'];
+    final quickCare = order.orderModuleType == OrderModuleType.quickFix;
+    final statusLabel = quickCare ? _quickCareStatusLabel : order.status.label;
+    final statusColor = quickCare && _quickCareNeedsCustomerPayment
+        ? AppColors.warning
+        : order.status.color;
+    final paymentLabel = _quickCareNeedsCustomerPayment
+        ? 'Payment pending'
+        : order.paymentStatus.label;
+    final paymentColor = _quickCareNeedsCustomerPayment
+        ? PaymentStatus.unpaid.color
+        : order.paymentStatus.color;
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
       padding: const EdgeInsets.all(16),
@@ -1529,12 +1756,12 @@ class _OrderCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
-                  color: order.status.color.withValues(alpha: 0.12),
+                  color: statusColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
                   Icons.checkroom_rounded,
-                  color: order.status.color,
+                  color: statusColor,
                   size: 24,
                 ),
               ),
@@ -1562,14 +1789,41 @@ class _OrderCard extends StatelessWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    if (order.orderTrackingId?.isNotEmpty == true)
-                      Text(
-                        'Order ID · ${order.orderTrackingId}',
-                        style: AppTextStyles.bodySmall.copyWith(
-                          color: AppColors.textHint,
-                          fontWeight: FontWeight.w600,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: SelectableText(
+                            'Order no. · ${_formatOrderReference(order.orderTrackingId?.trim().isNotEmpty == true ? order.orderTrackingId : order.id)}',
+                            maxLines: 2,
+                            style: AppTextStyles.bodySmall.copyWith(
+                              color: AppColors.textHint,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
                         ),
-                      ),
+                        IconButton(
+                          tooltip: 'Copy order number',
+                          visualDensity: VisualDensity.compact,
+                          iconSize: 18,
+                          onPressed: () async {
+                            final reference =
+                                order.orderTrackingId?.trim().isNotEmpty == true
+                                ? order.orderTrackingId!.trim()
+                                : order.id;
+                            await Clipboard.setData(
+                              ClipboardData(text: reference),
+                            );
+                            if (!context.mounted) return;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Order number copied.'),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.copy_rounded),
+                        ),
+                      ],
+                    ),
                     OrderTrackingTag.button(context, order.orderTrackingId),
                     if (order.occasionCategory != null &&
                         order.orderModuleType == OrderModuleType.coreTailoring)
@@ -1596,7 +1850,7 @@ class _OrderCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    order.status.label,
+                    statusLabel,
                     style: AppTextStyles.bodySmall.copyWith(
                       color: order.status.color,
                       fontWeight: FontWeight.w600,
@@ -1616,6 +1870,27 @@ class _OrderCard extends StatelessWidget {
             _buildBulkRequestInfo(order)
           else
             _buildOrderForInfo(order),
+
+          if (order.orderModuleType == OrderModuleType.quickFix) ...[
+            const SizedBox(height: 10),
+            _quickCarePartnerUpdates(context, onQuickCareCancel),
+            if (order.quickCareCancellationRequestStatus ==
+                'pending_admin') ...[
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'A cancellation request is already with Helpdesk. If the service has not started and the appointment is more than two hours away, you can still cancel it directly with no fee.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ],
 
           const SizedBox(height: 12),
           const Divider(height: 1),
@@ -1763,7 +2038,7 @@ class _OrderCard extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: order.paymentStatus.color.withValues(alpha: 0.12),
+                  color: paymentColor.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Row(
@@ -1772,11 +2047,11 @@ class _OrderCard extends StatelessWidget {
                     Icon(
                       Icons.currency_rupee_rounded,
                       size: 12,
-                      color: order.paymentStatus.color,
+                      color: paymentColor,
                     ),
                     const SizedBox(width: 2),
                     Text(
-                      order.paymentStatus.label,
+                      paymentLabel,
                       style: AppTextStyles.bodySmall.copyWith(
                         color: order.paymentStatus.color,
                         fontWeight: FontWeight.w600,
@@ -2060,7 +2335,8 @@ class _OrderCard extends StatelessWidget {
             const SizedBox(height: 12),
             _buildHandoverTimeline(context, order),
           ],
-          if (order.status != OrderStatus.delivered &&
+          if (!quickCare &&
+              order.status != OrderStatus.delivered &&
               order.status != OrderStatus.cancelled) ...[
             const SizedBox(height: 12),
             _buildProgressBar(order),
@@ -2257,6 +2533,479 @@ class _OrderCard extends StatelessWidget {
         ),
       ],
     );
+  }
+
+  Widget _quickCarePartnerUpdates(
+    BuildContext context,
+    VoidCallback? onQuickCareCancel,
+  ) => StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+    stream: FirebaseFirestore.instance
+        .collection('orders')
+        .doc(order.id)
+        .snapshots(),
+    builder: (context, snapshot) {
+      final data = snapshot.data?.data() ?? const <String, dynamic>{};
+      final photoEvidence =
+          (data['quickCareEvidence'] as List<dynamic>? ?? const <dynamic>[])
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .where(
+                (item) =>
+                    item['kind'] == 'photo' &&
+                    item['expired'] != true &&
+                    ((item['storagePath']?.toString() ?? '').isNotEmpty ||
+                        (item['previewUrl']?.toString() ?? '').isNotEmpty),
+              )
+              .toList();
+      final name =
+          (data['quickCareAssignedPartnerName'] ??
+                  data['assignedPartnerName'] ??
+                  data['quickCarePartnerName'] ??
+                  '')
+              .toString()
+              .trim();
+      final phone =
+          (data['quickCareAssignedPartnerPhone'] ??
+                  data['assignedPartnerContactPhone'] ??
+                  data['quickCarePartnerPhone'] ??
+                  '')
+              .toString()
+              .trim();
+      final assignmentStatus =
+          (data['quickCareAssignmentStatus'] ??
+                  data['partnerAssignmentStatus'] ??
+                  (name.isNotEmpty ? 'assigned' : 'searching'))
+              .toString()
+              .trim()
+              .toLowerCase();
+      final workflowStatus = (data['quickCareWorkflowStatus'] ?? '')
+          .toString()
+          .trim();
+      final extraStatus = (data['quickCareExtraChargeStatus'] ?? '')
+          .toString()
+          .trim();
+      final quoteStatus = (data['quickCareQuoteStatus'] ?? '')
+          .toString()
+          .trim();
+      final normalizedWorkflow = workflowStatus
+          .replaceAllMapped(
+            RegExp(r'([a-z])([A-Z])'),
+            (match) => '${match.group(1)}_${match.group(2)}',
+          )
+          .toLowerCase()
+          .replaceAll(RegExp(r'[\s-]+'), '_');
+      final cancellationRequestPending =
+          data['quickCareCancellationRequestStatus'] == 'pending_admin';
+      final quoteApproved =
+          quoteStatus == 'customerAccepted' || extraStatus == 'approved';
+      final cancellationBlocked =
+          quoteApproved ||
+          cancellationRequestPending ||
+          const {
+            'started',
+            'in_progress',
+            'service_started',
+            'work_started',
+            'paused',
+            'payment_pending',
+            'completed',
+            'service_completed',
+            'cancelled',
+          }.contains(normalizedWorkflow) ||
+          const {
+            'completed',
+            'delivered',
+          }.contains((data['status'] ?? '').toString().toLowerCase()) ||
+          data['status'] == 'cancelled' ||
+          data['quickCareAssignmentStatus'] == 'cancelled';
+      final paymentStatus = (data['paymentStatus'] ?? '').toString();
+      final paymentProvider = (data['paymentProvider'] ?? '').toString();
+      final verifiedPayment =
+          paymentStatus == 'fullyPaid' &&
+          ((paymentProvider == 'razorpay' &&
+                  (data['quickCareGatewayPaymentId'] as String?)?.isNotEmpty ==
+                      true) ||
+              (paymentProvider == 'sandbox' &&
+                  (data['quickCarePaymentMethod'] as String?)?.isNotEmpty ==
+                      true));
+      final legacyPartnerPaymentClaim =
+          !verifiedPayment &&
+          paymentStatus == 'fullyPaid' &&
+          (normalizedWorkflow == 'completed' ||
+              normalizedWorkflow == 'payment_pending');
+      final needsCustomerPayment =
+          (normalizedWorkflow == 'payment_pending' && !verifiedPayment) ||
+          legacyPartnerPaymentClaim;
+      final finalAmount =
+          (data['quickCareFinalAmount'] ?? data['price'] ?? 0) as num;
+      final amountPaid = (data['amountPaid'] ?? 0) as num;
+      final paymentDue = !verifiedPayment
+          ? finalAmount
+          : (finalAmount - amountPaid).clamp(0, double.infinity);
+      final assigned =
+          name.isNotEmpty ||
+          const {
+            'assigned',
+            'accepted',
+            'partneraccepted',
+          }.contains(assignmentStatus.replaceAll('_', ''));
+      final accepted = const {
+        'accepted',
+        'partneraccepted',
+      }.contains(assignmentStatus.replaceAll('_', ''));
+      final title = needsCustomerPayment
+          ? 'Payment needed'
+          : assigned
+          ? accepted
+                ? 'Partner accepted your request'
+                : 'Partner assigned'
+          : assignmentStatus == 'declined' || assignmentStatus == 'reassigning'
+          ? 'Finding another service partner'
+          : 'Partner assignment pending';
+      final subtitle = workflowStatus == 'accepted'
+          ? 'Next action: share the last four digits of your registered mobile so your Partner can start.'
+          : workflowStatus == 'inProgress'
+          ? 'Your Partner is working on the service. We’ll let you know when payment is due.'
+          : workflowStatus == 'paused'
+          ? 'The service is paused. Your Partner will update you before resuming.'
+          : needsCustomerPayment
+          ? 'Next action: pay ₹${paymentDue.toStringAsFixed(0)} securely in the app. The booking closes after payment is verified.'
+          : workflowStatus == 'completed'
+          ? 'Service completed and paid · final amount ₹${data['quickCareFinalAmount'] ?? data['price'] ?? 0}.'
+          : workflowStatus == 'awaitingCustomerApproval'
+          ? 'Next action: approve or decline your Partner’s quote below.'
+          : assigned
+          ? 'Service and booking updates will appear here.'
+          : 'We’ll show your assigned Quick Care partner and service updates here.';
+
+      return Container(
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF0F5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: const Color(0xFFF6D9E5)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  assigned
+                      ? Icons.notifications_active_outlined
+                      : Icons.notifications_none_rounded,
+                  color: AppColors.primary,
+                  size: 19,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: AppTextStyles.bodyMedium.copyWith(
+                      color: const Color(0xFF102451),
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                if (snapshot.connectionState == ConnectionState.waiting)
+                  const SizedBox.square(
+                    dimension: 14,
+                    child: CircularProgressIndicator(strokeWidth: 1.8),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              subtitle,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            if (name.isNotEmpty) ...[
+              const SizedBox(height: 7),
+              Text(
+                name,
+                style: AppTextStyles.bodyMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+            if (phone.isNotEmpty)
+              InkWell(
+                onTap: () => launchUrl(Uri(scheme: 'tel', path: phone)),
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Text(
+                    phone,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.primary,
+                      decoration: TextDecoration.underline,
+                    ),
+                  ),
+                ),
+              ),
+            if (photoEvidence.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              ExpansionTile(
+                tilePadding: EdgeInsets.zero,
+                childrenPadding: const EdgeInsets.only(bottom: 6),
+                title: const Text('Before and after photos'),
+                subtitle: Text(
+                  '${photoEvidence.length} service photo${photoEvidence.length == 1 ? '' : 's'}',
+                ),
+                children: [
+                  for (final item in photoEvidence)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _quickCareEvidenceLabel(item['note']?.toString()),
+                          ),
+                          const SizedBox(height: 5),
+                          _QuickCareCustomerPhoto(item: item),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ],
+            if (workflowStatus == 'paused' &&
+                (data['quickCarePauseReason']?.toString() ?? '')
+                    .trim()
+                    .isNotEmpty) ...[
+              const SizedBox(height: 5),
+              Text(
+                'Paused: ${data['quickCarePauseReason']}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
+            if (workflowStatus == 'completed' && !needsCustomerPayment) ...[
+              const SizedBox(height: 5),
+              Text(
+                'Final amount · ₹${data['quickCareFinalAmount'] ?? data['price'] ?? 0} · ${data['quickCarePointsPending'] ?? 0} Partner points pending review',
+                style: AppTextStyles.bodySmall.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (data['quickCareCustomerRating'] is num)
+                Text(
+                  'Your rating · ${data['quickCareCustomerRating']}/5',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                )
+              else ...[
+                const SizedBox(height: 5),
+                const Text('Rate your Quick Care service'),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var rating = 1; rating <= 5; rating++)
+                      IconButton(
+                        tooltip: 'Rate $rating star${rating == 1 ? '' : 's'}',
+                        visualDensity: VisualDensity.compact,
+                        onPressed: () =>
+                            _submitQuickCareRating(context, rating),
+                        icon: const Icon(Icons.star_rounded),
+                        color: const Color(0xFFF2A900),
+                      ),
+                  ],
+                ),
+              ],
+            ],
+            if (extraStatus == 'pendingCustomerApproval') ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${data['quickCareExtraChargeType'] == 'serviceQuote' ? 'Service quote' : 'Additional work quote'} · ₹${data['quickCareExtraChargeAmount'] ?? 0}',
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    if ((data['quickCareExtraChargeReason']?.toString() ?? '')
+                        .trim()
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      Text(data['quickCareExtraChargeReason'].toString()),
+                    ],
+                    const SizedBox(height: 6),
+                    const Text(
+                      'Approve or decline this amount before the Partner continues.',
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        OutlinedButton(
+                          onPressed: () => _respondQuickCareExtraCharge(
+                            context,
+                            approve: false,
+                          ),
+                          child: const Text('Decline'),
+                        ),
+                        FilledButton(
+                          onPressed: () => _respondQuickCareExtraCharge(
+                            context,
+                            approve: true,
+                          ),
+                          child: const Text('Approve quote'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (needsCustomerPayment && paymentDue > 0) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8E8),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Pay the customer-approved final amount in the app. The Partner cannot report or confirm payment; the service closes after payment verification.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () async {
+                    final paymentConfirmed = await context.push<bool>(
+                      '/checkout/${order.id}',
+                    );
+                    if (paymentConfirmed != true) return;
+                    await onQuickCarePaymentReturn?.call();
+                    if (!context.mounted) return;
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Quick Care payment verified. The booking is now closed.',
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.payments_outlined),
+                  label: Text('Pay ₹${paymentDue.toStringAsFixed(0)} now'),
+                ),
+              ),
+            ],
+            if (snapshot.hasData &&
+                data.isNotEmpty &&
+                !cancellationBlocked &&
+                onQuickCareCancel != null) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: onQuickCareCancel,
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Cancel service'),
+                ),
+              ),
+            ],
+            if (quoteApproved && normalizedWorkflow != 'completed') ...[
+              const SizedBox(height: 8),
+              const Text(
+                'The quote is approved. This service can no longer be cancelled from the customer app.',
+                style: TextStyle(color: Color(0xFF777286)),
+              ),
+            ],
+            if (cancellationRequestPending) ...[
+              const SizedBox(height: 8),
+              const Text(
+                'Your cancellation request is with Helpdesk. They will follow up with you.',
+                style: TextStyle(color: Color(0xFF777286)),
+              ),
+            ],
+          ],
+        ),
+      );
+    },
+  );
+
+  String _quickCareEvidenceLabel(String? note) => switch (note) {
+    'before_work' => 'Before service',
+    'after_work' => 'After service',
+    _ => 'Service photo',
+  };
+
+  Future<void> _respondQuickCareExtraCharge(
+    BuildContext context, {
+    required bool approve,
+  }) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('respondQuickCareExtraCharge')
+          .call(<String, dynamic>{'orderId': order.id, 'approve': approve});
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            approve
+                ? 'Quote approved. Your Partner can proceed with the service.'
+                : 'Quote declined. Your Partner can revise the quote or contact you.',
+          ),
+        ),
+      );
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Could not send your response.'),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not send your response. Please retry.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _submitQuickCareRating(BuildContext context, int rating) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('submitQuickCareRating')
+          .call(<String, dynamic>{'orderId': order.id, 'rating': rating});
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Thanks for rating your Quick Care service.'),
+        ),
+      );
+    } on FirebaseFunctionsException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Could not submit your rating.'),
+        ),
+      );
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not submit your rating. Please retry.'),
+        ),
+      );
+    }
   }
 
   Widget _buildBulkRequestInfo(DressOrder order) {
@@ -2593,6 +3342,65 @@ class _OrderCard extends StatelessWidget {
       'Dec',
     ];
     return '${date.day} ${months[date.month - 1]}';
+  }
+}
+
+class _QuickCareCustomerPhoto extends StatelessWidget {
+  const _QuickCareCustomerPhoto({required this.item});
+
+  final Map<String, dynamic> item;
+
+  Future<Uint8List?> _photoBytes() async {
+    final path = item['storagePath']?.toString().trim() ?? '';
+    if (path.isEmpty) return null;
+    try {
+      return await FirebaseStorage.instance.ref(path).getData(15 * 1024 * 1024);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final fallbackUrl = item['previewUrl']?.toString() ?? '';
+    return FutureBuilder<Uint8List?>(
+      future: _photoBytes(),
+      builder: (context, snapshot) {
+        final bytes = snapshot.data;
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox.square(
+                dimension: 22,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+        if (bytes == null && fallbackUrl.isEmpty) {
+          return const Text('Photo is temporarily unavailable.');
+        }
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(10),
+          child: bytes != null
+              ? Image.memory(
+                  bytes,
+                  height: 190,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                )
+              : Image.network(
+                  fallbackUrl,
+                  height: 190,
+                  width: double.infinity,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, _, _) =>
+                      const Text('Photo is temporarily unavailable.'),
+                ),
+        );
+      },
+    );
   }
 }
 

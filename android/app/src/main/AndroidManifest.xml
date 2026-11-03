@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <!-- Gallery: API 33+ -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
     <!-- Gallery: API 32 and below (image_picker) -->

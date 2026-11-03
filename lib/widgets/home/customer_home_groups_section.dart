@@ -1,10 +1,10 @@
-import 'dart:ui' as ui;
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../core/constants/app_text_styles.dart';
 import '../../models/customer_home_configuration.dart';
+import 'home_reference_artwork.dart';
 
 class CustomerHomeGroupsSection extends StatelessWidget {
   const CustomerHomeGroupsSection({super.key});
@@ -12,59 +12,73 @@ class CustomerHomeGroupsSection extends StatelessWidget {
   static const _cards = <_HomeServiceCardData>[
     _HomeServiceCardData(
       id: 'design_custom',
-      imageAsset: 'assets/images/customer_home_poster_v4.png',
-      sourceRect: Rect.fromLTWH(22, 389, 322, 294),
-      surface: Color(0xFFFFE7EE),
-      accent: Color(0xFF9D003B),
-      description: 'Browse, preview, save or order',
-    ),
-    _HomeServiceCardData(
-      id: 'shop',
-      imageAsset: 'assets/images/customer_home_poster_v4.png',
-      sourceRect: Rect.fromLTWH(358, 389, 317, 294),
-      surface: Color(0xFFF7E8F8),
-      accent: Color(0xFF8E087E),
-      description: 'Ready-to-wear, fabrics and accessories',
+      number: '01',
+      title: 'Design Your Dress',
+      description: 'Explore designs, customise and save favourites',
+      artworkRect: Rect.fromLTWH(52, 808, 374, 182),
+      surface: Color(0xFFFFE9F1),
+      accent: Color(0xFFE30068),
+      icon: Icons.design_services_rounded,
     ),
     _HomeServiceCardData(
       id: 'custom_tailoring',
-      imageAsset: 'assets/images/arti_smiling.png',
-      sourceRect: Rect.fromLTWH(0, 0, 1302, 1208),
-      surface: Color(0xFFF0F3E5),
-      accent: Color(0xFF496A26),
-      description: 'Get garments stitched to your style',
+      number: '02',
+      title: 'Stitching Order',
+      description: 'Get your clothes stitched to your measurements',
+      artworkRect: Rect.fromLTWH(52, 1102, 374, 166),
+      surface: Color(0xFFFFEFEE),
+      accent: Color(0xFFB51C2B),
+      icon: Icons.content_cut_rounded,
     ),
     _HomeServiceCardData(
-      id: 'quick_fix',
-      imageAsset: 'assets/images/quickcare_home_services.png',
-      sourceRect: Rect.fromLTWH(0, 0, 340, 264),
-      surface: Color(0xFFFFEFDF),
-      accent: Color(0xFFC65314),
-      description: 'Repairs, zips, buttons and steam press',
+      id: 'shop',
+      number: '03',
+      title: 'Fashion Store',
+      description: 'Shop ready-to-wear outfits, fabrics',
+      artworkRect: Rect.fromLTWH(449, 808, 374, 182),
+      surface: Color(0xFFF1ECFF),
+      accent: Color(0xFF293C70),
+      icon: Icons.shopping_bag_outlined,
     ),
     _HomeServiceCardData(
       id: 'garment_care',
-      imageAsset: 'assets/images/garment_care_card_source.png',
-      sourceRect: Rect.fromLTWH(1, 1, 334, 348),
-      surface: Color(0xFFE7F3FC),
-      accent: Color(0xFF0756A0),
-      description: 'Laundry, dry cleaning and fabric care',
+      number: '04',
+      title: 'Garment Care',
+      description: 'Laundry, dry cleaning, ironing and fabric care',
+      artworkRect: Rect.fromLTWH(52, 1390, 374, 136),
+      surface: Color(0xFFE9F4FF),
+      accent: Color(0xFF0871B5),
+      icon: Icons.local_laundry_service_outlined,
+    ),
+    _HomeServiceCardData(
+      id: 'quick_fix',
+      number: '05',
+      title: 'Quick Care & Home Services',
+      description: 'Repairs, alterations and wardrobe management',
+      artworkRect: Rect.fromLTWH(449, 1102, 374, 166),
+      surface: Color(0xFFFFF0E4),
+      accent: Color(0xFFD7600C),
+      icon: Icons.handyman_outlined,
     ),
     _HomeServiceCardData(
       id: 'rent_fabrics',
-      imageAsset: 'assets/images/customer_home_poster_v4.png',
-      sourceRect: Rect.fromLTWH(688, 880, 317, 294),
-      surface: Color(0xFFFFE9EF),
-      accent: Color(0xFFB90050),
-      description: 'Outfits for weddings and special events',
+      number: '06',
+      title: 'Dress Rental',
+      description: 'Rent outfits for shows, celebrations and events',
+      artworkRect: Rect.fromLTWH(449, 1390, 374, 136),
+      surface: Color(0xFFF1EBFF),
+      accent: Color(0xFF6A35D1),
+      icon: Icons.checkroom_outlined,
     ),
     _HomeServiceCardData(
       id: 'bulk_orders',
-      imageAsset: 'assets/images/bulk_order_wedding_collection.png',
-      sourceRect: Rect.fromLTWH(0, 0, 1024, 1536),
-      surface: Color(0xFFF8E9F0),
-      accent: Color(0xFF7B2458),
-      description: 'Group orders for weddings and events',
+      number: '07',
+      title: 'Weddings & Event Orders',
+      description: 'Coordinated outfits for weddings, groups and functions',
+      artworkRect: Rect.fromLTWH(480, 1625, 343, 108),
+      surface: Color(0xFFFFEAF1),
+      accent: Color(0xFFB2164E),
+      icon: Icons.celebration_outlined,
     ),
   ];
 
@@ -73,108 +87,191 @@ class CustomerHomeGroupsSection extends StatelessWidget {
     stream: CustomerHomeConfigurationService.watch(),
     builder: (context, snapshot) {
       final groups = snapshot.data ?? CustomerHomeGroup.defaults;
-      final cardsById = {for (final card in _cards) card.id: card};
-      final labelsById = <String, String>{};
-      final orderedIds = <String>[];
+      final enabledIds = <String>{};
       for (final group in groups) {
         if (!group.enabled) continue;
-        for (final id in group.itemIds) {
-          if (!cardsById.containsKey(id) || labelsById.containsKey(id)) {
-            continue;
-          }
-          labelsById[id] = group.labelFor(id);
-          orderedIds.add(id);
-        }
+        enabledIds.addAll(group.itemIds);
       }
 
-      final visibleCards = orderedIds
-          .map((id) => cardsById[id]!)
+      // Keep this fixed sequence even if an older Firestore home config has a
+      // different group order. The owner config can still enable or hide items.
+      final visibleCards = _cards
+          .where((card) => enabledIds.contains(card.id))
           .toList(growable: false);
       if (visibleCards.isEmpty) return const SizedBox.shrink();
 
-      final sections = <Widget>[];
-      final gridCards = <_HomeServiceCardData>[];
-      void addGap() {
-        if (sections.isNotEmpty) sections.add(const SizedBox(height: 10));
-      }
-
-      void flushGrid() {
-        if (gridCards.isEmpty) return;
-        addGap();
-        sections.add(
+      final gridCards = visibleCards
+          .where((card) => card.id != 'bulk_orders')
+          .toList(growable: false);
+      final weddingCard = visibleCards.where(
+        (card) => card.id == 'bulk_orders',
+      );
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Our Services',
+                  style: AppTextStyles.headlineMedium,
+                ),
+              ),
+              TextButton(
+                onPressed: () => _showAllServices(context, visibleCards),
+                child: const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('See all'),
+                    Icon(Icons.arrow_forward_rounded),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           GridView.count(
-            crossAxisCount: 3,
+            crossAxisCount: 2,
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             crossAxisSpacing: 10,
             mainAxisSpacing: 10,
-            childAspectRatio: 0.64,
+            childAspectRatio: 0.82,
             children: [
-              for (final card in gridCards)
-                _HomeServiceCard(data: card, title: labelsById[card.id]!),
+              for (final card in gridCards) _HomeServiceCard(data: card),
             ],
           ),
-        );
-        gridCards.clear();
-      }
-
-      for (final card in visibleCards) {
-        if (card.id == 'bulk_orders') {
-          flushGrid();
-          addGap();
-          sections.add(_BulkOrderHomeCard(title: labelsById[card.id]!));
-        } else {
-          gridCards.add(card);
-        }
-      }
-      flushGrid();
-
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: sections,
+          for (final card in weddingCard) ...[
+            const SizedBox(height: 10),
+            _BulkOrderHomeCard(data: card),
+          ],
+        ],
       );
     },
   );
+
+  static void _showAllServices(
+    BuildContext context,
+    List<_HomeServiceCardData> visibleCards,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      useSafeArea: true,
+      builder: (sheetContext) => ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 20),
+        children: [
+          for (final card in visibleCards)
+            ListTile(
+              leading: CircleAvatar(
+                backgroundColor: card.surface,
+                child: Icon(card.icon, color: card.accent),
+              ),
+              title: Text(card.title),
+              subtitle: Text(card.description),
+              trailing: const Icon(Icons.chevron_right_rounded),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push(CustomerHomeItemRegistry.items[card.id]!.route);
+              },
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 class _BulkOrderHomeCard extends StatelessWidget {
-  const _BulkOrderHomeCard({required this.title});
+  const _BulkOrderHomeCard({required this.data});
 
-  final String title;
+  final _HomeServiceCardData data;
 
   @override
   Widget build(BuildContext context) {
-    final route = CustomerHomeItemRegistry.items['bulk_orders']!.route;
+    final route = CustomerHomeItemRegistry.items[data.id]!.route;
     return Semantics(
       button: true,
-      label: title,
+      label: '${data.title}. ${data.description}',
       child: Material(
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(22),
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: () => context.push(route),
-          child: Image.asset(
-            'assets/images/bulk_order_wedding_collection.png',
-            width: double.infinity,
-            fit: BoxFit.fitWidth,
-            excludeFromSemantics: true,
-            errorBuilder: (_, _, _) => AspectRatio(
-              aspectRatio: 0.67,
-              child: ColoredBox(
-                color: const Color(0xFFF8E9F0),
-                child: Center(
-                  child: Text(
-                    title,
-                    style: const TextStyle(
-                      color: Color(0xFF7B2458),
-                      fontSize: 24,
-                      fontWeight: FontWeight.w700,
+          child: SizedBox(
+            height: 108,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                HomeReferenceArtwork(
+                  sourceRect: data.artworkRect,
+                  placeholderColor: data.surface,
+                ),
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        const Color(0xFFFFEAF1).withValues(alpha: 0.98),
+                        const Color(0xFFFFEAF1).withValues(alpha: 0.88),
+                        const Color(0x00FFEAF1),
+                      ],
+                      stops: const [0, 0.62, 1],
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
                     ),
                   ),
                 ),
-              ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Text(
+                              data.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: data.accent,
+                                fontFamily: 'serif',
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              data.description,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF29344F),
+                                fontSize: 11,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      CircleAvatar(
+                        radius: 18,
+                        backgroundColor: data.accent,
+                        child: const Icon(
+                          Icons.arrow_forward_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -186,33 +283,36 @@ class _BulkOrderHomeCard extends StatelessWidget {
 class _HomeServiceCardData {
   const _HomeServiceCardData({
     required this.id,
-    required this.imageAsset,
-    required this.sourceRect,
+    required this.number,
+    required this.title,
+    required this.artworkRect,
     required this.surface,
     required this.accent,
+    required this.icon,
     required this.description,
   });
 
   final String id;
-  final String imageAsset;
-  final Rect sourceRect;
+  final String number;
+  final String title;
+  final Rect artworkRect;
   final Color surface;
   final Color accent;
+  final IconData icon;
   final String description;
 }
 
 class _HomeServiceCard extends StatelessWidget {
-  const _HomeServiceCard({required this.data, required this.title});
+  const _HomeServiceCard({required this.data});
 
   final _HomeServiceCardData data;
-  final String title;
 
   @override
   Widget build(BuildContext context) {
     final route = CustomerHomeItemRegistry.items[data.id]!.route;
     return Semantics(
       button: true,
-      label: title,
+      label: '${data.number}. ${data.title}. ${data.description}',
       child: Material(
         color: data.surface,
         borderRadius: BorderRadius.circular(18),
@@ -234,49 +334,44 @@ class _HomeServiceCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                AspectRatio(
-                  aspectRatio: data.sourceRect.width / data.sourceRect.height,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _ArtworkCrop(
-                        assetPath: data.imageAsset,
-                        sourceRect: data.sourceRect,
-                        placeholderColor: data.surface,
-                      ),
-                    ],
+                Expanded(
+                  flex: 5,
+                  child: HomeReferenceArtwork(
+                    sourceRect: data.artworkRect,
+                    placeholderColor: data.surface,
                   ),
                 ),
                 Expanded(
+                  flex: 5,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 5, 7, 5),
+                    padding: const EdgeInsets.fromLTRB(9, 7, 8, 7),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          title,
+                          data.title,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: data.accent,
                             fontFamily: 'serif',
-                            fontSize: 12,
-                            height: 1.05,
+                            fontSize: 13,
+                            height: 1.08,
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                        const Spacer(),
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
                             Expanded(
                               child: Text(
                                 data.description,
-                                maxLines: 2,
+                                maxLines: 3,
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: AppColors.textPrimary,
-                                  fontSize: 8.5,
+                                  fontSize: 10,
                                   height: 1.15,
                                 ),
                               ),
@@ -308,81 +403,4 @@ class _HomeServiceCard extends StatelessWidget {
       ),
     );
   }
-}
-
-class _ArtworkCrop extends StatefulWidget {
-  const _ArtworkCrop({
-    required this.assetPath,
-    required this.sourceRect,
-    required this.placeholderColor,
-  });
-
-  final String assetPath;
-  final Rect sourceRect;
-  final Color placeholderColor;
-
-  @override
-  State<_ArtworkCrop> createState() => _ArtworkCropState();
-}
-
-class _ArtworkCropState extends State<_ArtworkCrop> {
-  ui.Image? _image;
-  ImageStream? _stream;
-  ImageStreamListener? _listener;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    final nextStream = AssetImage(
-      widget.assetPath,
-    ).resolve(createLocalImageConfiguration(context));
-    if (_stream?.key == nextStream.key) return;
-    if (_stream != null && _listener != null) {
-      _stream!.removeListener(_listener!);
-    }
-    _stream = nextStream;
-    _listener = ImageStreamListener((info, _) {
-      if (mounted) setState(() => _image = info.image);
-    });
-    nextStream.addListener(_listener!);
-  }
-
-  @override
-  void dispose() {
-    if (_stream != null && _listener != null) {
-      _stream!.removeListener(_listener!);
-    }
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final image = _image;
-    if (image == null) return ColoredBox(color: widget.placeholderColor);
-    return CustomPaint(
-      painter: _ArtworkCropPainter(image, widget.sourceRect),
-      child: const SizedBox.expand(),
-    );
-  }
-}
-
-class _ArtworkCropPainter extends CustomPainter {
-  const _ArtworkCropPainter(this.image, this.sourceRect);
-
-  final ui.Image image;
-  final Rect sourceRect;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.drawImageRect(
-      image,
-      sourceRect,
-      Offset.zero & size,
-      Paint()..filterQuality = ui.FilterQuality.high,
-    );
-  }
-
-  @override
-  bool shouldRepaint(_ArtworkCropPainter oldDelegate) =>
-      image != oldDelegate.image || sourceRect != oldDelegate.sourceRect;
 }

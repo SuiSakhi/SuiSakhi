@@ -103,6 +103,7 @@ class QuickFixService {
     required this.subtitle,
     required this.minInr,
     required this.maxInr,
+    this.requiresPartnerQuote = false,
   });
 
   final String id;
@@ -110,6 +111,7 @@ class QuickFixService {
   final String subtitle;
   final int minInr;
   final int maxInr;
+  final bool requiresPartnerQuote;
 
   double get midEstimate => (minInr + maxInr) / 2;
 
@@ -123,7 +125,7 @@ class QuickFixService {
     ),
     QuickFixService(
       id: 'rafu',
-      title: 'Rafu (tear repair)',
+      title: 'Rafu (Tear Repair)',
       subtitle: 'Small fabric tears',
       minInr: 100,
       maxInr: 250,
@@ -155,6 +157,28 @@ class QuickFixService {
       subtitle: 'Faster turnaround',
       minInr: 200,
       maxInr: 500,
+    ),
+    QuickFixService(
+      id: 'wardrobe',
+      title: 'Wardrobe Management',
+      subtitle: 'Organize, maintain and repair',
+      minInr: 250,
+      maxInr: 800,
+    ),
+    QuickFixService(
+      id: 'saree_draping',
+      title: 'Saree Draping',
+      subtitle: 'At-home saree draping help',
+      minInr: 300,
+      maxInr: 700,
+    ),
+    QuickFixService(
+      id: 'other_quote',
+      title: 'Other Services (Please Specify)',
+      subtitle: 'Partner quote after assessment',
+      minInr: 0,
+      maxInr: 0,
+      requiresPartnerQuote: true,
     ),
   ];
 

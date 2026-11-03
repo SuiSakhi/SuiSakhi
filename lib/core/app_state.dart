@@ -3,6 +3,7 @@ import 'dart:async' show unawaited;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import '../models/measurement.dart';
 import '../models/stitching_rate.dart';
 import '../models/phone_registry_entry.dart';
@@ -47,7 +48,8 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  String get displayName => _profile?.name ?? _auth.currentUser?.displayName ?? 'Guest';
+  String get displayName =>
+      _profile?.name ?? _auth.currentUser?.displayName ?? 'Guest';
 
   // ── Measurement display (stored values are always cm) ─────────────────────
   MeasurementUnit _measurementUnit = MeasurementUnit.cm;
@@ -61,10 +63,9 @@ class AppState extends ChangeNotifier {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     try {
-      await _db.collection('users').doc(uid).set(
-        {'measurementUnit': unit.storageName},
-        SetOptions(merge: true),
-      );
+      await _db.collection('users').doc(uid).set({
+        'measurementUnit': unit.storageName,
+      }, SetOptions(merge: true));
     } catch (_) {}
   }
 
@@ -118,12 +119,17 @@ class AppState extends ChangeNotifier {
           fitPreference: data['fitPreference'] as String?,
           preferredLanguage:
               (data['preferredLanguage'] as String?)?.trim().isNotEmpty == true
-                  ? data['preferredLanguage'] as String
-                  : 'English',
-          notifySms: data['notifySms'] is bool ? data['notifySms'] as bool : true,
-          notifyApp: data['notifyApp'] is bool ? data['notifyApp'] as bool : true,
-          notifyEmail:
-              data['notifyEmail'] is bool ? data['notifyEmail'] as bool : false,
+              ? data['preferredLanguage'] as String
+              : 'English',
+          notifySms: data['notifySms'] is bool
+              ? data['notifySms'] as bool
+              : true,
+          notifyApp: data['notifyApp'] is bool
+              ? data['notifyApp'] as bool
+              : true,
+          notifyEmail: data['notifyEmail'] is bool
+              ? data['notifyEmail'] as bool
+              : false,
           age: data['age'],
           role: UserRole.values.firstWhere(
             (r) => r.name == (data['role'] ?? 'customer'),
@@ -138,9 +144,10 @@ class AppState extends ChangeNotifier {
         _hasCompletedSetup = data['setupComplete'] ?? false;
         _measurementUnit =
             measurementUnitFromStorage(data['measurementUnit']) ??
-                MeasurementUnit.cm;
+            MeasurementUnit.cm;
         _savedDressMeasurementsCm = _parseDressDesignerMeasurementsMap(
-            data['dressDesignerMeasurements']);
+          data['dressDesignerMeasurements'],
+        );
         notifyListeners();
       }
     } catch (_) {}
@@ -165,18 +172,20 @@ class AppState extends ChangeNotifier {
     final p = _profile;
     if (p == null) return;
     final t = raw?.trim() ?? '';
-    setProfile(UserProfile(
-      name: p.name,
-      gender: p.gender,
-      age: p.age,
-      role: p.role,
-      avatarPath: p.avatarPath,
-      email: p.email,
-      photoUrl: p.photoUrl,
-      notifyWhatsApp: p.notifyWhatsApp,
-      payoutUpiId: p.payoutUpiId,
-      deliveryAddress: t.isEmpty ? null : t,
-    ));
+    setProfile(
+      UserProfile(
+        name: p.name,
+        gender: p.gender,
+        age: p.age,
+        role: p.role,
+        avatarPath: p.avatarPath,
+        email: p.email,
+        photoUrl: p.photoUrl,
+        notifyWhatsApp: p.notifyWhatsApp,
+        payoutUpiId: p.payoutUpiId,
+        deliveryAddress: t.isEmpty ? null : t,
+      ),
+    );
     await saveUserProfile();
   }
 
@@ -225,10 +234,9 @@ class AppState extends ChangeNotifier {
     }
 
     try {
-      await _db.collection('users').doc(uid).set(
-        {'dressDesignerMeasurements': cmMap},
-        SetOptions(merge: true),
-      );
+      await _db.collection('users').doc(uid).set({
+        'dressDesignerMeasurements': cmMap,
+      }, SetOptions(merge: true));
     } catch (_) {}
   }
 
@@ -244,7 +252,8 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _mergeBodyScanIntoSavedDressMeasurements(
-      BodyMeasurements bm) async {
+    BodyMeasurements bm,
+  ) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
     final merged = Map<String, String>.from(_savedDressMeasurementsCm);
@@ -261,23 +270,24 @@ class AppState extends ChangeNotifier {
   Future<void> updatePhotoUrl(String photoUrl) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return;
-    await _db.collection('users').doc(uid).set(
-      {'photoUrl': photoUrl},
-      SetOptions(merge: true),
-    );
+    await _db.collection('users').doc(uid).set({
+      'photoUrl': photoUrl,
+    }, SetOptions(merge: true));
     if (_profile != null) {
-      setProfile(UserProfile(
-        name: _profile!.name,
-        gender: _profile!.gender,
-        age: _profile!.age,
-        role: _profile!.role,
-        email: _profile!.email ?? _auth.currentUser?.email,
-        photoUrl: photoUrl,
-        avatarPath: _profile!.avatarPath,
-        notifyWhatsApp: _profile!.notifyWhatsApp,
-        payoutUpiId: _profile!.payoutUpiId,
-        deliveryAddress: _profile!.deliveryAddress,
-      ));
+      setProfile(
+        UserProfile(
+          name: _profile!.name,
+          gender: _profile!.gender,
+          age: _profile!.age,
+          role: _profile!.role,
+          email: _profile!.email ?? _auth.currentUser?.email,
+          photoUrl: photoUrl,
+          avatarPath: _profile!.avatarPath,
+          notifyWhatsApp: _profile!.notifyWhatsApp,
+          payoutUpiId: _profile!.payoutUpiId,
+          deliveryAddress: _profile!.deliveryAddress,
+        ),
+      );
     } else {
       notifyListeners();
     }
@@ -318,6 +328,7 @@ class AppState extends ChangeNotifier {
     }, SetOptions(merge: true));
     await syncPhoneRegistryForCurrentUser();
   }
+
   Future<void> updateCustomerBasicProfile({
     required String name,
     String? email,
@@ -331,99 +342,103 @@ class AppState extends ChangeNotifier {
     bool? notifyApp,
     bool? notifyEmail,
   }) async {
-  final uid = _auth.currentUser?.uid;
-  if (uid == null) return;
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
 
-  final current = _profile;
+    final current = _profile;
 
-  final updatedProfile = UserProfile(
-    name: name.trim(),
-    gender: current?.gender ?? Gender.female,
-    age: current?.age ?? 0,
-    role: current?.role ?? UserRole.customer,
-    avatarPath: current?.avatarPath,
-    email: email?.trim().isNotEmpty == true ? email!.trim() : null,
-    photoUrl: current?.photoUrl,
-    dateOfBirth:
-        dateOfBirth?.trim().isNotEmpty == true ? dateOfBirth!.trim() : null,
-    heightCm: heightCm,
-    weightKg: weightKg,
-    fitPreference:
-        fitPreference?.trim().isNotEmpty == true ? fitPreference!.trim() : null,
-    preferredLanguage:
-        preferredLanguage?.trim().isNotEmpty == true
-            ? preferredLanguage!.trim()
-            : current?.preferredLanguage ?? 'English',
-    notifySms: notifySms ?? current?.notifySms ?? true,
-    notifyWhatsApp: notifyWhatsApp ?? current?.notifyWhatsApp ?? true,
-    notifyApp: notifyApp ?? current?.notifyApp ?? true,
-    notifyEmail: notifyEmail ?? current?.notifyEmail ?? false,
-    payoutUpiId: current?.payoutUpiId,
-    deliveryAddress: current?.deliveryAddress,
-  );
+    final updatedProfile = UserProfile(
+      name: name.trim(),
+      gender: current?.gender ?? Gender.female,
+      age: current?.age ?? 0,
+      role: current?.role ?? UserRole.customer,
+      avatarPath: current?.avatarPath,
+      email: email?.trim().isNotEmpty == true ? email!.trim() : null,
+      photoUrl: current?.photoUrl,
+      dateOfBirth: dateOfBirth?.trim().isNotEmpty == true
+          ? dateOfBirth!.trim()
+          : null,
+      heightCm: heightCm,
+      weightKg: weightKg,
+      fitPreference: fitPreference?.trim().isNotEmpty == true
+          ? fitPreference!.trim()
+          : null,
+      preferredLanguage: preferredLanguage?.trim().isNotEmpty == true
+          ? preferredLanguage!.trim()
+          : current?.preferredLanguage ?? 'English',
+      notifySms: notifySms ?? current?.notifySms ?? true,
+      notifyWhatsApp: notifyWhatsApp ?? current?.notifyWhatsApp ?? true,
+      notifyApp: notifyApp ?? current?.notifyApp ?? true,
+      notifyEmail: notifyEmail ?? current?.notifyEmail ?? false,
+      payoutUpiId: current?.payoutUpiId,
+      deliveryAddress: current?.deliveryAddress,
+    );
 
-  setProfile(updatedProfile);
+    setProfile(updatedProfile);
 
-  await _db.collection('users').doc(uid).set({
-    'name': updatedProfile.name,
-    'email': updatedProfile.email ?? FieldValue.delete(),
-    'dateOfBirth': updatedProfile.dateOfBirth ?? FieldValue.delete(),
-    'heightCm': updatedProfile.heightCm ?? FieldValue.delete(),
-    'weightKg': updatedProfile.weightKg ?? FieldValue.delete(),
-    'fitPreference': updatedProfile.fitPreference ?? FieldValue.delete(),
-    'preferredLanguage': updatedProfile.preferredLanguage,
-    'notifySms': updatedProfile.notifySms,
-    'notifyWhatsApp': updatedProfile.notifyWhatsApp,
-    'notifyApp': updatedProfile.notifyApp,
-    'notifyEmail': updatedProfile.notifyEmail,
-    'updatedAt': FieldValue.serverTimestamp(),
-  }, SetOptions(merge: true));
+    await _db.collection('users').doc(uid).set({
+      'name': updatedProfile.name,
+      'email': updatedProfile.email ?? FieldValue.delete(),
+      'dateOfBirth': updatedProfile.dateOfBirth ?? FieldValue.delete(),
+      'heightCm': updatedProfile.heightCm ?? FieldValue.delete(),
+      'weightKg': updatedProfile.weightKg ?? FieldValue.delete(),
+      'fitPreference': updatedProfile.fitPreference ?? FieldValue.delete(),
+      'preferredLanguage': updatedProfile.preferredLanguage,
+      'notifySms': updatedProfile.notifySms,
+      'notifyWhatsApp': updatedProfile.notifyWhatsApp,
+      'notifyApp': updatedProfile.notifyApp,
+      'notifyEmail': updatedProfile.notifyEmail,
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
-  final phone = _auth.currentUser?.phoneNumber;
-  if (phone != null && phone.trim().isNotEmpty) {
-    final accountId = await fetchAccountIdForMobile(phone.trim());
+    final phone = _auth.currentUser?.phoneNumber;
+    if (phone != null && phone.trim().isNotEmpty) {
+      final accountId = await fetchAccountIdForMobile(phone.trim());
 
-    if (accountId != null && accountId.isNotEmpty) {
-      final profiles = await fetchActiveProfilesForAccount(accountId);
+      if (accountId != null && accountId.isNotEmpty) {
+        final profiles = await fetchActiveProfilesForAccount(accountId);
 
-      Map<String, dynamic>? customerProfile;
-      for (final profile in profiles) {
-        final role = (profile['role'] ?? '').toString();
-        if (role == 'customer') {
-          customerProfile = profile;
-          break;
+        Map<String, dynamic>? customerProfile;
+        for (final profile in profiles) {
+          final role = (profile['role'] ?? '').toString();
+          if (role == 'customer') {
+            customerProfile = profile;
+            break;
+          }
         }
-      }
 
-      final customerProfileId =
-          customerProfile?['profileId']?.toString() ??
-              customerProfile?['docId']?.toString();
+        final customerProfileId =
+            customerProfile?['profileId']?.toString() ??
+            customerProfile?['docId']?.toString();
 
-      if (customerProfileId != null && customerProfileId.trim().isNotEmpty) {
-        await _db
-            .collection('accounts')
-            .doc(accountId)
-            .collection('profiles')
-            .doc(customerProfileId)
-            .set({
-          'displayName': updatedProfile.name,
-          'name': updatedProfile.name,
-          'email': updatedProfile.email ?? FieldValue.delete(),
-          'dateOfBirth': updatedProfile.dateOfBirth ?? FieldValue.delete(),
-          'heightCm': updatedProfile.heightCm ?? FieldValue.delete(),
-          'weightKg': updatedProfile.weightKg ?? FieldValue.delete(),
-          'fitPreference': updatedProfile.fitPreference ?? FieldValue.delete(),
-          'preferredLanguage': updatedProfile.preferredLanguage,
-          'notifySms': updatedProfile.notifySms,
-          'notifyWhatsApp': updatedProfile.notifyWhatsApp,
-          'notifyApp': updatedProfile.notifyApp,
-          'notifyEmail': updatedProfile.notifyEmail,
-          'updatedAt': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
+        if (customerProfileId != null && customerProfileId.trim().isNotEmpty) {
+          await _db
+              .collection('accounts')
+              .doc(accountId)
+              .collection('profiles')
+              .doc(customerProfileId)
+              .set({
+                'displayName': updatedProfile.name,
+                'name': updatedProfile.name,
+                'email': updatedProfile.email ?? FieldValue.delete(),
+                'dateOfBirth':
+                    updatedProfile.dateOfBirth ?? FieldValue.delete(),
+                'heightCm': updatedProfile.heightCm ?? FieldValue.delete(),
+                'weightKg': updatedProfile.weightKg ?? FieldValue.delete(),
+                'fitPreference':
+                    updatedProfile.fitPreference ?? FieldValue.delete(),
+                'preferredLanguage': updatedProfile.preferredLanguage,
+                'notifySms': updatedProfile.notifySms,
+                'notifyWhatsApp': updatedProfile.notifyWhatsApp,
+                'notifyApp': updatedProfile.notifyApp,
+                'notifyEmail': updatedProfile.notifyEmail,
+                'updatedAt': FieldValue.serverTimestamp(),
+              }, SetOptions(merge: true));
+        }
       }
     }
   }
-}
+
   /// Firestore-safe mobile lookup id.
   /// Example: +919876543210 -> m_919876543210
   static String mobileAccountDocId(String e164) {
@@ -494,8 +509,10 @@ class AppState extends ChangeNotifier {
     required String mobileE164,
     String? displayName,
   }) async {
-    final profilesRef =
-        _db.collection('accounts').doc(accountId).collection('profiles');
+    final profilesRef = _db
+        .collection('accounts')
+        .doc(accountId)
+        .collection('profiles');
 
     final existingCustomer = await profilesRef
         .where('role', isEqualTo: 'customer')
@@ -526,8 +543,9 @@ class AppState extends ChangeNotifier {
     final profileId = profileRef.id;
 
     final cleanedName = displayName?.trim();
-    final customerName =
-        cleanedName != null && cleanedName.isNotEmpty ? cleanedName : 'Customer';
+    final customerName = cleanedName != null && cleanedName.isNotEmpty
+        ? cleanedName
+        : 'Customer';
 
     await profileRef.set({
       'profileId': profileId,
@@ -603,15 +621,15 @@ class AppState extends ChangeNotifier {
         'updatedAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      final existingProfileId =
-          (data['profileId'] ?? doc.id).toString().trim();
+      final existingProfileId = (data['profileId'] ?? doc.id).toString().trim();
 
       return existingProfileId.isNotEmpty ? existingProfileId : doc.id;
     }
 
     final customerProfileId = profilesRef.doc().id;
-    final safeDisplayName =
-        displayName?.trim().isNotEmpty == true ? displayName!.trim() : 'Customer';
+    final safeDisplayName = displayName?.trim().isNotEmpty == true
+        ? displayName!.trim()
+        : 'Customer';
 
     await profilesRef.doc(customerProfileId).set({
       'profileId': customerProfileId,
@@ -629,6 +647,7 @@ class AppState extends ChangeNotifier {
 
     return customerProfileId;
   }
+
   /// Ensures generated accountId and default Customer profile exist
   /// after successful Firebase login.
   ///
@@ -667,7 +686,10 @@ class AppState extends ChangeNotifier {
   Future<String?> fetchAccountIdForMobile(String mobileE164) async {
     try {
       final safeMobileKey = mobileAccountDocId(mobileE164);
-      final doc = await _db.collection('mobile_accounts').doc(safeMobileKey).get();
+      final doc = await _db
+          .collection('mobile_accounts')
+          .doc(safeMobileKey)
+          .get();
 
       if (!doc.exists) return null;
 
@@ -740,9 +762,9 @@ class AppState extends ChangeNotifier {
         .collection('profiles')
         .doc(profileId)
         .set({
-      'lastSelectedAt': FieldValue.serverTimestamp(),
-      'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+          'lastSelectedAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
     final uid = _auth.currentUser?.uid;
     if (uid != null) {
@@ -766,11 +788,14 @@ class AppState extends ChangeNotifier {
       case 'delivery':
       case 'delivery_partner':
         return UserRole.delivery;
+      case 'support':
+        return UserRole.support;
       case 'customer':
       default:
         return UserRole.customer;
     }
   }
+
   /// Firestore doc id: E.164 digits only (e.g. 917066187793).
   static String phoneRegistryDocId(String e164) =>
       e164.replaceAll(RegExp(r'\D'), '');
@@ -806,8 +831,8 @@ class AppState extends ChangeNotifier {
     try {
       final displayName = _profile!.name.trim().isEmpty
           ? (_auth.currentUser?.displayName?.trim().isNotEmpty == true
-              ? _auth.currentUser!.displayName!.trim()
-              : 'Customer')
+                ? _auth.currentUser!.displayName!.trim()
+                : 'Customer')
           : _profile!.name.trim();
       await _db.collection('phoneRegistry').doc(id).set({
         'uid': uid,
@@ -830,9 +855,12 @@ class AppState extends ChangeNotifier {
     return '+$t';
   }
 
-  /// Checks Firestore config for owner/tailor/delivery by email and tailor by phone (OTP).
-  /// Returns [UserRole.owner], [UserRole.tailor], [UserRole.delivery], or null (= default customer).
-  Future<UserRole?> getRoleFromConfig(String? email, {String? phoneE164}) async {
+  /// Checks Firestore config for operational roles and verified-phone Helpdesk access.
+  /// Returns a configured role, or null (= default customer).
+  Future<UserRole?> getRoleFromConfig(
+    String? email, {
+    String? phoneE164,
+  }) async {
     try {
       final doc = await _db.collection('config').doc('admin').get();
       final data = doc.data() ?? {};
@@ -854,34 +882,51 @@ class AppState extends ChangeNotifier {
 
       final p = normalizePhoneE164(phoneE164);
       if (p != null && tailorPhones.contains(p)) return UserRole.tailor;
-    } catch (_) {}
+      final helpdeskAccess = await FirebaseFunctions.instance
+          .httpsCallable('getMyHelpdeskAccess')
+          .call();
+      final access = helpdeskAccess.data is Map
+          ? Map<String, dynamic>.from(helpdeskAccess.data as Map)
+          : const <String, dynamic>{};
+      if (access['isAdmin'] == true) return UserRole.owner;
+      if (access['isSupport'] == true || access['allowed'] == true) {
+        return UserRole.support;
+      }
+    } on FirebaseFunctionsException catch (error) {
+      debugPrint(
+        'Helpdesk role lookup unavailable: ${error.code} ${error.message ?? ''}',
+      );
+    } catch (error) {
+      debugPrint('Role config lookup failed: $error');
+    }
     return null;
   }
-/// Code Change 02-Jul-2026
 
-/// Lookup Fashion Partner by phone number.
-Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
-  try {
-    final phone = normalizePhoneE164(phoneE164);
-    if (phone == null) return null;
+  /// Code Change 02-Jul-2026
 
-    final snap = await _db
-        .collection('partner_users')
-        .where('phone', isEqualTo: phone)
-        .where('active', isEqualTo: true)
-        .limit(1)
-        .get();
+  /// Lookup Fashion Partner by phone number.
+  Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
+    try {
+      final phone = normalizePhoneE164(phoneE164);
+      if (phone == null) return null;
 
-    if (snap.docs.isEmpty) {
+      final snap = await _db
+          .collection('partner_users')
+          .where('phone', isEqualTo: phone)
+          .where('active', isEqualTo: true)
+          .limit(1)
+          .get();
+
+      if (snap.docs.isEmpty) {
+        return null;
+      }
+
+      return snap.docs.first.data();
+    } catch (e) {
+      debugPrint('Partner lookup failed: $e');
       return null;
     }
-
-    return snap.docs.first.data();
-  } catch (e) {
-    debugPrint('Partner lookup failed: $e');
-    return null;
   }
-}
 
   /// Bootstrap: register an email as the shop owner (first-time setup).
   Future<void> enrollOwner(String email) async {
@@ -890,7 +935,9 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
     }, SetOptions(merge: true));
   }
 
-  List<Map<String, dynamic>> _parseTailorProfilesMap(Map<String, dynamic> data) {
+  List<Map<String, dynamic>> _parseTailorProfilesMap(
+    Map<String, dynamic> data,
+  ) {
     final out = <Map<String, dynamic>>[];
     for (final e in List<dynamic>.from(data['tailorProfiles'] ?? [])) {
       if (e is Map) {
@@ -923,9 +970,9 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
         if (loginEmail != null && loginEmail.trim().isNotEmpty)
           'loginEmail': loginEmail.trim().toLowerCase(),
       });
-      final emails = List<String>.from(data['tailorEmails'] ?? [])
-          .map((e) => e.toString().toLowerCase())
-          .toList();
+      final emails = List<String>.from(
+        data['tailorEmails'] ?? [],
+      ).map((e) => e.toString().toLowerCase()).toList();
       final le = loginEmail?.trim().toLowerCase();
       if (le != null && le.isNotEmpty && !emails.contains(le)) {
         emails.add(le);
@@ -934,15 +981,11 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
       if (!phones.contains(mobile)) {
         phones.add(mobile);
       }
-      tx.set(
-        ref,
-        {
-          'tailorProfiles': profiles,
-          'tailorEmails': emails,
-          'tailorPhones': phones,
-        },
-        SetOptions(merge: true),
-      );
+      tx.set(ref, {
+        'tailorProfiles': profiles,
+        'tailorEmails': emails,
+        'tailorPhones': phones,
+      }, SetOptions(merge: true));
     });
   }
 
@@ -978,26 +1021,22 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
         }
         return false;
       });
-      var emails = List<String>.from(data['tailorEmails'] ?? [])
-          .map((e) => e.toString().toLowerCase())
-          .toList();
+      var emails = List<String>.from(
+        data['tailorEmails'] ?? [],
+      ).map((e) => e.toString().toLowerCase()).toList();
       emails.remove(em);
       var phones = List<String>.from(data['tailorPhones'] ?? []);
-      final drop = mobileToDrop != null ? normalizePhoneE164(mobileToDrop) : null;
+      final drop = mobileToDrop != null
+          ? normalizePhoneE164(mobileToDrop)
+          : null;
       if (drop != null) {
-        phones = phones
-            .where((p) => normalizePhoneE164(p) != drop)
-            .toList();
+        phones = phones.where((p) => normalizePhoneE164(p) != drop).toList();
       }
-      tx.set(
-        ref,
-        {
-          'tailorProfiles': profiles,
-          'tailorEmails': emails,
-          'tailorPhones': phones,
-        },
-        SetOptions(merge: true),
-      );
+      tx.set(ref, {
+        'tailorProfiles': profiles,
+        'tailorEmails': emails,
+        'tailorPhones': phones,
+      }, SetOptions(merge: true));
     });
   }
 
@@ -1018,23 +1057,19 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
         }
         return false;
       });
-      var emails = List<String>.from(data['tailorEmails'] ?? [])
-          .map((e) => e.toString().toLowerCase())
-          .toList();
+      var emails = List<String>.from(
+        data['tailorEmails'] ?? [],
+      ).map((e) => e.toString().toLowerCase()).toList();
       if (emailToDrop != null) {
         emails.remove(emailToDrop!.toLowerCase());
       }
       var phones = List<String>.from(data['tailorPhones'] ?? []);
       phones = phones.where((p) => normalizePhoneE164(p) != n).toList();
-      tx.set(
-        ref,
-        {
-          'tailorProfiles': profiles,
-          'tailorEmails': emails,
-          'tailorPhones': phones,
-        },
-        SetOptions(merge: true),
-      );
+      tx.set(ref, {
+        'tailorProfiles': profiles,
+        'tailorEmails': emails,
+        'tailorPhones': phones,
+      }, SetOptions(merge: true));
     });
   }
 
@@ -1057,8 +1092,9 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
     await _db.collection('config').doc('admin').set({
       'deliveryEmails': FieldValue.arrayRemove([email.toLowerCase()]),
     }, SetOptions(merge: true));
-    await _db.collection('subscriptions').doc(email.toLowerCase())
-        .update({'active': false});
+    await _db.collection('subscriptions').doc(email.toLowerCase()).update({
+      'active': false,
+    });
   }
 
   /// Owner: save delivery settings (fee per order, subscription fee).
@@ -1079,7 +1115,8 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
       final data = doc.data() ?? {};
       return {
         'feePerOrder': (data['feePerOrder'] as num?)?.toDouble() ?? 50.0,
-        'subscriptionFee': (data['subscriptionFee'] as num?)?.toDouble() ?? 500.0,
+        'subscriptionFee':
+            (data['subscriptionFee'] as num?)?.toDouble() ?? 500.0,
       };
     } catch (_) {
       return {'feePerOrder': 50.0, 'subscriptionFee': 500.0};
@@ -1108,8 +1145,7 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
   /// Load rates from Firestore (call once on app start or login)
   /// Sanitises a dress type string for use as a Firestore document ID.
   /// Firestore does not allow '/' in document IDs (treated as path separator).
-  static String _rateDocId(String dressType) =>
-      dressType.replaceAll('/', '_');
+  static String _rateDocId(String dressType) => dressType.replaceAll('/', '_');
 
   Future<void> loadRates() async {
     try {
@@ -1117,11 +1153,15 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
       if (snap.docs.isEmpty) {
         await _seedDefaultRates();
       } else {
-        _rates = snap.docs.map((d) => StitchingRate(
-          dressType: d['dressType'] as String,
-          basePrice: (d['basePrice'] as num).toDouble(),
-          notes: d['notes'] as String?,
-        )).toList();
+        _rates = snap.docs
+            .map(
+              (d) => StitchingRate(
+                dressType: d['dressType'] as String,
+                basePrice: (d['basePrice'] as num).toDouble(),
+                notes: d['notes'] as String?,
+              ),
+            )
+            .toList();
         notifyListeners();
       }
     } catch (_) {
@@ -1160,7 +1200,11 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
     await batch.commit();
   }
 
-  Future<void> updateRate(String dressType, double price, {String? notes}) async {
+  Future<void> updateRate(
+    String dressType,
+    double price, {
+    String? notes,
+  }) async {
     await _db.collection('rates').doc(_rateDocId(dressType)).set({
       'dressType': dressType,
       'basePrice': price,
@@ -1172,7 +1216,9 @@ Future<Map<String, dynamic>?> lookupPartnerByPhone(String phoneE164) async {
       _rates[idx].basePrice = price;
       _rates[idx].notes = notes;
     } else {
-      _rates.add(StitchingRate(dressType: dressType, basePrice: price, notes: notes));
+      _rates.add(
+        StitchingRate(dressType: dressType, basePrice: price, notes: notes),
+      );
     }
     notifyListeners();
   }

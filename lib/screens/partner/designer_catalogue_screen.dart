@@ -268,14 +268,14 @@ class _DesignerDesignCard extends StatelessWidget {
                       height: 116,
                       child: imageUrl == null || imageUrl.isEmpty
                           ? const ColoredBox(
-                              color: Color(0xFFF0EDF8),
+                              color: Color(0xFFFCEAF1),
                               child: Icon(Icons.image_not_supported_outlined),
                             )
                           : Image.network(
                               imageUrl,
                               fit: BoxFit.cover,
                               errorBuilder: (_, _, _) => const ColoredBox(
-                                color: Color(0xFFF0EDF8),
+                                color: Color(0xFFFCEAF1),
                                 child: Icon(Icons.broken_image_outlined),
                               ),
                             ),
@@ -360,7 +360,7 @@ class _DesignerDesignCard extends StatelessWidget {
   Widget _chip(String label) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      color: const Color(0xFFF0EDF8),
+      color: const Color(0xFFFCEAF1),
       borderRadius: BorderRadius.circular(20),
     ),
     child: Text(label, style: AppTextStyles.bodySmall),

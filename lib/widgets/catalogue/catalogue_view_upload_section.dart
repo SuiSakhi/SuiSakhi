@@ -194,7 +194,7 @@ class _CatalogueViewUploadSectionState
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF9F7FD),
+        color: const Color(0xFFFFF8FA),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: AppColors.divider),
       ),

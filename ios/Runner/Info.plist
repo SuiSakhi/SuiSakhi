@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Stitchsmart</string>
+	<string>SuiSakhi</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>stitchsmart</string>
+	<string>SuiSakhi</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -28,8 +28,10 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>SuiSakhi uses your camera to capture fabric photos for design previews and optional tailoring measurements</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>SuiSakhi uses your microphone to attach Quick Care service voice notes</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>StitchSmart needs photo access so you can set your profile picture and upload design images</string>
+	<string>SuiSakhi needs photo access so you can set your profile picture and upload design images</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -37,7 +39,7 @@
 			<string>Editor</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>com.googleusercontent.apps.711179561782-lburh09oomnddita7ue09sti46lfo76o</string>
+				<string>app-1-867714366330-ios-575c83f2d15ed7104ef4c3</string>
 			</array>
 		</dict>
 		<dict>
@@ -53,9 +55,6 @@
 	<array>
 		<string>whatsapp</string>
 	</array>
-	<!-- Firebase Phone Auth: reCAPTCHA fallback URL scheme -->
-	<!-- Replace YOUR_REVERSED_CLIENT_ID with the value from GoogleService-Info.plist REVERSED_CLIENT_ID -->
-	<!-- It looks like: com.googleusercontent.apps.711179561782-xxxx (already added above for Google Sign-In) -->
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

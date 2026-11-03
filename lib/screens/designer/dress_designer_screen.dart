@@ -8,6 +8,7 @@ import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/metadata/india_address_metadata.dart';
+import '../../core/metadata/garment_care_catalog_metadata.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/design_template.dart';
 import '../../models/catalogue_design.dart';
@@ -238,24 +239,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   /// Avoid re-hydrating on unrelated [AppState] notifications.
   String? _measurementHydrationSignature;
 
-  static const List<String> _fabricOptions = [
-    'Cotton',
-    'Silk',
-    'Georgette',
-    'Chiffon',
-    'Linen',
-    'Velvet',
-    'Organza',
-    'Rayon / Viscose',
-    'Crepe',
-    'Satin',
-    'Net / Tulle',
-    'Brocade',
-    'Denim',
-    'Polyester Blend',
-    'Wool Blend',
-    'Other',
-  ];
+  static const List<String> _fabricOptions =
+      GarmentCareCatalogMetadata.materialTypes;
   String _colorHexRgb(Color color) {
     int channel(double value) {
       return (value * 255.0).round().clamp(0, 255);
@@ -1395,7 +1380,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     final customerReference = _customerMeasurementReference;
     if (customerReference != null) {
       final values = customerReference.values.entries
-          .map((entry) => '${entry.key}: ${entry.value} ${customerReference.unit}')
+          .map(
+            (entry) => '${entry.key}: ${entry.value} ${customerReference.unit}',
+          )
           .join(', ');
       final sourceOrderId = customerReference.sourceOrderId?.trim();
       parts.add(
@@ -1420,7 +1407,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     final person = _selectedOrderPerson();
     final uid = FirebaseAuth.instance.currentUser?.uid;
     final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
-    if (person == null || uid == null || phone == null || phone.trim().isEmpty) {
+    if (person == null ||
+        uid == null ||
+        phone == null ||
+        phone.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Select a customer profile first.')),
       );
@@ -1443,7 +1433,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       if (!mounted) return;
       if (records.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No saved measurement references found.')),
+          const SnackBar(
+            content: Text('No saved measurement references found.'),
+          ),
         );
         return;
       }
@@ -1489,7 +1481,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     } catch (_) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Unable to load measurement history. Please try again.')),
+        const SnackBar(
+          content: Text(
+            'Unable to load measurement history. Please try again.',
+          ),
+        ),
       );
     }
   }
@@ -1649,8 +1645,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         );
         orderFabricAssetsWereUploaded = true;
       } else if (customerFabricAssets != null) {
-        customerFabricAssets = await CustomerFabricAssetService
-            .copySavedSelectionToOrder(
+        customerFabricAssets =
+            await CustomerFabricAssetService.copySavedSelectionToOrder(
               customerUid: FirebaseAuth.instance.currentUser!.uid,
               orderId: requestedOrderId,
               savedAssets: customerFabricAssets,
@@ -2363,7 +2359,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         ],
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          key: ValueKey('alteration-margin-${_selectedAlterationMargin ?? 'unset'}'),
+          key: ValueKey(
+            'alteration-margin-${_selectedAlterationMargin ?? 'unset'}',
+          ),
           initialValue: _selectedAlterationMargin,
           decoration: const InputDecoration(
             labelText: 'Alteration Margin',
@@ -3587,14 +3585,14 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                           height: 116,
                           child: imageUrl.isEmpty
                               ? const ColoredBox(
-                                  color: Color(0xFFF0EDF8),
+                                  color: Color(0xFFFCEAF1),
                                   child: Icon(Icons.image_outlined),
                                 )
                               : Image.network(
                                   imageUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => const ColoredBox(
-                                    color: Color(0xFFF0EDF8),
+                                    color: Color(0xFFFCEAF1),
                                     child: Icon(Icons.broken_image_outlined),
                                   ),
                                 ),
@@ -3793,9 +3791,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 final design = option.design;
                 final catalogueImageUrl =
                     option.bundle.primaryView?.bestPreviewUrl ?? '';
-                final fabricPreviewUrls = option.fabricSelection?.previews
-                    .where((preview) => preview.imageUrl.isNotEmpty)
-                    .toList(growable: false) ??
+                final fabricPreviewUrls =
+                    option.fabricSelection?.previews
+                        .where((preview) => preview.imageUrl.isNotEmpty)
+                        .toList(growable: false) ??
                     const <_WishlistFabricPreview>[];
                 final fabricPreviewUrl = fabricPreviewUrls.isEmpty
                     ? null
@@ -3820,14 +3819,14 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                           height: 88,
                           child: imageUrl.isEmpty
                               ? const ColoredBox(
-                                  color: Color(0xFFF0EDF8),
+                                  color: Color(0xFFFCEAF1),
                                   child: Icon(Icons.image_outlined),
                                 )
                               : Image.network(
                                   imageUrl,
                                   fit: BoxFit.cover,
                                   errorBuilder: (_, _, _) => const ColoredBox(
-                                    color: Color(0xFFF0EDF8),
+                                    color: Color(0xFFFCEAF1),
                                     child: Icon(Icons.broken_image_outlined),
                                   ),
                                 ),
@@ -4152,7 +4151,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
 
   void _selectCatalogueDesign(
     CatalogueDesign design,
-  PublishedCatalogueBundle bundle, {
+    PublishedCatalogueBundle bundle, {
     _SavedWishlistFabricSelection? wishlistSelection,
   }) {
     final primary = bundle.primaryView;
@@ -4303,7 +4302,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     final pendingPreviews = hasMatchingPendingPreview
         ? fabricSelection.previews
         : const <CustomerFabricViewPreview>[];
-    final savedPreviewViews = savedFabricSelection?.previews
+    final savedPreviewViews =
+        savedFabricSelection?.previews
             .where((preview) => preview.imageUrl.isNotEmpty)
             .toList(growable: false) ??
         const <_WishlistFabricPreview>[];
@@ -4948,9 +4948,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 ),
                 IconButton(
                   tooltip: 'Remove reference',
-                  onPressed: () => setState(
-                    () => _customerMeasurementReference = null,
-                  ),
+                  onPressed: () =>
+                      setState(() => _customerMeasurementReference = null),
                   icon: const Icon(Icons.close_rounded),
                 ),
               ],
@@ -5022,7 +5021,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     final suggestions = <_DressFitSuggestion>[];
     final template = _selectedTemplate;
     final construction = template?.constructionMetadata;
-    final metadata = construction ??
+    final metadata =
+        construction ??
         DesignMetadataService.defaultForDressType(_selectedDressType);
     final fabric = _effectiveFabricChoice == null
         ? null
@@ -5088,7 +5088,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         const _DressFitSuggestion(
           field: 'alterationMargin',
           value: 'Tailor Recommendation',
-          reason: 'Ask the tailor to confirm movement and alteration allowance before cutting.',
+          reason:
+              'Ask the tailor to confirm movement and alteration allowance before cutting.',
         ),
       );
     }
@@ -5151,7 +5152,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     if (suggestions.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Your current selections look consistent with the available design guidance.'),
+          content: Text(
+            'Your current selections look consistent with the available design guidance.',
+          ),
         ),
       );
     }
@@ -5185,11 +5188,16 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Review fit suggestions', style: AppTextStyles.headlineMedium),
+                  Text(
+                    'Review fit suggestions',
+                    style: AppTextStyles.headlineMedium,
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     'Choose only the changes you want. Saved measurements and the original catalogue design stay unchanged.',
-                    style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   Flexible(
@@ -5230,13 +5238,11 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                       FilledButton(
                         onPressed: selectedIndexes.isEmpty
                             ? null
-                            : () => Navigator.pop(
-                                sheetContext,
-                                [
-                                  for (var i = 0; i < suggestions.length; i++)
-                                    if (selectedIndexes.contains(i)) suggestions[i],
-                                ],
-                              ),
+                            : () => Navigator.pop(sheetContext, [
+                                for (var i = 0; i < suggestions.length; i++)
+                                  if (selectedIndexes.contains(i))
+                                    suggestions[i],
+                              ]),
                         child: Text('Apply ${selectedIndexes.length} selected'),
                       ),
                     ],
@@ -5408,7 +5414,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Your current instructions', style: AppTextStyles.titleMedium),
+                Text(
+                  'Your current instructions',
+                  style: AppTextStyles.titleMedium,
+                ),
                 const SizedBox(height: 6),
                 Text(currentDraft, style: AppTextStyles.bodySmall),
                 const SizedBox(height: 18),
@@ -5468,7 +5477,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 size: 22,
               ),
               const SizedBox(width: 8),
-              Text('Smart Assist · Optional', style: AppTextStyles.headlineMedium),
+              Text(
+                'Smart Assist · Optional',
+                style: AppTextStyles.headlineMedium,
+              ),
             ],
           ),
           const SizedBox(height: 4),
@@ -5579,7 +5591,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Fabric & styling ideas', style: AppTextStyles.titleMedium),
+                  Text(
+                    'Fabric & styling ideas',
+                    style: AppTextStyles.titleMedium,
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     _fabricStyleAiText!,

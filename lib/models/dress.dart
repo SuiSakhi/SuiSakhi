@@ -168,6 +168,10 @@ class DressOrder {
 
   /// Delivery-area snapshot used for Partner service-area eligibility.
   final String? deliveryPincode;
+  final DateTime? quickCareScheduledAt;
+  final String? quickCareWorkflowStatus;
+  final String? quickCareAssignmentStatus;
+  final String? quickCareCancellationRequestStatus;
 
   /// PRD Step 11 — advance share (30–50%). Persisted for payment breakdown.
   final int advancePercent;
@@ -206,6 +210,8 @@ class DressOrder {
   final DateTime? paidAt;
   final String? paymentMethod;
   final String? paymentProvider;
+  final String? quickCareGatewayPaymentId;
+  final String? quickCarePaymentMethod;
   final List<OrderPayoutLine>? payoutLedger;
 
   const DressOrder({
@@ -300,6 +306,10 @@ class DressOrder {
     this.customerAccountId,
     this.customerProfileId,
     this.deliveryPincode,
+    this.quickCareScheduledAt,
+    this.quickCareWorkflowStatus,
+    this.quickCareAssignmentStatus,
+    this.quickCareCancellationRequestStatus,
     this.advancePercent = 50,
     this.advanceAmount = 0,
     this.balanceAmount = 0,
@@ -321,6 +331,8 @@ class DressOrder {
     this.paidAt,
     this.paymentMethod,
     this.paymentProvider,
+    this.quickCareGatewayPaymentId,
+    this.quickCarePaymentMethod,
     this.payoutLedger,
   });
 
@@ -344,13 +356,13 @@ class DressOrder {
     return name;
   }
 
-  String? get customerFabricPhotoPath =>
-      _dynamicMapFromFirestore(customerFabricAssets?['fabricPhoto'])?['storagePath']
-          ?.toString();
+  String? get customerFabricPhotoPath => _dynamicMapFromFirestore(
+    customerFabricAssets?['fabricPhoto'],
+  )?['storagePath']?.toString();
 
-  String? get customerFabricPreviewPath =>
-      _dynamicMapFromFirestore(customerFabricAssets?['selectedPreview'])?['storagePath']
-          ?.toString();
+  String? get customerFabricPreviewPath => _dynamicMapFromFirestore(
+    customerFabricAssets?['selectedPreview'],
+  )?['storagePath']?.toString();
 
   List<Map<String, dynamic>> get customerFabricPreviewAssets {
     final rawPreviews = customerFabricAssets?['previews'];
@@ -372,8 +384,9 @@ class DressOrder {
               .toList(growable: false)
         : const <Map<String, dynamic>>[];
     if (previews.isNotEmpty) return previews;
-    final selectedPreview =
-        _dynamicMapFromFirestore(customerFabricAssets?['selectedPreview']);
+    final selectedPreview = _dynamicMapFromFirestore(
+      customerFabricAssets?['selectedPreview'],
+    );
     return selectedPreview?['storagePath']?.toString().trim().isNotEmpty == true
         ? [selectedPreview!]
         : const [];
@@ -460,6 +473,40 @@ class DressOrder {
     }
   }
 
+  bool get quickCareServiceInProgress {
+    String normalize(String? value) => (value ?? '')
+        .replaceAllMapped(
+          RegExp(r'([a-z])([A-Z])'),
+          (match) => '${match.group(1)!}_${match.group(2)!}',
+        )
+        .toLowerCase()
+        .replaceAll(RegExp(r'[\s-]+'), '_');
+
+    const activeWorkflowStates = {
+      'started',
+      'in_progress',
+      'service_started',
+      'work_started',
+      'paused',
+      'completed',
+      'service_completed',
+    };
+    if (activeWorkflowStates.contains(normalize(quickCareWorkflowStatus)) ||
+        activeWorkflowStates.contains(normalize(quickCareAssignmentStatus))) {
+      return true;
+    }
+    return const {
+      OrderStatus.pickedUp,
+      OrderStatus.atTailor,
+      OrderStatus.inStitching,
+      OrderStatus.qcPending,
+      OrderStatus.qcPassed,
+      OrderStatus.readyForPickup,
+      OrderStatus.outForDelivery,
+      OrderStatus.delivered,
+    }.contains(status);
+  }
+
   factory DressOrder.fromFirestore(String id, Map<String, dynamic> data) {
     final rawStatus = data['status'] as String? ?? 'pending';
     final migrated = rawStatus == 'inProgress' ? 'inStitching' : rawStatus;
@@ -470,8 +517,9 @@ class DressOrder {
     final computedAdvance = advAmt ?? (price * advPct / 100.0);
     final computedBalance =
         balAmt ?? (price - computedAdvance).clamp(0.0, double.infinity);
-    final customerFabricAssets =
-        _dynamicMapFromFirestore(data['customerFabricAssets']);
+    final customerFabricAssets = _dynamicMapFromFirestore(
+      data['customerFabricAssets'],
+    );
     return DressOrder(
       id: id,
       dressType: data['dressType'] as String? ?? '',
@@ -502,10 +550,12 @@ class DressOrder {
       fabricImageUrl:
           (data['fabricImageUrl'] ?? data['materialImageUrl']) as String?,
       customerFabricAssets: customerFabricAssets,
-      fabricPurchaseEstimate:
-          _dynamicMapFromFirestore(data['fabricPurchaseEstimate']),
-      fabricRequirementReview:
-          _dynamicMapFromFirestore(data['fabricRequirementReview']),
+      fabricPurchaseEstimate: _dynamicMapFromFirestore(
+        data['fabricPurchaseEstimate'],
+      ),
+      fabricRequirementReview: _dynamicMapFromFirestore(
+        data['fabricRequirementReview'],
+      ),
       deliveryAddress: _parseOrderDeliveryAddress(data['deliveryAddress']),
       deliveryPartnerId: data['deliveryPartnerId'] as String?,
       deliveryFee: (data['deliveryFee'] as num?)?.toDouble() ?? 0,
@@ -604,6 +654,12 @@ class DressOrder {
       customerAccountId: data['customerAccountId'] as String?,
       customerProfileId: data['customerProfileId'] as String?,
       deliveryPincode: data['deliveryPincode'] as String?,
+      quickCareScheduledAt: (data['quickCareScheduledAt'] as Timestamp?)
+          ?.toDate(),
+      quickCareWorkflowStatus: data['quickCareWorkflowStatus'] as String?,
+      quickCareAssignmentStatus: data['quickCareAssignmentStatus'] as String?,
+      quickCareCancellationRequestStatus:
+          data['quickCareCancellationRequestStatus'] as String?,
       advancePercent: advPct.clamp(30, 50).toInt(),
       advanceAmount: computedAdvance,
       balanceAmount: computedBalance,
@@ -642,6 +698,8 @@ class DressOrder {
       paidAt: (data['paidAt'] as Timestamp?)?.toDate(),
       paymentMethod: data['paymentMethod'] as String?,
       paymentProvider: data['paymentProvider'] as String?,
+      quickCareGatewayPaymentId: data['quickCareGatewayPaymentId'] as String?,
+      quickCarePaymentMethod: data['quickCarePaymentMethod'] as String?,
       payoutLedger: OrderPayoutLine.parseLedger(data['payoutLedger']),
     );
   }

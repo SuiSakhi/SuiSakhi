@@ -14,6 +14,20 @@ class PartnerOpportunitiesScreen extends StatelessWidget {
       appBar: AppBar(
         title: const Text('Partner Opportunities'),
         centerTitle: true,
+        automaticallyImplyLeading: false,
+        leading: IconButton(
+          tooltip: context.canPop() ? 'Back' : 'Return to SuiSakhi',
+          onPressed: () {
+            if (context.canPop()) {
+              context.pop();
+            } else {
+              // OTP partner entry replaces the login route, so provide a
+              // clear exit back to the signed-in customer experience.
+              context.go('/home');
+            }
+          },
+          icon: const Icon(Icons.arrow_back_rounded),
+        ),
         backgroundColor: AppColors.background,
         elevation: 0,
       ),

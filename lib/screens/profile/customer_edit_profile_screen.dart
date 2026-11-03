@@ -39,11 +39,7 @@ class _CustomerEditProfileScreenState extends State<CustomerEditProfileScreen> {
     'Loose Fit',
   ];
 
-  static const List<String> _languageOptions = [
-    'English',
-    'Hindi',
-    'Marathi',
-  ];
+  static const List<String> _languageOptions = ['English', 'Hindi', 'Marathi'];
 
   @override
   void initState() {
@@ -66,10 +62,14 @@ class _CustomerEditProfileScreenState extends State<CustomerEditProfileScreen> {
 
     _dobCtrl = TextEditingController(text: profile?.dateOfBirth ?? '');
     _heightCtrl = TextEditingController(
-      text: profile?.heightCm != null ? profile!.heightCm!.toStringAsFixed(0) : '',
+      text: profile?.heightCm != null
+          ? profile!.heightCm!.toStringAsFixed(0)
+          : '',
     );
     _weightCtrl = TextEditingController(
-      text: profile?.weightKg != null ? profile!.weightKg!.toStringAsFixed(0) : '',
+      text: profile?.weightKg != null
+          ? profile!.weightKg!.toStringAsFixed(0)
+          : '',
     );
 
     _fitPreference = profile?.fitPreference?.trim().isNotEmpty == true
@@ -96,12 +96,13 @@ class _CustomerEditProfileScreenState extends State<CustomerEditProfileScreen> {
     _weightCtrl.dispose();
     super.dispose();
   }
-  
+
   double? _optionalDouble(TextEditingController controller) {
     final text = controller.text.trim();
     if (text.isEmpty) return null;
     return double.tryParse(text);
   }
+
   Future<void> _saveProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -281,10 +282,8 @@ class _CustomerEditProfileScreenState extends State<CustomerEditProfileScreen> {
               ),
               items: _fitOptions
                   .map(
-                    (fit) => DropdownMenuItem<String>(
-                      value: fit,
-                      child: Text(fit),
-                    ),
+                    (fit) =>
+                        DropdownMenuItem<String>(value: fit, child: Text(fit)),
                   )
                   .toList(),
               onChanged: (value) {
@@ -411,11 +410,8 @@ class _ProfileEditInfoCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: Color(0xFFF3EAFB),
-            child: Icon(
-              Icons.person_outline,
-              color: Color(0xFF7B3FB2),
-            ),
+            backgroundColor: Color(0xFFFCEAF1),
+            child: Icon(Icons.person_outline, color: Color(0xFFB70D5C)),
           ),
           SizedBox(width: 14),
           Expanded(
@@ -437,9 +433,7 @@ class _ProfileEditInfoCard extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   final String title;
 
-  const _SectionTitle({
-    required this.title,
-  });
+  const _SectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -515,9 +509,7 @@ class _PreferenceSwitch extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE6DDF1),
-        ),
+        border: Border.all(color: const Color(0xFFE6DDF1)),
       ),
       child: Material(
         color: AppColors.surface,

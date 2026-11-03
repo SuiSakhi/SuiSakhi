@@ -107,16 +107,16 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         setState(() {
           _totalOrders = productionOrders.length;
           _pendingOrders = productionOrders
-              .where((order) => [
-                'searching',
-                'queued_for_dispatch',
-                'offered',
-                'needs_admin_follow_up',
-              ].contains(order.assignmentStatus))
+              .where(
+                (order) => [
+                  'searching',
+                  'queued_for_dispatch',
+                  'offered',
+                  'needs_admin_follow_up',
+                ].contains(order.assignmentStatus),
+              )
               .length;
-          _recentOrders = (productionOrders.isNotEmpty
-                  ? productionOrders
-                  : all)
+          _recentOrders = (productionOrders.isNotEmpty ? productionOrders : all)
               .take(3)
               .toList();
           _loadingOrders = false;
@@ -766,6 +766,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         Icons.support_agent_rounded,
         const Color(0xFFAB47BC),
         () => context.push('/owner/support-requests'),
+      ),
+      (
+        'Helpdesk Access',
+        Icons.manage_accounts_outlined,
+        const Color(0xFFAB47BC),
+        () => context.push('/owner/support-access'),
       ),
       (
         'Partner Applications',

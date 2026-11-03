@@ -17,6 +17,68 @@ service firebase.storage {
         ).data.adminUids;
     }
 
+    function isConfiguredSupportAgent() {
+      return signedIn()
+        && (
+          firestore.get(
+            /databases/(default)/documents/config/support
+          ).data.supportUids is list
+          && request.auth.uid in firestore.get(
+            /databases/(default)/documents/config/support
+          ).data.supportUids
+          || request.auth.token.phone_number is string
+          && firestore.get(
+            /databases/(default)/documents/config/support
+          ).data.supportPhones is list
+          && request.auth.token.phone_number in firestore.get(
+            /databases/(default)/documents/config/support
+          ).data.supportPhones
+        );
+    }
+
+    function isQuickCareEvidencePartner(orderId, userId) {
+      let order = firestore.get(
+        /databases/(default)/documents/orders/$(orderId)
+      ).data;
+      let accountId = order.quickCareAssignedPartnerAccountId;
+      let profileId = order.quickCareAssignedPartnerProfileId;
+      let profile = firestore.get(
+        /databases/(default)/documents/accounts/$(accountId)/profiles/$(profileId)
+      ).data;
+      return signedIn()
+        && request.auth.uid == userId
+        && request.auth.token.phone_number is string
+        && request.resource.metadata.partnerUid == request.auth.uid
+        && order.orderModuleType == 'quickFix'
+        && order.quickCareWorkflowStatus in [
+          'accepted', 'inProgress', 'paused', 'awaitingCustomerApproval'
+        ]
+        && accountId is string
+        && profileId is string
+        && profile.accountId == accountId
+        && profile.mobileE164 == request.auth.token.phone_number
+        && profile.role == 'partner'
+        && profile.partnerType == 'doorstepServices'
+        && profile.status == 'active'
+        && profile.operationalStatus == 'active'
+        && profile.activationStatus == 'active'
+        && profile.approvalStatus == 'approved'
+        && profile.kycStatus == 'verified';
+    }
+
+    function canReadQuickCareEvidence(orderId, userId) {
+      let order = firestore.get(
+        /databases/(default)/documents/orders/$(orderId)
+      ).data;
+      return signedIn()
+        && (
+          order.customerId == request.auth.uid
+          || resource.metadata.partnerUid == request.auth.uid
+          || isConfiguredAdmin()
+          || isConfiguredSupportAgent()
+        );
+    }
+
     function isApprovedFashionStorePartner(accountId, profileId) {
       return signedIn()
         && request.auth.token.phone_number is string
@@ -316,6 +378,21 @@ service firebase.storage {
           && request.resource.size > 0
           && request.resource.size <= 10 * 1024 * 1024
           && request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp'];
+      allow update, delete: if false;
+    }
+
+    // Quick Care before/after photos and optional voice notes are written only
+    // by the active assigned Partner. Helpdesk previews are returned by a
+    // configured-Helpdesk callable as short-lived signed URLs.
+    match /quickcare_evidence/{orderId}/{userId}/{fileName} {
+      allow read: if canReadQuickCareEvidence(orderId, userId);
+      allow create: if isQuickCareEvidencePartner(orderId, userId)
+          && request.resource.size > 0
+          && request.resource.size <= 15 * 1024 * 1024
+          && (
+            request.resource.contentType in ['image/jpeg', 'image/png', 'image/webp']
+            || request.resource.contentType in ['audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/wav']
+          );
       allow update, delete: if false;
     }
 

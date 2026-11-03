@@ -47,13 +47,12 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyBDsbgRN7aCwwYp6PWkOcsduJwht_hQ-v8',
-    appId: '1:711179561782:ios:a2fd6443fb258ec2526197',
-    messagingSenderId: '711179561782',
+    apiKey: 'AIzaSyCrvwEeRO5cL_WstK7TzOxcZ3r5CwwCSGs',
+    appId: '1:867714366330:ios:575c83f2d15ed7104ef4c3',
+    messagingSenderId: '867714366330',
     projectId: 'suisakhitest',
-    storageBucket: 'stitchsmart-c66bd.firebasestorage.app',
-    iosClientId: '711179561782-lburh09oomnddita7ue09sti46lfo76o.apps.googleusercontent.com',
-    iosBundleId: 'com.prachi.stitchsmart',
+    storageBucket: 'suisakhitest.firebasestorage.app',
+    iosBundleId: 'com.suisakhi.app',
   );
 
   static const FirebaseOptions android = FirebaseOptions(

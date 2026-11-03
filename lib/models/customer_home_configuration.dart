@@ -93,7 +93,7 @@ class CustomerHomeItemRegistry {
     'rent_fabrics': CustomerHomeItemDefinition(
       id: 'rent_fabrics',
       label: 'Dress Rental',
-      route: '/shop-explore?category=rent',
+      route: '/dress-rental-request',
       iconCodePoint: 0xe8cc,
     ),
     'wishlist': CustomerHomeItemDefinition(

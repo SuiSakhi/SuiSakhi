@@ -1,6 +1,6 @@
 enum Gender { male, female, other }
 
-enum UserRole { customer, partner, tailor, owner, delivery }
+enum UserRole { customer, partner, tailor, owner, delivery, support }
 
 class UserProfile {
   final String name;

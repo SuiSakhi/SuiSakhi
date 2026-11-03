@@ -90,7 +90,7 @@ class _DesignerCatalogueDetailsScreenState
                       borderRadius: BorderRadius.circular(18),
                       child: selected?.bestPreviewUrl == null
                           ? const ColoredBox(
-                              color: Color(0xFFF0EDF8),
+                              color: Color(0xFFFCEAF1),
                               child: Icon(Icons.image_not_supported_outlined),
                             )
                           : Image.network(

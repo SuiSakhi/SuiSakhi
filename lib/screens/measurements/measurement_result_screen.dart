@@ -60,7 +60,6 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
           }
         });
 
-
         return Scaffold(
           backgroundColor: AppColors.background,
           appBar: AppBar(
@@ -105,7 +104,8 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                   icon: Icons.design_services_rounded,
                   onTap: () {
                     final query = <String, String>{
-                      if (_draftId?.trim().isNotEmpty == true) 'draftId': _draftId!.trim(),
+                      if (_draftId?.trim().isNotEmpty == true)
+                        'draftId': _draftId!.trim(),
                       if (_clientName?.trim().isNotEmpty == true)
                         'clientName': _clientName!.trim(),
                       if (_personId?.trim().isNotEmpty == true)
@@ -128,7 +128,8 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                   icon: Icons.refresh_rounded,
                   onTap: () {
                     final query = <String, String>{
-                      if (_draftId?.trim().isNotEmpty == true) 'draftId': _draftId!.trim(),
+                      if (_draftId?.trim().isNotEmpty == true)
+                        'draftId': _draftId!.trim(),
                       if (_clientName?.trim().isNotEmpty == true)
                         'clientName': _clientName!.trim(),
                       if (_personId?.trim().isNotEmpty == true)
@@ -152,7 +153,8 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       },
     );
   }
-    Widget _buildAiEstimateWarning() {
+
+  Widget _buildAiEstimateWarning() {
     final confidence = _confidenceLevel ?? 'checking';
 
     return Container(
@@ -161,9 +163,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       decoration: BoxDecoration(
         color: AppColors.secondary.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.secondary.withValues(alpha: 0.25),
-        ),
+        border: Border.all(color: AppColors.secondary.withValues(alpha: 0.25)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,8 +228,11 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.auto_awesome_rounded,
-                  color: AppColors.primary, size: 22),
+              const Icon(
+                Icons.auto_awesome_rounded,
+                color: AppColors.primary,
+                size: 22,
+              ),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -243,7 +246,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-           'SuiSakhi fit guidance is general advice only. Please confirm key measurements before stitching.',
+            'SuiSakhi fit guidance is general advice only. Please confirm key measurements before stitching.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
@@ -328,8 +331,9 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                         child: LinearProgressIndicator(
                           value: 0.87,
                           backgroundColor: AppColors.divider,
-                          valueColor:
-                              const AlwaysStoppedAnimation(AppColors.success),
+                          valueColor: const AlwaysStoppedAnimation(
+                            AppColors.success,
+                          ),
                           minHeight: 6,
                         ),
                       ),
@@ -359,18 +363,34 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
   Widget _buildMeasurementList(BodyMeasurements m, MeasurementUnit unit) {
     final items = [
       ('Height', m.height, Icons.height_rounded, AppColors.primary),
-      ('Chest', m.chest, Icons.straighten_rounded, const Color(0xFFFF6B6B)),
+      ('Chest', m.chest, Icons.straighten_rounded, const Color(0xFFE84F8B)),
       ('Waist', m.waist, Icons.radio_button_unchecked, const Color(0xFFF5A623)),
       ('Hips', m.hips, Icons.accessibility_rounded, const Color(0xFF9C27B0)),
-      ('Shoulder Width', m.shoulder, Icons.width_wide_rounded,
-          const Color(0xFF4CAF50)),
-      ('Arm Length', m.armLength, Icons.back_hand_outlined,
-          AppColors.primaryDark),
+      (
+        'Shoulder Width',
+        m.shoulder,
+        Icons.width_wide_rounded,
+        const Color(0xFF4CAF50),
+      ),
+      (
+        'Arm Length',
+        m.armLength,
+        Icons.back_hand_outlined,
+        AppColors.primaryDark,
+      ),
       ('Neck', m.neck, Icons.circle_outlined, const Color(0xFF00BCD4)),
-      ('Thigh', m.thigh, Icons.airline_seat_legroom_normal,
-          const Color(0xFFFF5722)),
-      ('Inseam', m.inseam, Icons.arrow_downward_rounded,
-          const Color(0xFF795548)),
+      (
+        'Thigh',
+        m.thigh,
+        Icons.airline_seat_legroom_normal,
+        const Color(0xFFFF5722),
+      ),
+      (
+        'Inseam',
+        m.inseam,
+        Icons.arrow_downward_rounded,
+        const Color(0xFF795548),
+      ),
     ];
 
     return Column(
@@ -380,8 +400,8 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
             : '—';
         final secondary = item.$2 != null
             ? (unit == MeasurementUnit.cm
-                ? '${MeasurementFormat.formatValue(item.$2, MeasurementUnit.inch)} in'
-                : '${MeasurementFormat.formatValue(item.$2, MeasurementUnit.cm)} cm')
+                  ? '${MeasurementFormat.formatValue(item.$2, MeasurementUnit.inch)} in'
+                  : '${MeasurementFormat.formatValue(item.$2, MeasurementUnit.cm)} cm')
             : '';
 
         return Container(
@@ -409,9 +429,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                 child: Icon(item.$3, color: item.$4, size: 20),
               ),
               const SizedBox(width: 14),
-              Expanded(
-                child: Text(item.$1, style: AppTextStyles.titleMedium),
-              ),
+              Expanded(child: Text(item.$1, style: AppTextStyles.titleMedium)),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -422,8 +440,10 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                   if (secondary.isNotEmpty)
                     Text(
                       secondary,
-                      style: AppTextStyles.bodySmall
-                          .copyWith(color: AppColors.textHint, fontSize: 11),
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textHint,
+                        fontSize: 11,
+                      ),
                     ),
                 ],
               ),
@@ -440,21 +460,25 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       decoration: BoxDecoration(
         color: AppColors.accent.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.3),
-        ),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.tips_and_updates_rounded,
-                  color: AppColors.accent, size: 20),
+              const Icon(
+                Icons.tips_and_updates_rounded,
+                color: AppColors.accent,
+                size: 20,
+              ),
               const SizedBox(width: 8),
-              Text('Improve Accuracy',
-                  style:
-                      AppTextStyles.titleMedium.copyWith(color: AppColors.accent)),
+              Text(
+                'Improve Accuracy',
+                style: AppTextStyles.titleMedium.copyWith(
+                  color: AppColors.accent,
+                ),
+              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -470,9 +494,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text('• ', style: TextStyle(color: AppColors.accent)),
-                  Expanded(
-                    child: Text(tip, style: AppTextStyles.bodySmall),
-                  ),
+                  Expanded(child: Text(tip, style: AppTextStyles.bodySmall)),
                 ],
               ),
             ),
@@ -530,6 +552,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       _confidenceLevel = confidence;
     });
   }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -541,5 +564,4 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
     _personId ??= params['personId'];
     _relationship ??= params['relationship'];
   }
-
 }

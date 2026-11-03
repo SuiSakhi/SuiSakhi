@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.stitchsmart" "\0"
-            VALUE "FileDescription", "stitchsmart" "\0"
+            VALUE "CompanyName", "SuiSakhi" "\0"
+            VALUE "FileDescription", "SuiSakhi" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "stitchsmart" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.stitchsmart. All rights reserved." "\0"
-            VALUE "OriginalFilename", "stitchsmart.exe" "\0"
-            VALUE "ProductName", "stitchsmart" "\0"
+            VALUE "InternalName", "SuiSakhi" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 SuiSakhi. All rights reserved." "\0"
+            VALUE "OriginalFilename", "SuiSakhi.exe" "\0"
+            VALUE "ProductName", "SuiSakhi" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END

@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'core/router_keys.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/app_pin.dart';
 import 'screens/profile/profile_selection_screen.dart';
 import 'screens/profile/customer_account_center_screen.dart';
 import 'screens/profile/customer_orders_hub_screen.dart';
@@ -15,6 +16,7 @@ import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/onboarding/profile_setup_screen.dart';
 import 'screens/home/home_screen.dart';
+import 'screens/home/customer_service_guide_screen.dart';
 import 'screens/measurements/measurement_dashboard_screen.dart';
 import 'screens/measurements/camera_measurement_screen.dart';
 import 'screens/measurements/measurement_result_screen.dart';
@@ -29,15 +31,19 @@ import 'screens/orders/order_tag_lookup_screen.dart';
 import 'screens/prd/tailor_style_hub_screen.dart';
 import 'screens/prd/quick_fix_screen.dart';
 import 'screens/prd/bulk_orders_screen.dart';
+import 'screens/prd/dress_rental_request_screen.dart';
 import 'screens/prd/shop_explore_screen.dart';
 import 'screens/prd/garment_care_screen.dart';
 import 'screens/partner/garment_care_jobs_screen.dart';
+import 'screens/partner/quickcare_jobs_screen.dart';
 import 'screens/partner/garment_care_completion_templates_screen.dart';
 import 'screens/prd/fashion_store_screen.dart';
 import 'screens/prd/offers_membership_screen.dart';
 import 'screens/prd/customer_fabric_help_screen.dart';
 import 'screens/owner/owner_dashboard_screen.dart';
 import 'screens/owner/owner_support_inbox_screen.dart';
+import 'screens/owner/owner_support_access_screen.dart';
+import 'screens/owner/helpdesk_order_explorer_screen.dart';
 import 'screens/owner/owner_order_routing_screen.dart';
 import 'screens/owner/owner_design_templates_screen.dart';
 import 'screens/owner/owner_partner_applications_screen.dart';
@@ -82,8 +88,8 @@ import 'screens/partner/designer_catalogue_screen.dart';
 import 'screens/partner/designer_catalogue_details_screen.dart';
 import 'screens/partner/designer_catalogue_correction_screen.dart';
 
-class StitchSmartApp extends StatelessWidget {
-  const StitchSmartApp({super.key});
+class SuiSakhiApp extends StatelessWidget {
+  const SuiSakhiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -91,13 +97,15 @@ class StitchSmartApp extends StatelessWidget {
       title: 'SuiSakhi',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      builder: (context, child) =>
+          PinLockGate(child: child ?? const SizedBox.shrink()),
       routerConfig: _router,
     );
   }
 }
 
 final _router = GoRouter(
-  navigatorKey: stitchSmartRootNavigatorKey,
+  navigatorKey: suiSakhiRootNavigatorKey,
   initialLocation: '/',
   // Firebase Phone reCAPTCHA returns a custom iOS URL scheme. Redirect it to
   // LoginScreen so the shared phone/OTP flow can rebuild with its current state.
@@ -174,6 +182,8 @@ final _router = GoRouter(
               : intent == 'customer'
               ? false
               : null,
+          resetPinAfterOtp: state.uri.queryParameters['resetPin'] == '1',
+          resumeSession: state.uri.queryParameters['resume'] == '1',
         );
       },
     ),
@@ -218,6 +228,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerOrdersHubScreen(),
     ),
     GoRoute(
+      path: '/service-guide',
+      builder: (ctx, state) => const CustomerServiceGuideScreen(),
+    ),
+    GoRoute(
       path: '/partner/landing',
       builder: (context, state) => PartnerProfileLandingScreen(
         accountId: state.uri.queryParameters['accountId'],
@@ -255,6 +269,14 @@ final _router = GoRouter(
         accountId: state.uri.queryParameters['accountId'] ?? '',
         profileId: state.uri.queryParameters['profileId'] ?? '',
         partnerName: 'Garment Care Partner',
+      ),
+    ),
+    GoRoute(
+      path: '/partner/quick-care',
+      builder: (ctx, state) => QuickCareJobsScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+        partnerName: 'QuickCare Partner',
       ),
     ),
     GoRoute(
@@ -430,6 +452,18 @@ final _router = GoRouter(
     GoRoute(
       path: '/owner/support-requests',
       builder: (ctx, state) => const OwnerSupportInboxScreen(),
+    ),
+    GoRoute(
+      path: '/owner/support-access',
+      builder: (ctx, state) => const OwnerSupportAccessScreen(),
+    ),
+    GoRoute(
+      path: '/support',
+      builder: (ctx, state) => const OwnerSupportInboxScreen(),
+    ),
+    GoRoute(
+      path: '/support/orders',
+      builder: (ctx, state) => const HelpdeskOrderExplorerScreen(),
     ),
     GoRoute(
       path: '/owner/order-routing',
@@ -614,6 +648,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const BulkOrdersScreen(),
     ),
     GoRoute(
+      path: '/dress-rental-request',
+      builder: (ctx, state) => const DressRentalRequestScreen(),
+    ),
+    GoRoute(
       path: '/shop-explore',
       builder: (ctx, state) {
         final category = state.uri.queryParameters['category'];
@@ -625,7 +663,10 @@ final _router = GoRouter(
           'kids_fashion',
         };
         if (category == null || storeCategories.contains(category)) {
-          return FashionStoreScreen(initialCategoryCode: category);
+          return FashionStoreScreen(
+            initialCategoryCode: category,
+            initialSearchQuery: state.uri.queryParameters['q'],
+          );
         }
         return ShopExploreScreen(initialCategoryId: category);
       },

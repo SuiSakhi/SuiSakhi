@@ -58,19 +58,22 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
     _MeasurementMethod(
       id: 'video_call',
       title: 'Video Call with Tailor',
-      subtitle: 'A tailor will be assigned automatically when you place an order',
+      subtitle:
+          'A tailor will be assigned automatically when you place an order',
       icon: Icons.video_call_outlined,
     ),
     _MeasurementMethod(
       id: 'home_visit',
       title: 'Home Visit',
-      subtitle: 'A measurement partner will be assigned automatically when you place an order',
+      subtitle:
+          'A measurement partner will be assigned automatically when you place an order',
       icon: Icons.home_work_outlined,
     ),
     _MeasurementMethod(
       id: 'old_dress',
       title: 'Old Dress Reference',
-      subtitle: 'Choose a previous order and keep its image and measurement reference',
+      subtitle:
+          'Choose a previous order and keep its image and measurement reference',
       icon: Icons.checkroom_outlined,
     ),
     _MeasurementMethod(
@@ -86,7 +89,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
     super.initState();
     _loadPeople();
   }
-  
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -141,8 +144,9 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         return;
       }
 
-      final accountId =
-          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        phone.trim(),
+      );
 
       if (accountId == null || accountId.isEmpty) {
         setState(() {
@@ -155,8 +159,9 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         return;
       }
 
-      final profiles =
-          await AppState.instance.fetchActiveProfilesForAccount(accountId);
+      final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+        accountId,
+      );
 
       Map<String, dynamic>? customerProfile;
       for (final p in profiles) {
@@ -169,7 +174,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
 
       final customerProfileId =
           customerProfile?['profileId']?.toString() ??
-              customerProfile?['docId']?.toString();
+          customerProfile?['docId']?.toString();
 
       if (customerProfileId != null && customerProfileId.trim().isNotEmpty) {
         final familySnap = await _db
@@ -238,18 +243,14 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
 
     if (person == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a person for measurement'),
-        ),
+        const SnackBar(content: Text('Please select a person for measurement')),
       );
       return;
     }
 
     if (accountId == null || customerProfileId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Unable to continue. Please try again.'),
-        ),
+        const SnackBar(content: Text('Unable to continue. Please try again.')),
       );
       return;
     }
@@ -295,9 +296,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
 
       default:
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Please select a measurement method.'),
-          ),
+          const SnackBar(content: Text('Please select a measurement method.')),
         );
     }
   }
@@ -353,9 +352,8 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
                     ButtonSegment(value: 'in', label: Text('in')),
                   ],
                   selected: {_manualUnit},
-                  onSelectionChanged: (selection) => setSheetState(
-                    () => _manualUnit = selection.first,
-                  ),
+                  onSelectionChanged: (selection) =>
+                      setSheetState(() => _manualUnit = selection.first),
                 ),
                 const SizedBox(height: 10),
                 Expanded(
@@ -439,7 +437,11 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
       final maximum = _manualUnit == 'cm' ? 500 : 200;
       if (value == null || !value.isFinite || value <= 0 || value > maximum) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Check ${spec.label}; enter a valid $_manualUnit value.')),
+          SnackBar(
+            content: Text(
+              'Check ${spec.label}; enter a valid $_manualUnit value.',
+            ),
+          ),
         );
         return;
       }
@@ -523,10 +525,10 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
     try {
       final references =
           await CustomerMeasurementHistoryService.loadDressReferences(
-        customerUid: uid,
-        personId: person.id,
-        personName: person.name,
-      );
+            customerUid: uid,
+            personId: person.id,
+            personName: person.name,
+          );
       if (!mounted) return;
       await showModalBottomSheet<void>(
         context: context,
@@ -559,10 +561,10 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
   }
 
   Map<String, double> _numericValues(Map<String, String> values) => {
-        for (final entry in values.entries)
-          if (double.tryParse(entry.value) case final value? when value > 0)
-            entry.key: value,
-      };
+    for (final entry in values.entries)
+      if (double.tryParse(entry.value) case final value? when value > 0)
+        entry.key: value,
+  };
 
   Future<bool> _saveReferenceRecord({
     required _MeasurementPerson person,
@@ -630,9 +632,12 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
   void _showLoadError() {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Could not load this information. Please try again.')),
+      const SnackBar(
+        content: Text('Could not load this information. Please try again.'),
+      ),
     );
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -646,77 +651,74 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Text(
-                      _error!,
-                      textAlign: TextAlign.center,
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(_error!, textAlign: TextAlign.center),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const _InfoCard(),
+                const SizedBox(height: 20),
+
+                const _SectionTitle(title: 'Measurement For'),
+                const Padding(
+                  padding: EdgeInsets.only(left: 4, bottom: 10),
+                  child: Text(
+                    'Select the person whose measurements you want to capture.',
+                    style: TextStyle(
+                      color: Colors.black54,
+                      fontSize: 13,
+                      height: 1.3,
                     ),
                   ),
-                )
-              : ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    const _InfoCard(),
-                    const SizedBox(height: 20),
-
-                    const _SectionTitle(title: 'Measurement For'),
-                    const Padding(
-                      padding: EdgeInsets.only(left: 4, bottom: 10),
-                      child: Text(
-                        'Select the person whose measurements you want to capture.',
-                        style: TextStyle(
-                          color: Colors.black54,
-                          fontSize: 13,
-                          height: 1.3,
-                        ),
-                      ),
-                    ),
-                    for (final person in _people)
-                      _PersonCard(
-                        person: person,
-                        selected: _selectedPerson?.id == person.id,
-                        onTap: () {
-                          setState(() {
-                            _selectedPerson = person;
-                          });
-                        },
-                      ),
-
-                    const SizedBox(height: 20),
-                    const _SectionTitle(title: 'Select Measurement Method'),
-                    for (final method in _methods)
-                      _MethodCard(
-                        method: method,
-                        selected: _selectedMethod == method.id,
-                        onTap: () {
-                          setState(() {
-                            _selectedMethod = method.id;
-                          });
-                        },
-                      ),
-
-                    const SizedBox(height: 24),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: _continue,
-                        icon: const Icon(Icons.arrow_forward_rounded),
-                        label: const Text('Continue'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 15),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                  ],
                 ),
+                for (final person in _people)
+                  _PersonCard(
+                    person: person,
+                    selected: _selectedPerson?.id == person.id,
+                    onTap: () {
+                      setState(() {
+                        _selectedPerson = person;
+                      });
+                    },
+                  ),
+
+                const SizedBox(height: 20),
+                const _SectionTitle(title: 'Select Measurement Method'),
+                for (final method in _methods)
+                  _MethodCard(
+                    method: method,
+                    selected: _selectedMethod == method.id,
+                    onTap: () {
+                      setState(() {
+                        _selectedMethod = method.id;
+                      });
+                    },
+                  ),
+
+                const SizedBox(height: 24),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _continue,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                    label: const Text('Continue'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
     );
   }
 }
@@ -771,11 +773,8 @@ class _InfoCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: Color(0xFFF3EAFB),
-            child: Icon(
-              Icons.straighten_outlined,
-              color: Color(0xFF7B3FB2),
-            ),
+            backgroundColor: Color(0xFFFCEAF1),
+            child: Icon(Icons.straighten_outlined, color: Color(0xFFB70D5C)),
           ),
           SizedBox(width: 14),
           Expanded(
@@ -797,9 +796,7 @@ class _InfoCard extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   final String title;
 
-  const _SectionTitle({
-    required this.title,
-  });
+  const _SectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -884,7 +881,7 @@ class _SelectableCard extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       child: Material(
-        color: selected ? const Color(0xFFF3EAFB) : AppColors.surface,
+        color: selected ? const Color(0xFFFCEAF1) : AppColors.surface,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
           borderRadius: BorderRadius.circular(16),
@@ -901,8 +898,9 @@ class _SelectableCard extends StatelessWidget {
             child: Row(
               children: [
                 CircleAvatar(
-                  backgroundColor:
-                      selected ? AppColors.primary : const Color(0xFFF3EAFB),
+                  backgroundColor: selected
+                      ? AppColors.primary
+                      : const Color(0xFFFCEAF1),
                   child: Icon(
                     icon,
                     color: selected ? Colors.white : AppColors.primary,
@@ -932,10 +930,7 @@ class _SelectableCard extends StatelessWidget {
                   ),
                 ),
                 if (selected)
-                  const Icon(
-                    Icons.check_circle,
-                    color: Color(0xFF7B3FB2),
-                  ),
+                  const Icon(Icons.check_circle, color: Color(0xFFB70D5C)),
               ],
             ),
           ),
@@ -960,7 +955,10 @@ class _HistorySheet extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('All Measurement History', style: AppTextStyles.headlineMedium),
+            Text(
+              'All Measurement History',
+              style: AppTextStyles.headlineMedium,
+            ),
             const SizedBox(height: 6),
             Text(
               'Latest 10 records. Tailor-confirmed values remain the final fit reference.',
@@ -988,7 +986,10 @@ class _HistorySheet extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(record.title, style: AppTextStyles.titleMedium),
+                              Text(
+                                record.title,
+                                style: AppTextStyles.titleMedium,
+                              ),
                               const SizedBox(height: 4),
                               Text(
                                 '${_formatDate(record.capturedAt)} · ${_measurementStatusLabel(record)}',
@@ -1000,7 +1001,10 @@ class _HistorySheet extends StatelessWidget {
                                 const SizedBox(height: 8),
                                 Text(
                                   entries
-                                      .map((entry) => '${_shortLabel(entry.key)}: ${entry.value} ${record.unit}')
+                                      .map(
+                                        (entry) =>
+                                            '${_shortLabel(entry.key)}: ${entry.value} ${record.unit}',
+                                      )
                                       .join('   ·   '),
                                   maxLines: 3,
                                   overflow: TextOverflow.ellipsis,
@@ -1034,10 +1038,7 @@ class _HistorySheet extends StatelessWidget {
 }
 
 class _DressReferenceSheet extends StatelessWidget {
-  const _DressReferenceSheet({
-    required this.references,
-    required this.onSave,
-  });
+  const _DressReferenceSheet({required this.references, required this.onSave});
 
   final List<CustomerDressReference> references;
   final ValueChanged<CustomerDressReference> onSave;
@@ -1061,7 +1062,9 @@ class _DressReferenceSheet extends StatelessWidget {
             Expanded(
               child: references.isEmpty
                   ? const Center(
-                      child: Text('No previous orders are available for this person.'),
+                      child: Text(
+                        'No previous orders are available for this person.',
+                      ),
                     )
                   : ListView.separated(
                       itemCount: references.length,
@@ -1099,7 +1102,10 @@ class _DressReferenceSheet extends StatelessWidget {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(reference.title, style: AppTextStyles.titleMedium),
+                                    Text(
+                                      reference.title,
+                                      style: AppTextStyles.titleMedium,
+                                    ),
                                     const SizedBox(height: 4),
                                     Text(
                                       '${reference.date == null ? 'Previous order' : _formatDate(reference.date!)} · ${reference.status}',
@@ -1116,7 +1122,9 @@ class _DressReferenceSheet extends StatelessWidget {
                                     const SizedBox(height: 6),
                                     TextButton.icon(
                                       onPressed: () => onSave(reference),
-                                      icon: const Icon(Icons.bookmark_add_outlined),
+                                      icon: const Icon(
+                                        Icons.bookmark_add_outlined,
+                                      ),
                                       label: const Text('Keep this reference'),
                                     ),
                                   ],
@@ -1136,9 +1144,9 @@ class _DressReferenceSheet extends StatelessWidget {
 }
 
 Widget _dressPlaceholder() => Container(
-      color: const Color(0xFFF3EAFB),
-      child: const Icon(Icons.checkroom_outlined, color: AppColors.primary),
-    );
+  color: const Color(0xFFFCEAF1),
+  child: const Icon(Icons.checkroom_outlined, color: AppColors.primary),
+);
 
 String _formatDate(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';

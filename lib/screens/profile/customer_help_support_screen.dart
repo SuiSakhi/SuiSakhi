@@ -65,6 +65,8 @@ class CustomerHelpSupportScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 _CustomerOrders(uid: user.uid, customerName: name),
+                const SizedBox(height: 14),
+                _CustomerGarmentCareOrders(uid: user.uid),
                 const SizedBox(height: 22),
                 _SectionHeading(
                   title: 'My support requests',
@@ -77,6 +79,8 @@ class CustomerHelpSupportScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 const _CustomerTickets(),
+                const SizedBox(height: 18),
+                const _SupportEmailCard(),
                 const SizedBox(height: 18),
                 const _SafetyNote(),
               ],
@@ -116,7 +120,7 @@ class CustomerHelpSupportScreen extends StatelessWidget {
         context.push('/fabric-help');
         break;
       case 'garment_care':
-        context.push('/shop-explore?category=garment_care');
+        _showGarmentCareHelp(context, customerName: customerName);
         break;
       case 'payments':
         _showTopic(
@@ -150,7 +154,10 @@ class CustomerHelpSupportScreen extends StatelessWidget {
     String? category,
     String? linkedOrderId,
     String? initialSubject,
+    String? initialTopic,
+    String? initialMessage,
   }) async {
+    final topic = initialTopic ?? (linkedOrderId == null ? null : 'tailoring');
     final created = await showModalBottomSheet<bool>(
       context: context,
       isScrollControlled: true,
@@ -160,12 +167,50 @@ class CustomerHelpSupportScreen extends StatelessWidget {
         customerName: customerName,
         initialCategory: category,
         initialOrderId: linkedOrderId,
+        initialTopic: topic,
         initialSubject: initialSubject,
+        initialMessage: initialMessage,
       ),
     );
     if (created == true && context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Your support request was submitted.')),
+      );
+    }
+  }
+
+  static Future<void> openQuickCareCancellationTicket(
+    BuildContext context, {
+    required String customerName,
+    required String orderId,
+    bool noFeeEligible = false,
+  }) => _openTicket(
+    context,
+    customerName: customerName,
+    category: 'Quick Care Issue',
+    linkedOrderId: orderId,
+    initialSubject: 'Request to cancel Quick Care order',
+    initialTopic: 'quick_care',
+    initialMessage: noFeeEligible
+        ? 'Please help cancel this Quick Care order. I requested cancellation more than two hours before the appointment, so no cancellation fee should apply. If payment was collected, please review the refund.'
+        : 'Please help me cancel this Quick Care order. The appointment is within two hours or its time is not confirmed. Please review the applicable cancellation terms and help complete the cancellation.',
+  );
+
+  static Future<void> _emailSupport(BuildContext context) async {
+    final uri = Uri(
+      scheme: 'mailto',
+      path: 'connect@suisakhi.com',
+      queryParameters: const {'subject': 'SuiSakhi support request'},
+    );
+    var opened = false;
+    try {
+      opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      // Fall back to showing the email address if no mail app can open it.
+    }
+    if (!opened && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email us at connect@suisakhi.com')),
       );
     }
   }
@@ -214,6 +259,125 @@ class CustomerHelpSupportScreen extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  static void _showGarmentCareHelp(
+    BuildContext context, {
+    required String customerName,
+  }) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      builder: (sheetContext) => DraggableScrollableSheet(
+        expand: false,
+        initialChildSize: .84,
+        maxChildSize: .96,
+        builder: (contentContext, scrollController) => Container(
+          decoration: const BoxDecoration(
+            color: _supportBackground,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.fromLTRB(18, 6, 18, 24),
+            children: [
+              Text(
+                'Garment Care help',
+                style: Theme.of(contentContext).textTheme.titleLarge?.copyWith(
+                  color: _supportInk,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Clear answers for pickup, inspection, payment and return delivery.',
+                style: TextStyle(color: _supportMuted),
+              ),
+              const SizedBox(height: 12),
+              const _GarmentCareHelpTile(
+                title: 'The Partner rejected a garment at pickup',
+                summary: 'What happens to the garment and its quantity?',
+                details:
+                    'The Partner records a reason and returns that garment to you. A photo is optional. The rejected piece is removed from this order’s service quantity and is not reassigned automatically. If you still want it serviced, place a separate new order.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'I declined an inspection change',
+                summary: 'How will the declined garment be returned?',
+                details:
+                    'We do not apply a service or price change you declined. That garment is not billed for the declined work. When other completed garments in the same service group are ready, it returns with them. If it is the only garment, a return is arranged for it with the applicable reason.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'The Partner found an issue or extra charge',
+                summary: 'You decide before the service or price changes.',
+                details:
+                    'Review the inspection finding and any proposed extra charge in your order. The Partner proceeds with a change only after you approve it. If you decline, the garment follows the return process shown in your order.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'Why do I see separate service orders?',
+                summary:
+                    'Each service group has its own progress and schedule.',
+                details:
+                    'Laundry, Ironing, Special Treatments and Designer Care are tracked as separate service orders, even when requested together. Completed garments within one service order can be paid on that service order’s invoice. Other groups continue on their own schedule and invoice.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'Payment is pending or delivery is waiting',
+                summary: 'Check the final invoice for that service order.',
+                details:
+                    'Open Garment Care orders and review the invoice for the ready service order. Delivery is arranged after the applicable final invoice is paid. If the payment appears complete but the order still shows payment pending, submit a Payment Issue request and link the Garment Care order.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'How does return delivery and the PIN work?',
+                summary: 'Check the garment, then confirm the handover.',
+                details:
+                    'Track the assigned delivery Partner in your Garment Care order. At the actual handover, verify the garments and give the Partner the last four digits of your registered phone number for PIN verification. Do not share the PIN before the garments are handed over.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'Can I reuse Saved Garment or Previous Garment DNA?',
+                summary: 'Reuse the details and edit them for this order.',
+                details:
+                    'Saved Garment and Previous Garment DNA can copy fabric, stain or damage, and care instructions into a new request. Review and edit the copied details before adding the garment. A Previous Garment reference copies care information; it does not automatically mean this is the same physical garment.',
+              ),
+              const _GarmentCareHelpTile(
+                title: 'Is Hygiene wash a separate service?',
+                summary: 'It stays part of the selected service.',
+                details:
+                    'Hygiene wash is recorded as part of the selected garment-care service when requested and suitable. It is not a separate service order.',
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  context.push('/garment-care/orders');
+                },
+                icon: const Icon(Icons.local_laundry_service_outlined),
+                label: const Text('View my Garment Care orders'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: _supportPurple,
+                  foregroundColor: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  _openTicket(
+                    context,
+                    customerName: customerName,
+                    category: 'Garment Care Issue',
+                    initialSubject: 'Garment Care question',
+                    initialTopic: 'garment_care',
+                  );
+                },
+                icon: const Icon(Icons.support_agent_outlined),
+                label: const Text('Contact Garment Care support'),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -623,6 +787,109 @@ class _CustomerOrders extends StatelessWidget {
   );
 }
 
+class _CustomerGarmentCareOrders extends StatelessWidget {
+  const _CustomerGarmentCareOrders({required this.uid});
+
+  final String uid;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      _SectionHeading(
+        title: 'Garment Care orders',
+        subtitle: 'Track inspection, approval, invoice and return delivery.',
+        trailing: TextButton(
+          onPressed: () => context.push('/garment-care/orders'),
+          child: const Text('View all'),
+        ),
+      ),
+      const SizedBox(height: 10),
+      StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+        stream: FirebaseFirestore.instance
+            .collection('garment_care_orders')
+            .where('customerUid', isEqualTo: uid)
+            .orderBy('createdAt', descending: true)
+            .limit(20)
+            .snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return const _MessageCard(
+              icon: Icons.cloud_off_outlined,
+              message:
+                  'Garment Care order details could not be loaded. Open Garment Care orders to refresh or report an issue.',
+            );
+          }
+          if (!snapshot.hasData) {
+            return const Padding(
+              padding: EdgeInsets.all(16),
+              child: Center(child: CircularProgressIndicator()),
+            );
+          }
+          final orders = snapshot.data!.docs;
+          if (orders.isEmpty) {
+            return const _MessageCard(
+              icon: Icons.local_laundry_service_outlined,
+              message: 'Your Garment Care orders will appear here once placed.',
+            );
+          }
+          return Column(
+            children: [
+              for (final order in orders.take(4))
+                _GarmentCareOrderAwarenessCard(
+                  id: order.id,
+                  data: order.data(),
+                ),
+            ],
+          );
+        },
+      ),
+    ],
+  );
+}
+
+class _GarmentCareOrderAwarenessCard extends StatelessWidget {
+  const _GarmentCareOrderAwarenessCard({required this.id, required this.data});
+
+  final String id;
+  final Map<String, dynamic> data;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _garmentCareStatusLabel(
+      data['statusProjection']?.toString() ?? data['status']?.toString() ?? '',
+    );
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFECE8F3)),
+      ),
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: Color(0xFFF1ECFB),
+          child: Icon(
+            Icons.local_laundry_service_outlined,
+            color: _supportPurple,
+          ),
+        ),
+        title: Text(
+          _orderLabel(id, data),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontWeight: FontWeight.w700,
+            color: _supportInk,
+          ),
+        ),
+        subtitle: Text('Garment Care · $status'),
+        trailing: const Icon(Icons.chevron_right_rounded),
+        onTap: () => context.push('/garment-care/orders/$id'),
+      ),
+    );
+  }
+}
+
 class _OrderAwarenessCard extends StatelessWidget {
   const _OrderAwarenessCard({
     required this.id,
@@ -913,65 +1180,229 @@ class _TicketCard extends StatelessWidget {
   final Map<String, dynamic> data;
 
   @override
-  Widget build(BuildContext context) => Container(
-    margin: const EdgeInsets.only(bottom: 9),
-    padding: const EdgeInsets.all(14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFECE8F3)),
-    ),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                data['subject']?.toString() ?? 'Support request',
-                style: const TextStyle(
-                  color: _supportInk,
-                  fontWeight: FontWeight.w700,
+  Widget build(BuildContext context) {
+    final isOfflineServiceRequest = const {
+      'bulk_order',
+      'dress_rental',
+    }.contains(data['requestType']);
+    final status = data['status']?.toString() ?? 'Open';
+    final isClosed =
+        status == 'Closed' ||
+        (status == 'Resolved' && !isOfflineServiceRequest);
+    final comments = (data['customerComments'] as List<dynamic>? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList(growable: false);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 9),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFECE8F3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  data['subject']?.toString() ?? 'Support request',
+                  style: const TextStyle(
+                    color: _supportInk,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-            ),
-            _StatusChip(label: data['status']?.toString() ?? 'Open'),
-          ],
-        ),
-        const SizedBox(height: 5),
-        Text(
-          '${data['category'] ?? 'Other'} · ${_dateLabel(_orderDate(data)) ?? 'Submitted'}',
-          style: const TextStyle(color: _supportMuted, fontSize: 12),
-        ),
-        const SizedBox(height: 7),
-        Text(
-          data['message']?.toString() ?? '',
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(color: _supportInk, fontSize: 13),
-        ),
-        if ((data['response']?.toString() ?? '').trim().isNotEmpty) ...[
-          const Divider(height: 20),
+              _StatusChip(label: status),
+            ],
+          ),
+          const SizedBox(height: 5),
           Text(
-            'Support update: ${data['response']}',
-            style: const TextStyle(color: _supportMuted, fontSize: 13),
+            '${data['category'] ?? 'Other'} · ${_dateLabel(_orderDate(data)) ?? 'Submitted'}',
+            style: const TextStyle(color: _supportMuted, fontSize: 12),
+          ),
+          if (isOfflineServiceRequest) ...[
+            const SizedBox(height: 5),
+            SelectableText(
+              'Helpdesk reference: $id',
+              style: const TextStyle(
+                color: _supportPurple,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+          const SizedBox(height: 7),
+          Text(
+            data['message']?.toString() ?? '',
+            maxLines: isOfflineServiceRequest ? null : 3,
+            overflow: isOfflineServiceRequest ? null : TextOverflow.ellipsis,
+            style: const TextStyle(color: _supportInk, fontSize: 13),
+          ),
+          if ((data['response']?.toString() ?? '').trim().isNotEmpty) ...[
+            const Divider(height: 20),
+            Text(
+              'Helpdesk update: ${data['response']}',
+              style: const TextStyle(color: _supportMuted, fontSize: 13),
+            ),
+          ],
+          for (final comment in comments)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Your comment: ${comment['text'] ?? ''}',
+                style: const TextStyle(color: _supportMuted, fontSize: 13),
+              ),
+            ),
+          if ((data['linkedOrderId']?.toString() ?? '').trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '${switch (data['linkedOrderType']) {
+                  'garment_care' => 'Garment Care order',
+                  'quick_care' => 'Quick Care order',
+                  _ => 'Tailoring order',
+                }} reference: ${_orderLabel(data['linkedOrderId'].toString(), const {})}',
+                style: const TextStyle(color: _supportMuted, fontSize: 12),
+              ),
+            ),
+          if (isOfflineServiceRequest && !isClosed) ...[
+            const Divider(height: 20),
+            Wrap(
+              spacing: 8,
+              runSpacing: 4,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _addComment(context),
+                  icon: const Icon(Icons.comment_outlined, size: 17),
+                  label: const Text('Add comment'),
+                ),
+                TextButton.icon(
+                  onPressed: () => _confirmAction(context, 'cancel'),
+                  icon: const Icon(Icons.cancel_outlined, size: 17),
+                  label: const Text('Cancel request'),
+                ),
+                FilledButton.tonalIcon(
+                  onPressed: () => _confirmAction(context, 'completed'),
+                  icon: const Icon(Icons.check_circle_outline, size: 17),
+                  label: const Text('Mark complete'),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _addComment(BuildContext context) async {
+    final controller = TextEditingController();
+    final submitted = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add a comment'),
+        content: TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 5,
+          maxLength: 1000,
+          decoration: const InputDecoration(
+            hintText: 'Add a note for the Helpdesk',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Back'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, controller.text),
+            child: const Text('Send comment'),
           ),
         ],
-        if ((data['linkedOrderId']?.toString() ?? '').trim().isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              'Order reference: ${_orderLabel(data['linkedOrderId'].toString(), const {})}',
-              style: const TextStyle(color: _supportMuted, fontSize: 12),
+      ),
+    );
+    controller.dispose();
+    final comment = submitted?.trim() ?? '';
+    if (comment.isEmpty || !context.mounted) return;
+    try {
+      await CustomerSupportService.updateServiceRequest(
+        ticketId: id,
+        action: 'comment',
+        comment: comment,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Comment sent to Helpdesk.')),
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not send the comment. Please retry.'),
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _confirmAction(BuildContext context, String action) async {
+    final completed = action == 'completed';
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          completed ? 'Mark request complete?' : 'Cancel this request?',
+        ),
+        content: Text(
+          completed
+              ? 'This confirms the service is complete and closes the Helpdesk ticket.'
+              : 'This closes the Helpdesk ticket as cancelled.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Go back'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(completed ? 'Confirm complete' : 'Cancel request'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    try {
+      await CustomerSupportService.updateServiceRequest(
+        ticketId: id,
+        action: action,
+      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              completed
+                  ? 'You marked the service complete.'
+                  : 'Request cancelled.',
             ),
           ),
-        Semantics(
-          label: 'Support request reference $id',
-          child: const SizedBox.shrink(),
-        ),
-      ],
-    ),
-  );
+        );
+      }
+    } catch (_) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not update this request. Please retry.'),
+          ),
+        );
+      }
+    }
+  }
 }
 
 class _CreateSupportTicketSheet extends StatefulWidget {
@@ -979,13 +1410,17 @@ class _CreateSupportTicketSheet extends StatefulWidget {
     required this.customerName,
     this.initialCategory,
     this.initialOrderId,
+    this.initialTopic,
     this.initialSubject,
+    this.initialMessage,
   });
 
   final String customerName;
   final String? initialCategory;
   final String? initialOrderId;
+  final String? initialTopic;
   final String? initialSubject;
+  final String? initialMessage;
 
   @override
   State<_CreateSupportTicketSheet> createState() =>
@@ -997,6 +1432,7 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
   final _subject = TextEditingController();
   final _message = TextEditingController();
   late String _category;
+  String? _topic;
   String? _orderId;
   bool _saving = false;
   String? _error;
@@ -1009,7 +1445,9 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
         ? widget.initialCategory!
         : CustomerSupportService.categories.last;
     _orderId = widget.initialOrderId;
+    _topic = widget.initialTopic;
     _subject.text = widget.initialSubject ?? '';
+    _message.text = widget.initialMessage ?? '';
   }
 
   @override
@@ -1052,6 +1490,56 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
               ),
               const SizedBox(height: 20),
               DropdownButtonFormField<String>(
+                key: ValueKey('topic_${_topic ?? 'none'}'),
+                initialValue: _topic,
+                decoration: const InputDecoration(
+                  labelText: 'What is your request about?',
+                  border: OutlineInputBorder(),
+                ),
+                hint: const Text('Choose a related topic'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'tailoring',
+                    child: Text('Tailoring order'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'garment_care',
+                    child: Text('Garment Care order'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'quick_care',
+                    child: Text('Quick Care order'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'fabric_design',
+                    child: Text('Fabric / Design on a tailoring order'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'other',
+                    child: Text('Other / no order'),
+                  ),
+                ],
+                validator: (value) =>
+                    value == null ? 'Choose what your request is about.' : null,
+                onChanged: _saving
+                    ? null
+                    : (value) {
+                        if (value == null) return;
+                        setState(() {
+                          _topic = value;
+                          _orderId = null;
+                          _category = switch (value) {
+                            'tailoring' => 'Order Issue',
+                            'garment_care' => 'Garment Care Issue',
+                            'quick_care' => 'Quick Care Issue',
+                            'fabric_design' => 'Fabric Issue',
+                            _ => 'Other',
+                          };
+                        });
+                      },
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
                 key: ValueKey(_category),
                 initialValue: _category,
                 decoration: const InputDecoration(labelText: 'Issue type'),
@@ -1068,13 +1556,19 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
                       },
               ),
               const SizedBox(height: 12),
-              _OrderLinkDropdown(
-                selectedId: _orderId,
-                onChanged: _saving
-                    ? null
-                    : (value) => setState(() => _orderId = value),
-              ),
-              const SizedBox(height: 12),
+              if (_topic == 'tailoring' ||
+                  _topic == 'garment_care' ||
+                  _topic == 'quick_care' ||
+                  _topic == 'fabric_design') ...[
+                _OrderLinkDropdown(
+                  orderType: _topic!,
+                  selectedId: _orderId,
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _orderId = value),
+                ),
+                const SizedBox(height: 12),
+              ],
               TextFormField(
                 controller: _subject,
                 maxLength: 100,
@@ -1148,6 +1642,13 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
         subject: _subject.text,
         message: _message.text,
         linkedOrderId: _orderId,
+        linkedOrderType: _orderId == null
+            ? null
+            : switch (_topic) {
+                'garment_care' => 'garment_care',
+                'quick_care' => 'quick_care',
+                _ => 'tailoring',
+              },
       );
       if (mounted) Navigator.of(context).pop(true);
     } catch (error) {
@@ -1163,7 +1664,12 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
 }
 
 class _OrderLinkDropdown extends StatelessWidget {
-  const _OrderLinkDropdown({required this.selectedId, required this.onChanged});
+  const _OrderLinkDropdown({
+    required this.orderType,
+    required this.selectedId,
+    required this.onChanged,
+  });
+  final String orderType;
   final String? selectedId;
   final ValueChanged<String?>? onChanged;
 
@@ -1171,19 +1677,43 @@ class _OrderLinkDropdown extends StatelessWidget {
   Widget build(BuildContext context) {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) return const SizedBox.shrink();
+    final isGarmentCare = orderType == 'garment_care';
+    final isQuickCare = orderType == 'quick_care';
+    final collection = isGarmentCare ? 'garment_care_orders' : 'orders';
+    final ownerField = isGarmentCare ? 'customerUid' : 'customerId';
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: FirebaseFirestore.instance
-          .collection('orders')
-          .where('customerId', isEqualTo: uid)
+          .collection(collection)
+          .where(ownerField, isEqualTo: uid)
           .snapshots(),
       builder: (context, snapshot) {
-        final docs = snapshot.data?.docs ?? const [];
+        if (snapshot.hasError) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              'Could not load your orders. You can still submit this request without linking an order.',
+              style: TextStyle(color: _supportMuted),
+            ),
+          );
+        }
+        final docs = (snapshot.data?.docs ?? const [])
+            .where((doc) {
+              if (!isQuickCare) return true;
+              return doc.data()['orderModuleType'] == 'quickFix';
+            })
+            .toList(growable: false);
         final containsSelected = docs.any((doc) => doc.id == selectedId);
         return DropdownButtonFormField<String?>(
           key: ValueKey('${selectedId ?? 'none'}_$containsSelected'),
           initialValue: containsSelected ? selectedId : null,
-          decoration: const InputDecoration(
-            labelText: 'Related order (optional)',
+          decoration: InputDecoration(
+            labelText: isGarmentCare
+                ? 'Related Garment Care order (optional)'
+                : isQuickCare
+                ? 'Related Quick Care order (optional)'
+                : orderType == 'fabric_design'
+                ? 'Related tailoring order for fabric / design (optional)'
+                : 'Related tailoring order (optional)',
             border: OutlineInputBorder(),
           ),
           items: [
@@ -1310,8 +1840,26 @@ class _AssistantSheetState extends State<_AssistantSheet> {
                         onTap: () => _send('What is in my wishlist?'),
                       ),
                       _PromptChip(
-                        label: 'My garment care requests',
-                        onTap: () => _send('Show my garment care requests'),
+                        label: 'My Garment Care orders',
+                        onTap: () => _send('Show my Garment Care orders'),
+                      ),
+                      _PromptChip(
+                        label: 'Partner rejected my garment',
+                        onTap: () => _send(
+                          'What happens if the Partner rejects my garment at pickup?',
+                        ),
+                      ),
+                      _PromptChip(
+                        label: 'I declined an inspection change',
+                        onTap: () => _send(
+                          'What happens after I decline an inspection change?',
+                        ),
+                      ),
+                      _PromptChip(
+                        label: 'Garment Care payment and return',
+                        onTap: () => _send(
+                          'How do Garment Care payment and return delivery work?',
+                        ),
                       ),
                     ],
                   ),
@@ -1396,12 +1944,14 @@ class _AssistantSheetState extends State<_AssistantSheet> {
       reply =
           'I’ll open a support request form so you can choose the issue type and add details.';
       widget.onRaiseIssue(_inferTicketCategory(lower));
-    } else if (_asksAboutOrder(lower)) {
-      reply = await _orderReply();
+    } else if (_isGarmentCareQuestion(lower)) {
+      reply = await _garmentCareHelpReply(lower);
     } else if (lower.contains('wishlist') || lower.contains('saved design')) {
       reply = await _wishlistReply();
     } else if (lower.contains('garment care') || lower.contains('laundry')) {
       reply = await _moduleOrderReply('care');
+    } else if (_asksAboutOrder(lower)) {
+      reply = await _orderReply();
     } else if (lower.contains('rental')) {
       reply = await _moduleOrderReply('rental');
     } else if (lower.contains('fabric')) {
@@ -1450,6 +2000,51 @@ class _AssistantSheetState extends State<_AssistantSheet> {
       text.contains('ready') ||
       text.contains('delivery date') ||
       text.contains('status');
+
+  bool _isGarmentCareQuestion(String text) =>
+      text.contains('garment care') ||
+      text.contains('laundry') ||
+      text.contains('hygiene wash') ||
+      (text.contains('partner') && text.contains('reject')) ||
+      (text.contains('declin') && text.contains('inspection')) ||
+      (text.contains('declin') && text.contains('change')) ||
+      (text.contains('garment') && text.contains('dna')) ||
+      (text.contains('garment') && text.contains('invoice'));
+
+  Future<String> _garmentCareHelpReply(String text) async {
+    if ((text.contains('reject') || text.contains('rejected')) &&
+        (text.contains('pickup') || text.contains('partner'))) {
+      return 'If the Partner rejects a garment at pickup, they record the reason and return that piece to you. A photo is optional. The piece is removed from this order quantity and is not reassigned automatically. If you still want it serviced, place a separate new order.';
+    }
+    if (text.contains('declin') &&
+        (text.contains('inspection') || text.contains('change'))) {
+      return 'A change you decline is not applied or billed. If other completed garments in that service group are ready, the declined garment returns with them. If it is the only garment, a return is arranged with the applicable reason.';
+    }
+    if (text.contains('extra charge') || text.contains('additional charge')) {
+      return 'Review the inspection finding and proposed amount in your Garment Care order. The Partner proceeds with a service or price change only after you approve it. A declined change is not billed.';
+    }
+    if (text.contains('pin') || text.contains('handover')) {
+      return 'At the actual return handover, first verify the garments. Then give the delivery Partner the last four digits of your registered phone number for PIN verification. Do not share the PIN before the garments are handed over.';
+    }
+    if (text.contains('dna') || text.contains('saved garment')) {
+      return 'Saved Garment or Previous Garment DNA can copy fabric, stain or damage, and care instructions into a new request. Review and edit the copied details. A Previous Garment reference does not automatically mean this is the same physical garment.';
+    }
+    if (text.contains('hygiene wash')) {
+      return 'Hygiene wash is an option within the selected Garment Care service when requested and suitable. It is not a separate service order.';
+    }
+    if (text.contains('group') || text.contains('invoice')) {
+      return 'Each service group has its own order, schedule and invoice. Completed garments in one service order can be paid together on that order’s invoice. Other groups continue on their own progress.';
+    }
+    if (text.contains('payment') ||
+        text.contains('paid') ||
+        text.contains('charge')) {
+      return 'Open Garment Care orders and check the final invoice for the ready service order. Completed garments in one service order can be paid together on that invoice; other service groups have their own invoices. Delivery is arranged after payment. At return, verify the garments and then give the Partner the last four digits of your registered phone number. If payment is recorded but the order still shows pending, submit a Payment Issue request and choose the Garment Care order.';
+    }
+    if (_asksAboutOrder(text) || text.contains('request')) {
+      return _moduleOrderReply('care');
+    }
+    return 'Garment Care orders progress by service group. You approve proposed inspection changes before they are applied; rejected or declined garments follow the return process. Open Garment Care help for the full guide, or create a support request and select Garment Care order first.';
+  }
 
   Future<String> _orderReply() async {
     try {
@@ -1505,12 +2100,14 @@ class _AssistantSheetState extends State<_AssistantSheet> {
 
   Future<String> _moduleOrderReply(String module) async {
     try {
+      final isCare = module == 'care';
       final snapshot = await FirebaseFirestore.instance
-          .collection('orders')
-          .where('customerId', isEqualTo: widget.uid)
+          .collection(isCare ? 'garment_care_orders' : 'orders')
+          .where(isCare ? 'customerUid' : 'customerId', isEqualTo: widget.uid)
           .get();
       final matching =
           snapshot.docs.where((doc) {
+            if (isCare) return true;
             final kind = _orderKind(doc.data()).toLowerCase();
             return kind.contains(module);
           }).toList()..sort(
@@ -1520,9 +2117,22 @@ class _AssistantSheetState extends State<_AssistantSheet> {
         final service = module == 'care' ? 'garment-care' : 'rental';
         return 'I do not see a $service order in your order records yet. Open the Fashion Store to browse services, or report a booking issue with its reference.';
       }
-      final active = matching.where((doc) => !_isClosed(doc.data())).toList();
+      final active = matching
+          .where(
+            (doc) => isCare
+                ? !_isGarmentCareClosed(doc.data())
+                : !_isClosed(doc.data()),
+          )
+          .toList();
       final latest = (active.isNotEmpty ? active : matching).first;
-      return 'I found ${matching.length} ${module == 'care' ? 'garment-care' : 'rental'} ${matching.length == 1 ? 'request' : 'requests'}. Latest: ${_orderLabel(latest.id, latest.data())} · ${_statusLabel(latest.data()['status']?.toString() ?? '')}.';
+      final status = isCare
+          ? _garmentCareStatusLabel(
+              latest.data()['statusProjection']?.toString() ??
+                  latest.data()['status']?.toString() ??
+                  '',
+            )
+          : _statusLabel(latest.data()['status']?.toString() ?? '');
+      return 'I found ${matching.length} ${isCare ? 'Garment Care' : 'rental'} ${matching.length == 1 ? 'order' : 'orders'}. Latest: ${_orderLabel(latest.id, latest.data())} · $status. Open Garment Care orders to see each service group and invoice.';
     } catch (_) {
       return 'I could not load that request history just now. Open My Orders to refresh or report an issue.';
     }
@@ -1691,6 +2301,72 @@ class _MessageCard extends StatelessWidget {
   );
 }
 
+class _GarmentCareHelpTile extends StatelessWidget {
+  const _GarmentCareHelpTile({
+    required this.title,
+    required this.summary,
+    required this.details,
+  });
+
+  final String title;
+  final String summary;
+  final String details;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: const EdgeInsets.only(bottom: 8),
+    color: Colors.white,
+    elevation: 0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(15),
+      side: const BorderSide(color: Color(0xFFECE8F3)),
+    ),
+    child: ExpansionTile(
+      tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+      childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+      title: Text(
+        title,
+        style: const TextStyle(
+          color: _supportInk,
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+      ),
+      subtitle: Text(summary, style: const TextStyle(color: _supportMuted)),
+      children: [
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(details, style: const TextStyle(color: _supportInk)),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SupportEmailCard extends StatelessWidget {
+  const _SupportEmailCard();
+
+  @override
+  Widget build(BuildContext context) => Card(
+    color: Colors.white,
+    elevation: 0,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: const BorderSide(color: Color(0xFFECE8F3)),
+    ),
+    child: ListTile(
+      leading: const CircleAvatar(
+        backgroundColor: Color(0xFFF1ECFB),
+        child: Icon(Icons.email_outlined, color: _supportPurple),
+      ),
+      title: const Text('Email SuiSakhi support'),
+      subtitle: const Text('connect@suisakhi.com'),
+      trailing: const Icon(Icons.open_in_new_rounded, color: _supportMuted),
+      onTap: () => CustomerHelpSupportScreen._emailSupport(context),
+    ),
+  );
+}
+
 class _SafetyNote extends StatelessWidget {
   const _SafetyNote();
 
@@ -1792,6 +2468,45 @@ bool _isClosed(Map<String, dynamic> data) {
     'closed',
     'completed',
   }.contains(status.replaceAll('_', '').replaceAll(' ', ''));
+}
+
+bool _isGarmentCareClosed(Map<String, dynamic> data) {
+  final projection = (data['statusProjection']?.toString() ?? '').toLowerCase();
+  return const {
+        'completed',
+        'delivered',
+        'cancelled',
+        'closed',
+      }.contains(projection) ||
+      _isClosed(data);
+}
+
+String _garmentCareStatusLabel(String raw) {
+  final status = raw.trim().toLowerCase();
+  if (status.isEmpty) return 'Status unavailable';
+  return switch (status) {
+    'partner_assignment' => 'Waiting for a Partner',
+    'customer_action_required' => 'Action needed from you',
+    'awaiting_payment' => 'Payment needed',
+    'awaiting_next_service' => 'Another service in progress',
+    'awaiting_delivery' => 'Ready for delivery',
+    'return_pending' => 'Return delivery in progress',
+    'pickup_partial' => 'Pickup partly accepted',
+    'pickup_rejected' => 'Pickup rejected by Partner',
+    'partially_delivered' => 'Partially delivered',
+    'completed' || 'delivered' => 'Complete',
+    'cancelled' => 'Cancelled',
+    _ =>
+      status
+          .replaceAll('_', ' ')
+          .split(' ')
+          .map(
+            (part) => part.isEmpty
+                ? part
+                : '${part[0].toUpperCase()}${part.substring(1)}',
+          )
+          .join(' '),
+  };
 }
 
 String _orderKind(Map<String, dynamic> data) {

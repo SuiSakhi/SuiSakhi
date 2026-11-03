@@ -8,11 +8,11 @@ class CustomerOrdersHubScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    backgroundColor: const Color(0xFFF8F5FC),
+    backgroundColor: AppColors.background,
     appBar: AppBar(
       title: const Text('My Orders'),
       centerTitle: true,
-      backgroundColor: const Color(0xFFF8F5FC),
+      backgroundColor: AppColors.background,
       elevation: 0,
     ),
     body: ListView(
@@ -82,7 +82,7 @@ class _OrderCategoryCard extends StatelessWidget {
     child: ListTile(
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       leading: CircleAvatar(
-        backgroundColor: const Color(0xFFF3EAFB),
+        backgroundColor: AppColors.surfaceVariant,
         foregroundColor: AppColors.primary,
         child: Icon(icon),
       ),
