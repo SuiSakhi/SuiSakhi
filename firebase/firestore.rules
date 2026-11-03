@@ -467,6 +467,7 @@ service cloud.firestore {
             .affectedKeys()
             .hasOnly([
               'lastSelectedAt',
+              'lastSeenAt',
               'updatedAt'
             ]);
 
@@ -2385,8 +2386,8 @@ service cloud.firestore {
     // RULE-ID: COLL-SUPPORT-TICKETS
     // ACTOR: Ticket owner, configured support agent, or configured Admin
     // RESOURCE: Customer support ticket
-    // OPERATION: Create, read, or update support request lifecycle
-    // PURPOSE: Customers can submit and read their own requests; only configured support staff/Admin can see all requests and change status.
+    // OPERATION: Create/read requests; staff changes use authenticated callables
+    // PURPOSE: Customers can submit/read their own requests; configured Helpdesk/Admin can see all requests. Staff changes are audited by Cloud Functions.
     // =====================================================
     match /support_tickets/{ticketId} {
       allow create: if signedIn()
@@ -2510,34 +2511,9 @@ service cloud.firestore {
           || isConfiguredAdmin()
         );
 
-      allow update: if (isConfiguredSupportAgent() || isConfiguredAdmin())
-        && request.resource.data.customerUid == resource.data.customerUid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'assignedTeam',
-          'response',
-          'updatedAt',
-          'resolvedAt'
-        ])
-        && request.resource.data.status in [
-          'Open',
-          'In Progress',
-          'Escalated',
-          'Waiting Customer',
-          'Resolved',
-          'Closed'
-        ]
-        && request.resource.data.assignedTeam in [
-          'orders',
-          'measurements',
-          'design_and_fabric',
-          'payments',
-          'garment_care',
-          'quick_care',
-          'delivery',
-          'customer_support'
-        ]
-        && request.resource.data.updatedAt == request.time;
+      // Staff ticket updates go through updateHelpdeskTicket so the server can
+      // attach the real actor role and append a case activity record.
+      allow update: if false;
 
       allow delete: if false;
     }

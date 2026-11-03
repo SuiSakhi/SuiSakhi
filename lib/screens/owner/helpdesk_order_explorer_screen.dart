@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:cloud_functions/cloud_functions.dart';
@@ -291,7 +290,7 @@ class _HelpdeskOrderExplorerScreenState
               ? paymentFollowup
                     ? 'Payment follow-up'
                     : workflowLabel
-              : order['status']?.toString() ?? 'Unknown';
+              : _humanizeOrderListStatus(order['status']?.toString() ?? '');
           return Card(
             color: Colors.white,
             margin: EdgeInsets.zero,
@@ -350,10 +349,28 @@ String _quickCareStatusLabel(String status) => switch (status.toLowerCase()) {
   _ => status,
 };
 
+String _humanizeOrderListStatus(String status) {
+  if (status.trim().isEmpty || status.toLowerCase() == 'unknown') {
+    return 'Status unavailable';
+  }
+  return status
+      .replaceAllMapped(
+        RegExp(r'([a-z0-9])([A-Z])'),
+        (match) => '${match[1]} ${match[2]}',
+      )
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ')
+      .split(RegExp(r'\s+'))
+      .where((word) => word.isNotEmpty)
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
+}
+
 String _typeLabel(String value) => switch (value) {
   'garment_care' => 'Garment Care',
   'quick_care' => 'Quick Care',
   'tailoring' => 'Tailoring',
+  'measurements' => 'Measurements',
   _ => 'Other service',
 };
 
@@ -663,9 +680,7 @@ class _HelpdeskOrderDetailsSheetState
                               'custodyEvents',
                               'events',
                             ])
-                    if (widget.data[key] != null &&
-                        widget.data[key] != const [] &&
-                        widget.data[key] != const {})
+                    if (widget.data[key] != null)
                       _DetailExpansion(
                         title: _detailLabel(key),
                         value: widget.data[key],
@@ -789,14 +804,307 @@ class _DetailExpansion extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: SelectableText(
-            JsonEncoder.withIndent('  ').convert(value),
-            style: const TextStyle(fontSize: 12),
-          ),
+          child: _ReadableHelpdeskValue(value: value),
         ),
       ],
     ),
   );
+}
+
+const _hiddenHelpdeskFields = <String>{
+  'id',
+  'orderId',
+  'customerUid',
+  'customerId',
+  'customerAccountId',
+  'customerProfileId',
+  'deliveryGroupIds',
+  'packageIds',
+  'createdFromPricingVersionId',
+  'pricingPolicyVersionId',
+  'schemaVersion',
+  'nextSubOrderSequence',
+};
+
+const _helpdeskFieldLabels = <String, String>{
+  'createdAt': 'Created at',
+  'updatedAt': 'Last updated',
+  'statusProjection': 'Workflow stage',
+  'estimateStatus': 'Estimate status',
+  'pricingState': 'Pricing stage',
+  'serviceGroupCode': 'Service group',
+  'mobileE164': 'Mobile number',
+  'customerMobileE164': 'Mobile number',
+  'deliveryPincode': 'Delivery PIN code',
+  'servicePincode': 'Service PIN code',
+  'pickupPincode': 'Pickup PIN code',
+  'estimatedGrandTotal': 'Estimated total',
+  'grandTotal': 'Total',
+  'advanceAmount': 'Advance paid',
+  'balanceAmount': 'Balance due',
+  'customerNameSnapshot': 'Customer name',
+  'toPartnerAccountId': 'Assigned partner account',
+};
+
+String _helpdeskFieldLabel(String key) {
+  final override = _helpdeskFieldLabels[key];
+  if (override != null) return override;
+  final words = key
+      .replaceAllMapped(
+        RegExp(r'([a-z0-9])([A-Z])'),
+        (match) => '${match[1]} ${match[2]}',
+      )
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ')
+      .trim()
+      .split(RegExp(r'\s+'));
+  return words
+      .where((word) => word.isNotEmpty)
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
+}
+
+bool _isHiddenHelpdeskField(String key) =>
+    _hiddenHelpdeskFields.contains(key) || key.startsWith('_');
+
+String _humanizeHelpdeskText(String value) {
+  final words = value
+      .replaceAllMapped(
+        RegExp(r'([a-z0-9])([A-Z])'),
+        (match) => '${match[1]} ${match[2]}',
+      )
+      .replaceAll('_', ' ')
+      .replaceAll('-', ' ')
+      .trim()
+      .split(RegExp(r'\s+'));
+  return words
+      .where((word) => word.isNotEmpty)
+      .map((word) => word[0].toUpperCase() + word.substring(1))
+      .join(' ');
+}
+
+String _formatHelpdeskDate(String value) {
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return value;
+  final local = parsed.toLocal();
+  final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final meridiem = local.hour >= 12 ? 'PM' : 'AM';
+  return '${local.day.toString().padLeft(2, '0')} ${_monthName(local.month)} ${local.year} · $hour:$minute $meridiem';
+}
+
+String _monthName(int month) => const [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+][month - 1];
+
+String _readableHelpdeskScalar(Object? value, String fieldName) {
+  if (value == null) return '—';
+  if (value is bool) return value ? 'Yes' : 'No';
+  if (value is num) {
+    final isMoney = RegExp(
+      r'(price|amount|total|fee|cost|rate|charge)',
+      caseSensitive: false,
+    ).hasMatch(fieldName);
+    if (isMoney) {
+      final amount = value.toDouble();
+      return '₹${amount == amount.roundToDouble() ? amount.toStringAsFixed(0) : amount.toStringAsFixed(2)}';
+    }
+    return value.toString();
+  }
+  final text = value.toString().trim();
+  if (text.isEmpty) return '—';
+  if (RegExp(r'^\d{4}-\d{2}-\d{2}[T ]').hasMatch(text)) {
+    return _formatHelpdeskDate(text);
+  }
+  if (RegExp(
+    r'(status|stage|state|code)$',
+    caseSensitive: false,
+  ).hasMatch(fieldName)) {
+    return _humanizeHelpdeskText(text);
+  }
+  return text;
+}
+
+class _ReadableHelpdeskValue extends StatelessWidget {
+  const _ReadableHelpdeskValue({required this.value, this.fieldName = ''});
+
+  final Object? value;
+  final String fieldName;
+
+  @override
+  Widget build(BuildContext context) {
+    if (value is Map) {
+      final record = Map<String, dynamic>.from(value as Map)
+        ..removeWhere(
+          (key, value) => _isHiddenHelpdeskField(key) || _isEmpty(value),
+        );
+      if (record.isEmpty) return const _EmptyHelpdeskDetails();
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final entry in record.entries)
+            _ReadableHelpdeskField(name: entry.key, value: entry.value),
+        ],
+      );
+    }
+    if (value is List) {
+      final items = (value as List).where((item) => !_isEmpty(item)).toList();
+      if (items.isEmpty) return const _EmptyHelpdeskDetails();
+      if (items.every((item) => item is! Map && item is! List)) {
+        return Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: items
+              .map(
+                (item) =>
+                    Chip(label: Text(_readableHelpdeskScalar(item, fieldName))),
+              )
+              .toList(),
+        );
+      }
+      return Column(
+        children: [
+          for (var index = 0; index < items.length; index++)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8FA),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFF1DCE5)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _helpdeskRecordTitle(items[index], index),
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 6),
+                  _ReadableHelpdeskValue(
+                    value: items[index],
+                    fieldName: fieldName,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      );
+    }
+    return Text(_readableHelpdeskScalar(value, fieldName));
+  }
+}
+
+class _ReadableHelpdeskField extends StatelessWidget {
+  const _ReadableHelpdeskField({required this.name, required this.value});
+
+  final String name;
+  final Object? value;
+
+  @override
+  Widget build(BuildContext context) {
+    final isNested = value is Map || value is List;
+    if (isNested) {
+      return Padding(
+        padding: const EdgeInsets.only(top: 10),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _helpdeskFieldLabel(name),
+              style: const TextStyle(
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF6E3150),
+              ),
+            ),
+            const SizedBox(height: 4),
+            _ReadableHelpdeskValue(value: value, fieldName: name),
+          ],
+        ),
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Text(
+              _helpdeskFieldLabel(name),
+              style: const TextStyle(color: Color(0xFF777286), fontSize: 13),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            flex: 6,
+            child: Text(
+              _readableHelpdeskScalar(value, name),
+              textAlign: TextAlign.end,
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyHelpdeskDetails extends StatelessWidget {
+  const _EmptyHelpdeskDetails();
+
+  @override
+  Widget build(BuildContext context) => const Padding(
+    padding: EdgeInsets.symmetric(vertical: 8),
+    child: Text(
+      'No records available yet.',
+      style: TextStyle(color: Color(0xFF777286)),
+    ),
+  );
+}
+
+bool _isEmpty(Object? value) {
+  if (value == null) return true;
+  if (value is String) return value.trim().isEmpty;
+  if (value is List) return value.isEmpty || value.every(_isEmpty);
+  if (value is Map) {
+    return value.isEmpty ||
+        value.entries.every(
+          (entry) => _isHiddenHelpdeskField(entry.key) || _isEmpty(entry.value),
+        );
+  }
+  return false;
+}
+
+String _helpdeskRecordTitle(Object? value, int index) {
+  if (value is Map) {
+    for (final key in const [
+      'name',
+      'title',
+      'serviceName',
+      'orderNumber',
+      'orderTrackingId',
+      'dressType',
+      'status',
+      'jobType',
+    ]) {
+      final text = value[key]?.toString().trim() ?? '';
+      if (text.isNotEmpty) return _humanizeHelpdeskText(text);
+    }
+  }
+  return 'Record ${index + 1}';
 }
 
 class _QuickCareOverview extends StatelessWidget {

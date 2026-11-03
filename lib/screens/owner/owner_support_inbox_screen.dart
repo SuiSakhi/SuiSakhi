@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -293,26 +294,29 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
   );
 
   Widget _buildCustomerOrders(BuildContext context) {
+    final groupOrders = _selectedOrderGroup == 'All groups'
+        ? _orders
+        : _orders
+              .where((order) => _orderGroup(order) == _selectedOrderGroup)
+              .toList();
     final counts = <String, int>{
       for (final queue in _orderQueues)
         queue: queue == 'All'
-            ? _orders.length
-            : _orders
+            ? groupOrders.length
+            : groupOrders
                   .where((order) => _orderBelongsToQueue(order, queue))
                   .length,
     };
-    final filtered = _orders.where((order) {
+    final filtered = groupOrders.where((order) {
       final matchesQueue =
           _selectedOrderQueue == 'All' ||
           _orderBelongsToQueue(order, _selectedOrderQueue);
-      final matchesGroup =
-          _selectedOrderGroup == 'All groups' ||
-          _orderGroup(order) == _selectedOrderGroup;
       final query = _orderSearch.text.trim().toLowerCase();
       final searchable = [
         order['orderNumber'],
         order['orderId'],
         order['customerName'],
+        order['customerPhone'],
         order['customerUid'],
         order['summary'],
         order['status'],
@@ -320,10 +324,9 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
         order['assignmentStatus'],
         order['workflowStatus'],
         order['servicePincode'],
+        order['deliveryAddress'],
       ].join(' ').toLowerCase();
-      return matchesQueue &&
-          matchesGroup &&
-          (query.isEmpty || searchable.contains(query));
+      return matchesQueue && (query.isEmpty || searchable.contains(query));
     }).toList();
     return Column(
       children: [
@@ -429,9 +432,11 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
                         ),
                         const SizedBox(height: 12),
                         Text(
-                          _orders.isEmpty
+                          groupOrders.isEmpty
                               ? 'No customer orders yet.'
-                              : 'No ${_selectedOrderQueue.toLowerCase()} orders.',
+                              : _selectedOrderQueue == 'All'
+                              ? 'No orders match this search.'
+                              : 'No ${_selectedOrderQueue.toLowerCase()} orders${_selectedOrderGroup == 'All groups' ? '' : ' in ${_selectedOrderGroup.toLowerCase()}'}.',
                           style: const TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -483,7 +488,8 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
                             style: const TextStyle(fontWeight: FontWeight.w700),
                           ),
                           subtitle: Text(
-                            '${_orderTypeLabel(type)} · ${order['customerName'] ?? 'Customer'}\n'
+                            '${_orderTypeLabel(type)} · ${order['customerName'] ?? 'Customer'}'
+                            '${order['customerPhone']?.toString().trim().isNotEmpty == true ? ' · ${order['customerPhone']}' : ''}\n'
                             '${order['orderNumber'] ?? orderId} · $status'
                             '${order['servicePincode']?.toString().trim().isNotEmpty == true ? '\nPIN ${order['servicePincode']}' : ''}',
                           ),
@@ -605,217 +611,13 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
     required String ticketId,
     required Map<String, dynamic> data,
   }) async {
-    final responseController = TextEditingController(
-      text: data['response']?.toString() ?? '',
-    );
-    var status = _statuses.contains(data['status'])
-        ? data['status'].toString()
-        : 'Open';
-    var assignedTeam = _teams.containsKey(data['assignedTeam'])
-        ? data['assignedTeam'].toString()
-        : 'customer_support';
-    final customerComments =
-        (data['customerComments'] as List<dynamic>? ?? const [])
-            .whereType<Map>()
-            .map((item) => Map<String, dynamic>.from(item))
-            .toList(growable: false);
-    var saving = false;
-    var error = '';
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: true,
-      builder: (sheetContext) => StatefulBuilder(
-        builder: (sheetContext, setSheetState) => Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 8,
-            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom + 20,
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  data['subject']?.toString() ?? 'Support request',
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${data['customerName'] ?? 'Customer'} · ${data['category'] ?? 'Other'}',
-                  style: const TextStyle(color: Color(0xFF777286)),
-                ),
-                if (const {
-                  'bulk_order',
-                  'dress_rental',
-                }.contains(data['requestType'])) ...[
-                  const SizedBox(height: 6),
-                  SelectableText('Helpdesk reference: $ticketId'),
-                ],
-                if ((data['linkedOrderId']?.toString() ?? '').isNotEmpty) ...[
-                  const SizedBox(height: 5),
-                  Text(
-                    '${switch (data['linkedOrderType']) {
-                      'garment_care' => 'Garment Care order',
-                      'quick_care' => 'Quick Care order',
-                      _ => 'Tailoring order',
-                    }}: ${data['linkedOrderId']}',
-                  ),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: () => showHelpdeskOrderDetails(
-                        sheetContext,
-                        orderId: data['linkedOrderId'].toString(),
-                        orderType: switch (data['linkedOrderType']) {
-                          'garment_care' => 'garment_care',
-                          'quick_care' => 'quick_care',
-                          _ => 'tailoring',
-                        },
-                      ),
-                      icon: const Icon(Icons.open_in_new, size: 18),
-                      label: const Text('Open linked order details'),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 14),
-                SelectableText(data['message']?.toString() ?? ''),
-                if (customerComments.isNotEmpty) ...[
-                  const SizedBox(height: 16),
-                  const Text(
-                    'Customer comments',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                  const SizedBox(height: 6),
-                  for (final comment in customerComments)
-                    Container(
-                      width: double.infinity,
-                      margin: const EdgeInsets.only(bottom: 6),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF2F7),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Text(comment['text']?.toString() ?? ''),
-                    ),
-                ],
-                const SizedBox(height: 18),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(status),
-                  initialValue: status,
-                  decoration: const InputDecoration(labelText: 'Status'),
-                  items: _statuses
-                      .map(
-                        (value) =>
-                            DropdownMenuItem(value: value, child: Text(value)),
-                      )
-                      .toList(),
-                  onChanged: saving
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            setSheetState(() => status = value);
-                          }
-                        },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  key: ValueKey(assignedTeam),
-                  initialValue: assignedTeam,
-                  decoration: const InputDecoration(
-                    labelText: 'Route to service team',
-                  ),
-                  items: _teams.entries
-                      .map(
-                        (entry) => DropdownMenuItem(
-                          value: entry.key,
-                          child: Text(entry.value),
-                        ),
-                      )
-                      .toList(),
-                  onChanged: saving
-                      ? null
-                      : (value) {
-                          if (value != null) {
-                            setSheetState(() => assignedTeam = value);
-                          }
-                        },
-                ),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: responseController,
-                  minLines: 2,
-                  maxLines: 5,
-                  maxLength: 2000,
-                  decoration: const InputDecoration(
-                    labelText: 'Reply to customer',
-                    border: OutlineInputBorder(),
-                    alignLabelWithHint: true,
-                  ),
-                ),
-                if (error.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(error, style: const TextStyle(color: Colors.red)),
-                ],
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton.icon(
-                    onPressed: saving
-                        ? null
-                        : () async {
-                            setSheetState(() {
-                              saving = true;
-                              error = '';
-                            });
-                            try {
-                              await FirebaseFirestore.instance
-                                  .collection('support_tickets')
-                                  .doc(ticketId)
-                                  .update({
-                                    'status': status,
-                                    'assignedTeam': assignedTeam,
-                                    'response': responseController.text.trim(),
-                                    'updatedAt': FieldValue.serverTimestamp(),
-                                    'resolvedAt':
-                                        status == 'Resolved' ||
-                                            status == 'Closed'
-                                        ? FieldValue.serverTimestamp()
-                                        : null,
-                                  });
-                              if (sheetContext.mounted) {
-                                Navigator.pop(sheetContext);
-                              }
-                            } catch (_) {
-                              if (sheetContext.mounted) {
-                                setSheetState(() {
-                                  saving = false;
-                                  error =
-                                      'Could not update this request. Check support access and retry.';
-                                });
-                              }
-                            }
-                          },
-                    icon: saving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.save_outlined),
-                    label: Text(saving ? 'Saving…' : 'Save update'),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      showDragHandle: false,
+      builder: (_) => _EditSupportTicketSheet(ticketId: ticketId, data: data),
     );
-    responseController.dispose();
   }
 
   static String _queueForStatus(String status) => switch (status) {
@@ -825,6 +627,292 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
     'Closed' || 'Resolved' => 'Close Ticket',
     _ => 'Open Ticket',
   };
+}
+
+class _EditSupportTicketSheet extends StatefulWidget {
+  const _EditSupportTicketSheet({required this.ticketId, required this.data});
+
+  final String ticketId;
+  final Map<String, dynamic> data;
+
+  @override
+  State<_EditSupportTicketSheet> createState() =>
+      _EditSupportTicketSheetState();
+}
+
+class _EditSupportTicketSheetState extends State<_EditSupportTicketSheet> {
+  late final TextEditingController _responseController;
+  late String _status;
+  late String _assignedTeam;
+  late final List<Map<String, dynamic>> _customerComments;
+  bool _saving = false;
+  String _error = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _responseController = TextEditingController(
+      text: widget.data['response']?.toString() ?? '',
+    );
+    _status =
+        _OwnerSupportInboxScreenState._statuses.contains(widget.data['status'])
+        ? widget.data['status'].toString()
+        : 'Open';
+    _assignedTeam =
+        _OwnerSupportInboxScreenState._teams.containsKey(
+          widget.data['assignedTeam'],
+        )
+        ? widget.data['assignedTeam'].toString()
+        : 'customer_support';
+    _customerComments =
+        (widget.data['customerComments'] as List<dynamic>? ?? const [])
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList(growable: false);
+  }
+
+  @override
+  void dispose() {
+    _responseController.dispose();
+    super.dispose();
+  }
+
+  String _saveError(Object error) {
+    if (error is FirebaseAuthException) {
+      return error.code == 'user-disabled'
+          ? 'This account is disabled. Contact an administrator.'
+          : 'Could not refresh your sign-in. Sign in again and retry.';
+    }
+    if (error is FirebaseFunctionsException) {
+      switch (error.code.toLowerCase()) {
+        case 'not-found':
+          return 'The Helpdesk update function is not deployed to the active Firebase project.';
+        case 'permission-denied':
+          return 'This signed-in account is not configured for Admin or Helpdesk access.';
+        case 'unauthenticated':
+          return 'Firebase did not receive your signed-in identity. Retry; if it persists, check the function access configuration.';
+        case 'invalid-argument':
+          return error.message ??
+              'Check the status, team, and reply, then retry.';
+        default:
+          return 'Save failed (${error.code}): ${error.message ?? 'Please retry.'}';
+      }
+    }
+    return 'Could not save this request: $error';
+  }
+
+  Future<void> _save() async {
+    setState(() {
+      _saving = true;
+      _error = '';
+    });
+    try {
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw FirebaseAuthException(code: 'user-token-expired');
+      }
+      // Refresh the existing Firebase session; this does not request a phone OTP.
+      await user.getIdToken(true);
+      await FirebaseFunctions.instance
+          .httpsCallable('listHelpdeskOrders')
+          .call(<String, dynamic>{
+            'action': 'updateHelpdeskTicket',
+            'ticketId': widget.ticketId,
+            'status': _status,
+            'assignedTeam': _assignedTeam,
+            'response': _responseController.text.trim(),
+          });
+      if (mounted) Navigator.of(context).pop();
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _error = _saveError(error);
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => SafeArea(
+    child: Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 8,
+        bottom: MediaQuery.viewInsetsOf(context).bottom + 16,
+      ),
+      child: FractionallySizedBox(
+        heightFactor: 0.9,
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    widget.data['subject']?.toString() ?? 'Support request',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                ),
+                IconButton(
+                  tooltip: 'Close ticket editor',
+                  onPressed: _saving ? null : () => Navigator.of(context).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ],
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${widget.data['customerName'] ?? 'Customer'} · ${widget.data['category'] ?? 'Other'}',
+                      style: const TextStyle(color: Color(0xFF777286)),
+                    ),
+                    if (const {
+                      'bulk_order',
+                      'dress_rental',
+                    }.contains(widget.data['requestType'])) ...[
+                      const SizedBox(height: 6),
+                      SelectableText('Helpdesk reference: ${widget.ticketId}'),
+                    ],
+                    if ((widget.data['linkedOrderId']?.toString() ?? '')
+                        .isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        '${switch (widget.data['linkedOrderType']) {
+                          'garment_care' => 'Garment Care order',
+                          'quick_care' => 'Quick Care order',
+                          _ => 'Tailoring order',
+                        }}: ${widget.data['linkedOrderId']}',
+                      ),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          onPressed: () => showHelpdeskOrderDetails(
+                            context,
+                            orderId: widget.data['linkedOrderId'].toString(),
+                            orderType: switch (widget.data['linkedOrderType']) {
+                              'garment_care' => 'garment_care',
+                              'quick_care' => 'quick_care',
+                              _ => 'tailoring',
+                            },
+                          ),
+                          icon: const Icon(Icons.open_in_new, size: 18),
+                          label: const Text('Open linked order details'),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 14),
+                    SelectableText(widget.data['message']?.toString() ?? ''),
+                    if (_customerComments.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Customer comments',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      for (final comment in _customerComments)
+                        Container(
+                          width: double.infinity,
+                          margin: const EdgeInsets.only(bottom: 6),
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF2F7),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(comment['text']?.toString() ?? ''),
+                        ),
+                    ],
+                    const SizedBox(height: 18),
+                    DropdownButtonFormField<String>(
+                      initialValue: _status,
+                      decoration: const InputDecoration(labelText: 'Status'),
+                      items: _OwnerSupportInboxScreenState._statuses
+                          .map(
+                            (value) => DropdownMenuItem(
+                              value: value,
+                              child: Text(value),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _status = value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<String>(
+                      initialValue: _assignedTeam,
+                      decoration: const InputDecoration(
+                        labelText: 'Route to service team',
+                      ),
+                      items: _OwnerSupportInboxScreenState._teams.entries
+                          .map(
+                            (entry) => DropdownMenuItem(
+                              value: entry.key,
+                              child: Text(entry.value),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: _saving
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _assignedTeam = value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _responseController,
+                      minLines: 2,
+                      maxLines: 5,
+                      maxLength: 2000,
+                      decoration: const InputDecoration(
+                        labelText: 'Reply to customer',
+                        border: OutlineInputBorder(),
+                        alignLabelWithHint: true,
+                      ),
+                    ),
+                    if (_error.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(_error, style: const TextStyle(color: Colors.red)),
+                    ],
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: _saving ? null : _save,
+                        icon: _saving
+                            ? const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
+                              )
+                            : const Icon(Icons.save_outlined),
+                        label: Text(_saving ? 'Saving…' : 'Save update'),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class _SupportRequestCard extends StatelessWidget {

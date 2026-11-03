@@ -152,6 +152,15 @@
         {"fieldPath": "dependsOnJobId", "order": "ASCENDING"},
         {"fieldPath": "status", "order": "ASCENDING"}
       ]
+    },
+    {
+      "collectionGroup": "support_ticket_activity",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {"fieldPath": "action", "order": "ASCENDING"},
+        {"fieldPath": "actorRole", "order": "ASCENDING"},
+        {"fieldPath": "createdAt", "order": "ASCENDING"}
+      ]
     }
   ],
   "fieldOverrides": [
@@ -193,6 +202,16 @@
           "arrayConfig": "CONTAINS",
           "queryScope": "COLLECTION"
         },
+        {
+          "order": "ASCENDING",
+          "queryScope": "COLLECTION_GROUP"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "profiles",
+      "fieldPath": "mobileE164",
+      "indexes": [
         {
           "order": "ASCENDING",
           "queryScope": "COLLECTION_GROUP"
