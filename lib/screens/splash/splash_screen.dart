@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
@@ -12,13 +15,29 @@ class SplashScreen extends StatefulWidget {
 
 class _SplashScreenState extends State<SplashScreen>
     with SingleTickerProviderStateMixin {
+  late final StreamSubscription<User?> _authSubscription;
   late AnimationController _controller;
   late Animation<double> _scaleAnim;
   late Animation<double> _fadeAnim;
+  bool _checkedInitialAuthState = false;
 
   @override
   void initState() {
     super.initState();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
+      (user) {
+        if (_checkedInitialAuthState) return;
+        _checkedInitialAuthState = true;
+        if (user == null) return;
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) context.go('/login?intent=customer&resume=1');
+        });
+      },
+      onError: (Object _) {
+        _checkedInitialAuthState = true;
+      },
+    );
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
@@ -38,6 +57,7 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   void dispose() {
+    unawaited(_authSubscription.cancel());
     _controller.dispose();
     super.dispose();
   }

@@ -32,6 +32,11 @@ class ShopExploreScreen extends StatelessWidget {
     BuildContext context,
     ShopExploreCategory cat,
   ) async {
+    // Dress Rental is a Helpdesk-managed request, not a marketplace order.
+    if (cat.id == 'rent') {
+      context.push('/dress-rental-request');
+      return;
+    }
     final go = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

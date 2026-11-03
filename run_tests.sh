@@ -1,6 +1,6 @@
 #!/bin/bash
 # ────────────────────────────────────────────────────────────────
-# StitchSmart – Automated Test Runner
+# SuiSakhi – Automated Test Runner
 # Boots an iOS simulator, runs unit tests + integration tests,
 # then prints a summary.
 #

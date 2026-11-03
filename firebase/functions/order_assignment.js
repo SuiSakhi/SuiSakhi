@@ -855,34 +855,73 @@ async function appendEvent(orderId, type, actor, details) {
 
 async function ensureOrderTrackingId(orderId) {
   const orderRef = db.collection("orders").doc(orderId);
+  const counterRef = db.collection("garment_care_order_number_counters").doc("global");
   for (let attempt = 0; attempt < 20; attempt += 1) {
     const orderSnapshot = await orderRef.get();
     if (!orderSnapshot.exists) return null;
     const savedCode = text(orderSnapshot.get("orderTrackingId"));
     if (savedCode) return savedCode;
 
-    const trackingId = String(crypto.randomInt(100000000000, 1000000000000));
-    const trackingRef = db.collection("order_tracking_codes").doc(trackingId);
-    const trackingEventRef = eventRefFor(orderId);
     const result = await db.runTransaction(async (transaction) => {
-      const [freshOrder, reservation] = await Promise.all([
-        transaction.get(orderRef),
-        transaction.get(trackingRef),
-      ]);
+      const freshOrder = await transaction.get(orderRef);
       if (!freshOrder.exists) return null;
       const existingCode = text(freshOrder.get("orderTrackingId"));
       if (existingCode) return existingCode;
-      if (reservation.exists) return null;
+
+      const order = freshOrder.data() || {};
+      const location = asMap(order.deliveryLocation);
+      const pinCandidates = [order.deliveryPincode, location.pincode]
+          .map((value) => String(value == null ? "" : value).replace(/\D/g, ""));
+      let pincode = pinCandidates.find((value) => /^\d{6}$/.test(value)) || "";
+      if (!pincode) {
+        const address = [order.deliveryAddress, order.serviceVisitAddress,
+          order.serviceAddress, order.bulkLocation].filter(Boolean).join(" ");
+        const match = String(address).match(/(?:^|\D)(\d{6})(?:\D|$)/);
+        pincode = match ? match[1] : "";
+      }
+
+      let sequence = null;
+      if (pincode) {
+        const counterSnapshot = await transaction.get(counterRef);
+        sequence = (Number(counterSnapshot.get("lastSequence")) || 0) + 1;
+        if (sequence > 999999) {
+          throw new functions.https.HttpsError(
+              "resource-exhausted",
+              "The six-digit order reference sequence is full.",
+          );
+        }
+      }
+      const trackingId = pincode
+        ? `${pincode}${String(sequence).padStart(6, "0")}`
+        : String(crypto.randomInt(100000000000, 1000000000000));
+      const trackingRef = db.collection("order_tracking_codes").doc(trackingId);
+      const reservation = await transaction.get(trackingRef);
+      if (reservation.exists) {
+        if (pincode) {
+          transaction.set(counterRef, {
+            lastSequence: sequence,
+            updatedAt: SERVER_TIMESTAMP,
+          }, {merge: true});
+        }
+        return null;
+      }
+
       transaction.create(trackingRef, {
         orderId,
         createdAt: SERVER_TIMESTAMP,
       });
+      if (pincode) {
+        transaction.set(counterRef, {
+          lastSequence: sequence,
+          updatedAt: SERVER_TIMESTAMP,
+        }, {merge: true});
+      }
       transaction.update(orderRef, {
         orderTrackingId: trackingId,
         orderQrPayload: trackingId,
         updatedAt: SERVER_TIMESTAMP,
       });
-      transaction.set(trackingEventRef, eventData("order_tracking_id_created", "system", {
+      transaction.set(eventRefFor(orderId), eventData("order_tracking_id_created", "system", {
         orderTrackingId: trackingId,
       }));
       return trackingId;
@@ -890,6 +929,45 @@ async function ensureOrderTrackingId(orderId) {
     if (result) return result;
   }
   throw new Error(`Could not allocate a unique tracking ID for order ${orderId}.`);
+}
+
+async function ensureCustomerOrderTrackingId(data, context) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Sign in to view your order reference.");
+  }
+  const isBatch = Array.isArray(data && data.orderIds);
+  const orderIds = isBatch
+    ? [...new Set(data.orderIds.map(text).filter(Boolean))]
+    : [text(data && data.orderId)].filter(Boolean);
+  if (orderIds.length === 0) {
+    throw new functions.https.HttpsError("invalid-argument", "An order is required.");
+  }
+  if (orderIds.length > 50) {
+    throw new functions.https.HttpsError("invalid-argument", "Request at most 50 order references at a time.");
+  }
+
+  const orderSnapshots = await Promise.all(orderIds.map((orderId) =>
+    db.collection("orders").doc(orderId).get(),
+  ));
+  for (const orderSnapshot of orderSnapshots) {
+    if (!orderSnapshot.exists ||
+        (orderSnapshot.get("customerId") !== context.auth.uid &&
+         orderSnapshot.get("customerUid") !== context.auth.uid)) {
+      throw new functions.https.HttpsError("permission-denied", "One or more orders do not belong to you.");
+    }
+  }
+
+  const references = {};
+  for (const orderId of orderIds) {
+    const orderTrackingId = await ensureOrderTrackingId(orderId);
+    if (!orderTrackingId) {
+      throw new functions.https.HttpsError("not-found", "An order was not found.");
+    }
+    references[orderId] = orderTrackingId;
+  }
+  return isBatch
+    ? {references}
+    : {orderId: orderIds[0], orderTrackingId: references[orderIds[0]]};
 }
 
 async function releaseHeldReservation(transaction, reservationSnapshot) {
@@ -2303,6 +2381,148 @@ async function cancelCoreTailoringOrder(data, context) {
     result = {status: "cancelled", cancellationFeePercent: feePercent, cancellationFeeAmount: fee, refundDue, feeOutstanding};
   });
   return result;
+}
+
+async function cancelQuickCareOrder(data, context) {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Sign in required.");
+  }
+  const orderId = text(data && data.orderId);
+  if (!orderId) {
+    throw new functions.https.HttpsError("invalid-argument", "Choose a Quick Care booking.");
+  }
+
+  const orderRef = db.collection("orders").doc(orderId);
+  const assignmentRef = db.collection("order_assignment_state").doc(orderId);
+  let outcome = null;
+  await db.runTransaction(async (transaction) => {
+    const [orderSnapshot, assignmentSnapshot] = await Promise.all([
+      transaction.get(orderRef),
+      transaction.get(assignmentRef),
+    ]);
+    if (!orderSnapshot.exists) {
+      throw new functions.https.HttpsError("not-found", "Quick Care booking not found.");
+    }
+    const order = orderSnapshot.data() || {};
+    if (order.customerId !== context.auth.uid && order.customerUid !== context.auth.uid) {
+      throw new functions.https.HttpsError("permission-denied", "This is not your Quick Care booking.");
+    }
+    if (order.orderModuleType !== "quickFix") {
+      throw new functions.https.HttpsError("failed-precondition", "This cancellation option is for Quick Care bookings.");
+    }
+
+    const closedStates = new Set(["cancelled", "delivered", "completed"]);
+    const orderStatus = String(order.status || "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().replace(/[\s-]+/g, "_");
+    const workflowStatus = String(order.quickCareWorkflowStatus || "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().replace(/[\s-]+/g, "_");
+    const assignmentWorkflowStatus = String(order.quickCareAssignmentStatus || "").replace(/([a-z])([A-Z])/g, "$1_$2").toLowerCase().replace(/[\s-]+/g, "_");
+    if (closedStates.has(orderStatus) || closedStates.has(workflowStatus) ||
+        closedStates.has(assignmentWorkflowStatus) ||
+        order.assignmentStatus === "cancelled" || order.quickCareAssignmentStatus === "cancelled") {
+      throw new functions.https.HttpsError("failed-precondition", "This booking is already closed.");
+    }
+
+    const approvedQuote = order.quickCareQuoteStatus === "customerAccepted" ||
+      order.quickCareExtraChargeStatus === "approved";
+    if (approvedQuote) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "The service quote has been approved; cancellation is no longer available.",
+      );
+    }
+
+    const activeStates = new Set([
+      "started", "in_progress", "service_started", "work_started", "paused",
+      "payment_pending", "completed", "service_completed", "picked_up", "at_tailor",
+      "in_stitching", "qc_pending", "qc_passed", "ready_for_pickup",
+      "out_for_delivery",
+    ]);
+    const startedAt = order.quickCareStartedAt || order.quickCareServiceStartedAt || order.serviceStartedAt;
+    const serviceInProgress = activeStates.has(workflowStatus) ||
+      activeStates.has(assignmentWorkflowStatus) ||
+      activeStates.has(orderStatus) || Boolean(startedAt);
+    if (serviceInProgress) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "This service has already started. Contact Helpdesk to review cancellation.",
+      );
+    }
+
+    const appointment = order.quickCareScheduledAt;
+    const appointmentMillis = appointment && typeof appointment.toMillis === "function"
+      ? appointment.toMillis()
+      : appointment && typeof appointment.toDate === "function"
+        ? appointment.toDate().getTime()
+        : appointment instanceof Date
+          ? appointment.getTime()
+          : Date.parse(appointment);
+    if (!Number.isFinite(appointmentMillis) ||
+        appointmentMillis <= Date.now() + 2 * 60 * 60 * 1000) {
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Only bookings more than two hours away can be cancelled directly. Contact Helpdesk for help.",
+      );
+    }
+
+    const ticketId = text(order.quickCareCancellationRequestTicketId);
+    const ticketRef = ticketId ? db.collection("support_tickets").doc(ticketId) : null;
+    const ticketSnapshot = ticketRef ? await transaction.get(ticketRef) : null;
+    const total = Math.max(0, Number(order.price || order.totalAmount || 0));
+    const amountPaid = order.paymentStatus === "fullyPaid"
+      ? Math.max(0, Number(order.amountPaid || total))
+      : Math.max(0, Number(order.amountPaid || 0));
+    const refundDue = money(amountPaid);
+
+    transaction.update(orderRef, {
+      status: "cancelled",
+      quickCareWorkflowStatus: "cancelled",
+      quickCareAssignmentStatus: "cancelled",
+      quickCareCancellationFeeAmount: 0,
+      quickCareCancellationFeePercent: 0,
+      cancellationFeeAmount: 0,
+      cancellationFeePercent: 0,
+      cancellationFeeOutstanding: 0,
+      cancellationRefundDue: refundDue,
+      cancellationFeeWaived: false,
+      ...(refundDue > 0 ? {quickCareRefundStatus: "pending_helpdesk_review"} : {}),
+      cancelledAt: SERVER_TIMESTAMP,
+      cancelledBy: "customer",
+      quickCareCancellationRequestStatus: "cancelled_by_customer",
+      quickCareCancellationRequestResolvedAt: SERVER_TIMESTAMP,
+      updatedAt: SERVER_TIMESTAMP,
+    });
+    if (assignmentSnapshot.exists) {
+      transaction.update(assignmentRef, {
+        status: "cancelled",
+        currentOfferId: null,
+        activeCandidate: null,
+        updatedAt: SERVER_TIMESTAMP,
+      });
+    }
+    if (ticketRef && ticketSnapshot && ticketSnapshot.exists) {
+      transaction.update(ticketRef, {
+        status: "Resolved",
+        response: "Customer cancelled the future Quick Care booking with no fee.",
+        resolvedAt: SERVER_TIMESTAMP,
+        updatedAt: SERVER_TIMESTAMP,
+      });
+    }
+    transaction.set(
+      eventRefFor(orderId),
+      eventData("customer_cancelled_quick_care_order", "customer", {
+        noCancellationFee: true,
+        amountPaid,
+        refundDue,
+        previousCancellationTicketId: ticketId || null,
+      }),
+    );
+    outcome = {
+      status: "cancelled",
+      noCancellationFee: true,
+      cancellationFeeAmount: 0,
+      refundDue,
+    };
+  });
+  return outcome;
 }
 
 async function waiveOrderCancellationFee(data, context) {
@@ -4493,6 +4713,7 @@ exports.respondToTailorOrderOffer = functions.https.onCall(handleTailorResponse)
 exports.declineAcceptedTailorOrder = functions.https.onCall(declineCustomerDecision);
 exports.completeSandboxOrderAdvance = functions.https.onCall(completeSandboxPayment);
 exports.cancelCoreTailoringOrder = functions.https.onCall(cancelCoreTailoringOrder);
+exports.cancelQuickCareOrder = functions.https.onCall(cancelQuickCareOrder);
 exports.waiveOrderCancellationFee = functions.https.onCall(waiveOrderCancellationFee);
 exports.completeSandboxOrderBalance = functions.https.onCall(completeSandboxBalancePayment);
 exports.advanceProductionTailorOrderStatus = functions.https.onCall(advanceProductionTailorOrderStatus);
@@ -4512,6 +4733,7 @@ exports.scheduleCustomerFabricConsultation = functions
 exports.submitMeasurementPartnerMeasurements = functions.https.onCall(submitMeasurementPartnerMeasurements);
 exports.getCustomerOrderPartnerContacts = functions.https.onCall(getCustomerOrderPartnerContacts);
 exports.getCustomerOrderDeliveryPin = functions.https.onCall(getCustomerOrderDeliveryPin);
+exports.ensureCustomerOrderTrackingId = functions.https.onCall(ensureCustomerOrderTrackingId);
 exports.saveTailorGarmentRecord = functions.https.onCall(saveTailorGarmentRecord);
 exports.getGarmentRecordShareLink = functions.https.onCall(getGarmentRecordShareLink);
 exports.viewPublicGarmentRecord = functions.https.onRequest(viewPublicGarmentRecord);

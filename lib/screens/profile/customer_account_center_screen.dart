@@ -38,11 +38,11 @@ class _CustomerAccountCenterScreenState
     final phone = FirebaseAuth.instance.currentUser?.phoneNumber ?? '';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F5FC),
+      backgroundColor: const Color(0xFFFFF8FA),
       appBar: AppBar(
         title: const Text('My Account'),
         centerTitle: true,
-        backgroundColor: const Color(0xFFF8F5FC),
+        backgroundColor: const Color(0xFFFFF8FA),
         elevation: 0,
       ),
       body: ListView(
@@ -218,11 +218,11 @@ class _ProfileHeader extends StatelessWidget {
         children: [
           CircleAvatar(
             radius: 36,
-            backgroundColor: const Color(0xFFF3EAFB),
+            backgroundColor: const Color(0xFFFCEAF1),
             child: Text(
               initial,
               style: const TextStyle(
-                color: Color(0xFF7B3FB2),
+                color: Color(0xFFB70D5C),
                 fontSize: 28,
                 fontWeight: FontWeight.w800,
               ),
@@ -254,13 +254,13 @@ class _ProfileHeader extends StatelessWidget {
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFF3EAFB),
+                    color: const Color(0xFFFCEAF1),
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: const Text(
                     'Customer Profile',
                     style: TextStyle(
-                      color: Color(0xFF7B3FB2),
+                      color: Color(0xFFB70D5C),
                       fontWeight: FontWeight.w700,
                       fontSize: 12,
                     ),
@@ -313,11 +313,11 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final itemColor = isDestructive ? Colors.red : const Color(0xFF7B3FB2);
+    final itemColor = isDestructive ? Colors.red : const Color(0xFFB70D5C);
 
     final iconBackgroundColor = isDestructive
         ? const Color(0xFFFFEBEE)
-        : const Color(0xFFF3EAFB);
+        : const Color(0xFFFCEAF1);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

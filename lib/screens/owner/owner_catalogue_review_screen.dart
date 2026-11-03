@@ -373,7 +373,7 @@ class _OwnerCatalogueReviewScreenState
       return const AspectRatio(
         aspectRatio: 4 / 5,
         child: ColoredBox(
-          color: Color(0xFFF0EDF8),
+          color: Color(0xFFFCEAF1),
           child: Icon(Icons.image_not_supported_outlined, size: 48),
         ),
       );
@@ -395,7 +395,7 @@ class _OwnerCatalogueReviewScreenState
                       borderRadius: BorderRadius.circular(18),
                       child: url == null || url.isEmpty
                           ? const ColoredBox(
-                              color: Color(0xFFF0EDF8),
+                              color: Color(0xFFFCEAF1),
                               child: Center(
                                 child: Icon(
                                   Icons.image_not_supported_outlined,
@@ -408,7 +408,7 @@ class _OwnerCatalogueReviewScreenState
                               width: double.infinity,
                               fit: BoxFit.contain,
                               errorBuilder: (_, _, _) => const ColoredBox(
-                                color: Color(0xFFF0EDF8),
+                                color: Color(0xFFFCEAF1),
                                 child: Center(
                                   child: Icon(Icons.broken_image_outlined),
                                 ),

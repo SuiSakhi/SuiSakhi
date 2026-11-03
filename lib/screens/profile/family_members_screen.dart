@@ -50,8 +50,9 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
         return;
       }
 
-      final accountId =
-          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        phone.trim(),
+      );
 
       if (accountId == null || accountId.isEmpty) {
         setState(() {
@@ -61,8 +62,9 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
         return;
       }
 
-      final profiles =
-          await AppState.instance.fetchActiveProfilesForAccount(accountId);
+      final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+        accountId,
+      );
 
       Map<String, dynamic>? customerProfile;
       for (final profile in profiles) {
@@ -75,7 +77,7 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
 
       final customerProfileId =
           customerProfile?['profileId']?.toString() ??
-              customerProfile?['docId']?.toString();
+          customerProfile?['docId']?.toString();
 
       if (customerProfileId == null || customerProfileId.trim().isEmpty) {
         setState(() {
@@ -153,15 +155,17 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
       final data = doc.data();
       final status = (data['status'] ?? 'active').toString();
 
-        if (status == 'archived') {
-          continue;
-        }
+      if (status == 'archived') {
+        continue;
+      }
 
       final existingName = _normalizeText(data['name']?.toString() ?? '');
-      final existingRelationship =
-          _normalizeText(data['relationship']?.toString() ?? '');
-      final existingMobile =
-          _normalizeMobile(data['mobileNumber']?.toString() ?? '');
+      final existingRelationship = _normalizeText(
+        data['relationship']?.toString() ?? '',
+      );
+      final existingMobile = _normalizeMobile(
+        data['mobileNumber']?.toString() ?? '',
+      );
 
       if (normalizedRelationship == 'mother' &&
           existingRelationship == 'mother') {
@@ -210,11 +214,11 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
       text: data?['notes']?.toString() ?? '',
     );
 
-  final existingRelationship = data?['relationship']?.toString();
+    final existingRelationship = data?['relationship']?.toString();
 
-  String relationship = _relationships.contains(existingRelationship)
-      ? existingRelationship!
-      : 'Mother';
+    String relationship = _relationships.contains(existingRelationship)
+        ? existingRelationship!
+        : 'Mother';
 
     final formKey = GlobalKey<FormState>();
 
@@ -308,7 +312,8 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                           keyboardType: TextInputType.phone,
                           decoration: const InputDecoration(
                             labelText: 'Mobile Number',
-                            helperText: 'Optional, 10-digit Indian mobile number',
+                            helperText:
+                                'Optional, 10-digit Indian mobile number',
                             prefixIcon: Icon(Icons.phone_outlined),
                             border: OutlineInputBorder(),
                           ),
@@ -343,8 +348,11 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                             final now = DateTime.now();
                             final picked = await showDatePicker(
                               context: sheetContext,
-                              initialDate:
-                                  DateTime(now.year - 20, now.month, now.day),
+                              initialDate: DateTime(
+                                now.year - 20,
+                                now.month,
+                                now.day,
+                              ),
                               firstDate: DateTime(1940),
                               lastDate: now,
                             );
@@ -393,8 +401,9 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                                 decoration: const InputDecoration(
                                   labelText: 'Weight',
                                   helperText: 'kg, optional',
-                                  prefixIcon:
-                                      Icon(Icons.monitor_weight_outlined),
+                                  prefixIcon: Icon(
+                                    Icons.monitor_weight_outlined,
+                                  ),
                                   border: OutlineInputBorder(),
                                 ),
                                 validator: (value) {
@@ -433,20 +442,21 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                             onPressed: () async {
                               if (!formKey.currentState!.validate()) return;
 
-                              final duplicateError = await _validateFamilyMemberBeforeSave(
-                                ref: ref,
-                                existingDoc: existingDoc,
-                                name: nameController.text.trim(),
-                                relationship: relationship,
-                                mobileNumber: mobileController.text.trim(),
-                              );
+                              final duplicateError =
+                                  await _validateFamilyMemberBeforeSave(
+                                    ref: ref,
+                                    existingDoc: existingDoc,
+                                    name: nameController.text.trim(),
+                                    relationship: relationship,
+                                    mobileNumber: mobileController.text.trim(),
+                                  );
 
                               if (duplicateError != null) {
                                 if (sheetContext.mounted) {
-                                  ScaffoldMessenger.of(sheetContext).showSnackBar(
-                                    SnackBar(
-                                      content: Text(duplicateError),
-                                    ),
+                                  ScaffoldMessenger.of(
+                                    sheetContext,
+                                  ).showSnackBar(
+                                    SnackBar(content: Text(duplicateError)),
                                   );
                                 }
                                 return;
@@ -454,7 +464,9 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
 
                               final heightText = heightController.text.trim();
                               final weightText = weightController.text.trim();
-                              final mobileDigits = _normalizeMobile(mobileController.text.trim());
+                              final mobileDigits = _normalizeMobile(
+                                mobileController.text.trim(),
+                              );
 
                               final payload = <String, dynamic>{
                                 'name': nameController.text.trim(),
@@ -465,10 +477,9 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
                                 'mobileE164': mobileDigits.isEmpty
                                     ? FieldValue.delete()
                                     : '+91$mobileDigits',
-                                'dateOfBirth':
-                                    dobController.text.trim().isEmpty
-                                        ? FieldValue.delete()
-                                        : dobController.text.trim(),
+                                'dateOfBirth': dobController.text.trim().isEmpty
+                                    ? FieldValue.delete()
+                                    : dobController.text.trim(),
                                 'heightCm': heightText.isEmpty
                                     ? FieldValue.delete()
                                     : double.tryParse(heightText),
@@ -576,7 +587,7 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
             ),
             FilledButton(
               style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF7B3FB2),
+                backgroundColor: const Color(0xFFB70D5C),
               ),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Archive'),
@@ -588,125 +599,110 @@ class _FamilyMembersScreenState extends State<FamilyMembersScreen> {
 
     if (shouldArchive != true) return;
 
-    await doc.reference.set(
-      {
-        'status': 'archived',
-        'archivedAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    await doc.reference.set({
+      'status': 'archived',
+      'archivedAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
 
     if (!mounted) return;
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Family member archived'),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Family member archived')));
   }
+
   //SUD
   @override
   Widget build(BuildContext context) {
     final ref = _familyMembersRef;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F5FC),
+      backgroundColor: const Color(0xFFFFF8FA),
       appBar: AppBar(
         title: const Text('Family Members'),
         centerTitle: true,
-        backgroundColor: const Color(0xFFF8F5FC),
+        backgroundColor: const Color(0xFFFFF8FA),
         elevation: 0,
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(20),
+                child: Text(_error!, textAlign: TextAlign.center),
+              ),
+            )
+          : ref == null
+          ? const Center(child: Text('Unable to load family members'))
+          : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: ref.snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.hasError) {
+                  return const Center(
                     child: Text(
-                      _error!,
-                      textAlign: TextAlign.center,
+                      'Unable to load family members. Please try again.',
                     ),
+                  );
+                }
+
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                final docs = (snapshot.data?.docs ?? []).where((doc) {
+                  final data = doc.data();
+                  final status = (data['status'] ?? 'active').toString();
+                  return status == 'active';
+                }).toList();
+
+                docs.sort((a, b) {
+                  final aTime = a.data()['createdAt'];
+                  final bTime = b.data()['createdAt'];
+
+                  if (aTime is Timestamp && bTime is Timestamp) {
+                    return aTime.compareTo(bTime);
+                  }
+
+                  return a.id.compareTo(b.id);
+                });
+
+                if (docs.isEmpty) {
+                  return const _EmptyFamilyMembersState();
+                }
+
+                return ListView.builder(
+                  padding: EdgeInsets.fromLTRB(
+                    16,
+                    16,
+                    16,
+                    110 + MediaQuery.paddingOf(context).bottom,
                   ),
-                )
-              : ref == null
-                  ? const Center(
-                      child: Text('Unable to load family members'),
-                    )
-                  : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                      stream: ref.snapshots(),
-                      builder: (context, snapshot) {
-                        if (snapshot.hasError) {
-                          return const Center(
-                            child: Text(
-                              'Unable to load family members. Please try again.',
-                            ),
-                          );
-                        }
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final doc = docs[index];
+                    final data = doc.data();
 
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const Center(
-                            child: CircularProgressIndicator(),
-                          );
-                        }
-
-                        final docs = (snapshot.data?.docs ?? []).where((doc) {
-                        final data = doc.data();
-                        final status = (data['status'] ?? 'active').toString();
-                        return status == 'active';
-                      }).toList();
-
-                      docs.sort((a, b) {
-                        final aTime = a.data()['createdAt'];
-                        final bTime = b.data()['createdAt'];
-
-                        if (aTime is Timestamp && bTime is Timestamp) {
-                          return aTime.compareTo(bTime);
-                        }
-
-                        return a.id.compareTo(b.id);
-                      });
-
-                        if (docs.isEmpty) {
-                          return const _EmptyFamilyMembersState();
-                        }
-
-                          return ListView.builder(
-                            padding: EdgeInsets.fromLTRB(
-                              16,
-                              16,
-                              16,
-                              110 + MediaQuery.paddingOf(context).bottom,
-                            ),
-                            itemCount: docs.length,
-                            itemBuilder: (context, index) {
-                            final doc = docs[index];
-                            final data = doc.data();
-
-                            return _FamilyMemberCard(
-                              name: data['name']?.toString() ?? '',
-                              relationship:
-                                  data['relationship']?.toString() ?? '',
-                              mobileNumber:
-                                  data['mobileNumber']?.toString() ?? '',
-                              dateOfBirth:
-                                  data['dateOfBirth']?.toString() ?? '',
-                              heightCm: data['heightCm'],
-                              weightKg: data['weightKg'],
-                              notes: data['notes']?.toString() ?? '',
-                              onEdit: () {
-                                _openFamilyMemberForm(existingDoc: doc);
-                              },
-                              onArchive: () {
-                                _archiveFamilyMember(doc);
-                              },
-                            );
-                          },
-                        );
+                    return _FamilyMemberCard(
+                      name: data['name']?.toString() ?? '',
+                      relationship: data['relationship']?.toString() ?? '',
+                      mobileNumber: data['mobileNumber']?.toString() ?? '',
+                      dateOfBirth: data['dateOfBirth']?.toString() ?? '',
+                      heightCm: data['heightCm'],
+                      weightKg: data['weightKg'],
+                      notes: data['notes']?.toString() ?? '',
+                      onEdit: () {
+                        _openFamilyMemberForm(existingDoc: doc);
                       },
-                    ),
+                      onArchive: () {
+                        _archiveFamilyMember(doc);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openFamilyMemberForm(),
         icon: const Icon(Icons.person_add),
@@ -733,19 +729,12 @@ class _EmptyFamilyMembersState extends StatelessWidget {
         child: const Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              Icons.family_restroom,
-              size: 56,
-              color: Color(0xFF7B3FB2),
-            ),
+            Icon(Icons.family_restroom, size: 56, color: Color(0xFFB70D5C)),
             SizedBox(height: 16),
             Text(
               'No family members added yet',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 19,
-                fontWeight: FontWeight.w800,
-              ),
+              style: TextStyle(fontSize: 19, fontWeight: FontWeight.w800),
             ),
             SizedBox(height: 8),
             Text(
@@ -810,11 +799,8 @@ class _FamilyMemberCard extends StatelessWidget {
             Row(
               children: [
                 const CircleAvatar(
-                  backgroundColor: Color(0xFFF3EAFB),
-                  child: Icon(
-                    Icons.person_outline,
-                    color: Color(0xFF7B3FB2),
-                  ),
+                  backgroundColor: Color(0xFFFCEAF1),
+                  child: Icon(Icons.person_outline, color: Color(0xFFB70D5C)),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -845,7 +831,7 @@ class _FamilyMemberCard extends StatelessWidget {
                   onPressed: onArchive,
                   icon: const Icon(
                     Icons.archive_outlined,
-                    color: Color(0xFF7B3FB2),
+                    color: Color(0xFFB70D5C),
                   ),
                 ),
               ],
@@ -857,30 +843,15 @@ class _FamilyMemberCard extends StatelessWidget {
                 notes.isNotEmpty) ...[
               const Divider(height: 22),
               if (mobileNumber.isNotEmpty)
-                _DetailLine(
-                  icon: Icons.phone_outlined,
-                  text: mobileNumber,
-                ),
+                _DetailLine(icon: Icons.phone_outlined, text: mobileNumber),
               if (dateOfBirth.isNotEmpty)
-                _DetailLine(
-                  icon: Icons.cake_outlined,
-                  text: dateOfBirth,
-                ),
+                _DetailLine(icon: Icons.cake_outlined, text: dateOfBirth),
               if (height.isNotEmpty)
-                _DetailLine(
-                  icon: Icons.height_outlined,
-                  text: height,
-                ),
+                _DetailLine(icon: Icons.height_outlined, text: height),
               if (weight.isNotEmpty)
-                _DetailLine(
-                  icon: Icons.monitor_weight_outlined,
-                  text: weight,
-                ),
+                _DetailLine(icon: Icons.monitor_weight_outlined, text: weight),
               if (notes.isNotEmpty)
-                _DetailLine(
-                  icon: Icons.notes_outlined,
-                  text: notes,
-                ),
+                _DetailLine(icon: Icons.notes_outlined, text: notes),
             ],
           ],
         ),
@@ -893,10 +864,7 @@ class _DetailLine extends StatelessWidget {
   final IconData icon;
   final String text;
 
-  const _DetailLine({
-    required this.icon,
-    required this.text,
-  });
+  const _DetailLine({required this.icon, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -904,17 +872,10 @@ class _DetailLine extends StatelessWidget {
       padding: const EdgeInsets.only(top: 5),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 18,
-            color: const Color(0xFF7B3FB2),
-          ),
+          Icon(icon, size: 18, color: const Color(0xFFB70D5C)),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(color: Colors.black87),
-            ),
+            child: Text(text, style: const TextStyle(color: Colors.black87)),
           ),
         ],
       ),

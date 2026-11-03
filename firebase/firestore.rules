@@ -163,19 +163,35 @@ service cloud.firestore {
         ).data.adminUids;
     }
 
-    // Authorizes support staff only when their UID is explicitly configured.
+    // Authorizes support staff only when their UID or verified phone is explicitly configured.
     function isConfiguredSupportAgent() {
       return signedIn()
         && exists(/databases/$(database)/documents/config/support)
-        && 'supportUids' in get(
-          /databases/$(database)/documents/config/support
-        ).data
-        && get(
-          /databases/$(database)/documents/config/support
-        ).data.supportUids is list
-        && request.auth.uid in get(
-          /databases/$(database)/documents/config/support
-        ).data.supportUids;
+        && (
+          (
+            'supportUids' in get(
+              /databases/$(database)/documents/config/support
+            ).data
+            && get(
+              /databases/$(database)/documents/config/support
+            ).data.supportUids is list
+            && request.auth.uid in get(
+              /databases/$(database)/documents/config/support
+            ).data.supportUids
+          )
+          || (
+            request.auth.token.phone_number is string
+            && 'supportPhones' in get(
+              /databases/$(database)/documents/config/support
+            ).data
+            && get(
+              /databases/$(database)/documents/config/support
+            ).data.supportPhones is list
+            && request.auth.token.phone_number in get(
+              /databases/$(database)/documents/config/support
+            ).data.supportPhones
+          )
+        );
     }
 
     // =====================================================
@@ -451,6 +467,7 @@ service cloud.firestore {
             .affectedKeys()
             .hasOnly([
               'lastSelectedAt',
+              'lastSeenAt',
               'updatedAt'
             ]);
 
@@ -1598,8 +1615,23 @@ service cloud.firestore {
     // OPERATION: Read governed configuration or perform Admin write
     // PURPOSE: Centralizes governed configuration and Admin authorization data.
     // =====================================================
-    match /config/{document=**} {
-      allow read: if signedIn();
+    // Keep the verified-phone allowlist private to Admins.
+    match /config/support {
+      allow read: if isConfiguredAdmin();
+      allow write: if isConfiguredAdmin();
+    }
+
+    // Public-to-authenticated configuration documents are readable for app
+    // routing and pricing. Use a single-segment wildcard so the support
+    // document exclusion is evaluated as a string comparison.
+    match /config/{document} {
+      allow read: if signedIn() && document != 'support';
+      allow write: if isConfiguredAdmin();
+    }
+
+    // Preserve access to nested configuration such as versioned agreements.
+    match /config/{document}/{nested=**} {
+      allow read: if signedIn() && document != 'support';
       allow write: if isConfiguredAdmin();
     }
 
@@ -2354,8 +2386,8 @@ service cloud.firestore {
     // RULE-ID: COLL-SUPPORT-TICKETS
     // ACTOR: Ticket owner, configured support agent, or configured Admin
     // RESOURCE: Customer support ticket
-    // OPERATION: Create, read, or update support request lifecycle
-    // PURPOSE: Customers can submit and read their own requests; only configured support staff/Admin can see all requests and change status.
+    // OPERATION: Create/read requests; staff changes use authenticated callables
+    // PURPOSE: Customers can submit/read their own requests; configured Helpdesk/Admin can see all requests. Staff changes are audited by Cloud Functions.
     // =====================================================
     match /support_tickets/{ticketId} {
       allow create: if signedIn()
@@ -2366,6 +2398,7 @@ service cloud.firestore {
           'subject',
           'message',
           'linkedOrderId',
+          'linkedOrderType',
           'assignedTeam',
           'status',
           'source',
@@ -2397,6 +2430,7 @@ service cloud.firestore {
           'Designer Issue',
           'Payment Issue',
           'Garment Care Issue',
+          'Quick Care Issue',
           'Delivery Issue',
           'Other'
         ]
@@ -2407,15 +2441,51 @@ service cloud.firestore {
         && request.resource.data.message.size() >= 5
         && request.resource.data.message.size() <= 2000
         && (
-          request.resource.data.linkedOrderId == null
+          (
+            request.resource.data.linkedOrderId == null
+            && (
+              !request.resource.data.keys().hasAny(['linkedOrderType'])
+              || request.resource.data.linkedOrderType == null
+            )
+          )
           || (
             request.resource.data.linkedOrderId is string
-            && exists(
-              /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+            && (
+              (
+                request.resource.data.linkedOrderType == 'garment_care'
+                && exists(
+                  /databases/$(database)/documents/garment_care_orders/$(request.resource.data.linkedOrderId)
+                )
+                && get(
+                  /databases/$(database)/documents/garment_care_orders/$(request.resource.data.linkedOrderId)
+                ).data.customerUid == request.auth.uid
+              )
+              || (
+                request.resource.data.linkedOrderType == 'quick_care'
+                && exists(
+                  /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+                )
+                && get(
+                  /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+                ).data.customerId == request.auth.uid
+                && get(
+                  /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+                ).data.orderModuleType == 'quickFix'
+              )
+              || (
+                (
+                  !request.resource.data.keys().hasAny(['linkedOrderType'])
+                  || request.resource.data.linkedOrderType == null
+                  || request.resource.data.linkedOrderType == 'tailoring'
+                )
+                && exists(
+                  /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+                )
+                && get(
+                  /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
+                ).data.customerId == request.auth.uid
+              )
             )
-            && get(
-              /databases/$(database)/documents/orders/$(request.resource.data.linkedOrderId)
-            ).data.customerId == request.auth.uid
           )
         )
         && request.resource.data.assignedTeam in [
@@ -2424,6 +2494,7 @@ service cloud.firestore {
           'design_and_fabric',
           'payments',
           'garment_care',
+          'quick_care',
           'delivery',
           'customer_support'
         ]
@@ -2440,23 +2511,9 @@ service cloud.firestore {
           || isConfiguredAdmin()
         );
 
-      allow update: if (isConfiguredSupportAgent() || isConfiguredAdmin())
-        && request.resource.data.customerUid == resource.data.customerUid
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'status',
-          'assignedTeam',
-          'response',
-          'updatedAt',
-          'resolvedAt'
-        ])
-        && request.resource.data.status in [
-          'Open',
-          'In Progress',
-          'Waiting Customer',
-          'Resolved',
-          'Closed'
-        ]
-        && request.resource.data.updatedAt == request.time;
+      // Staff ticket updates go through updateHelpdeskTicket so the server can
+      // attach the real actor role and append a case activity record.
+      allow update: if false;
 
       allow delete: if false;
     }

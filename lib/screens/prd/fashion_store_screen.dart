@@ -11,9 +11,14 @@ import '../../services/order_service.dart';
 import '../../services/store_product_service.dart';
 
 class FashionStoreScreen extends StatefulWidget {
-  const FashionStoreScreen({super.key, this.initialCategoryCode});
+  const FashionStoreScreen({
+    super.key,
+    this.initialCategoryCode,
+    this.initialSearchQuery,
+  });
 
   final String? initialCategoryCode;
+  final String? initialSearchQuery;
 
   @override
   State<FashionStoreScreen> createState() => _FashionStoreScreenState();
@@ -22,15 +27,20 @@ class FashionStoreScreen extends StatefulWidget {
 class _FashionStoreScreenState extends State<FashionStoreScreen> {
   final _searchController = TextEditingController();
   String? _categoryCode;
+  String? _selectedBrand;
+  String? _selectedSubcategory;
+  String? _selectedSize;
+  String? _selectedColor;
+  bool _sortLowToHigh = true;
   late Stream<List<StoreProduct>> _productsStream;
 
   @override
   void initState() {
     super.initState();
-    _categoryCode = widget.initialCategoryCode;
-    _productsStream = StoreProductService.watchPublishedProducts(
-      categoryCode: _categoryCode,
-    );
+    _categoryCode =
+        widget.initialCategoryCode ?? StoreProductCategory.readyToWear.code;
+    _searchController.text = widget.initialSearchQuery?.trim() ?? '';
+    _productsStream = StoreProductService.watchPublishedProducts();
   }
 
   @override
@@ -42,9 +52,10 @@ class _FashionStoreScreenState extends State<FashionStoreScreen> {
   void _selectCategory(String? categoryCode) {
     setState(() {
       _categoryCode = categoryCode;
-      _productsStream = StoreProductService.watchPublishedProducts(
-        categoryCode: categoryCode,
-      );
+      _selectedSubcategory = null;
+      _selectedBrand = null;
+      _selectedSize = null;
+      _selectedColor = null;
     });
   }
 
@@ -60,200 +71,511 @@ class _FashionStoreScreenState extends State<FashionStoreScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Fashion Store'),
-        leading: IconButton(
-          onPressed: () => context.canPop() ? context.pop() : context.go('/home'),
-          icon: const Icon(Icons.arrow_back_ios_rounded),
+      body: SafeArea(
+        child: StreamBuilder<List<StoreProduct>>(
+          stream: _productsStream,
+          builder: (context, snapshot) {
+            if (!snapshot.hasData && !snapshot.hasError) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            final allProducts = snapshot.data ?? const <StoreProduct>[];
+            final matchingCategory = allProducts
+                .where((product) {
+                  return _categoryCode == null ||
+                      product.categoryCode == _categoryCode;
+                })
+                .toList(growable: false);
+            final brands =
+                matchingCategory
+                    .map(_brandFor)
+                    .where((brand) => brand.isNotEmpty)
+                    .toSet()
+                    .toList()
+                  ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+            final categoryLabels =
+                matchingCategory
+                    .map(_categoryFor)
+                    .where((category) => category.isNotEmpty)
+                    .toSet()
+                    .toList()
+                  ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+            final term = _searchController.text.trim().toLowerCase();
+            final productSectionTitle = _categoryCode == null
+                ? 'Shop products'
+                : _categoryCode == StoreProductCategory.readyToWear.code
+                ? 'Shop readymade outfits'
+                : 'Shop ${StoreProductCategory.byCode(_categoryCode!).label}';
+            final products = matchingCategory.where((product) {
+              final brand = _brandFor(product);
+              if (_selectedBrand != null && brand != _selectedBrand) {
+                return false;
+              }
+              if (_selectedSubcategory != null &&
+                  _categoryFor(product) != _selectedSubcategory) {
+                return false;
+              }
+              if (_selectedSize != null &&
+                  !product.sizes.contains(_selectedSize)) {
+                return false;
+              }
+              if (_selectedColor != null &&
+                  !product.colors.contains(_selectedColor)) {
+                return false;
+              }
+              if (term.isEmpty) return true;
+              return <String>[
+                product.name,
+                product.subcategory,
+                product.brandName,
+                product.sellerName,
+                product.description,
+                product.category.label,
+              ].any((value) => value.toLowerCase().contains(term));
+            }).toList();
+            products.sort(
+              (a, b) => _sortLowToHigh
+                  ? a.displayPrice.compareTo(b.displayPrice)
+                  : b.displayPrice.compareTo(a.displayPrice),
+            );
+
+            return RefreshIndicator(
+              onRefresh: () async {
+                setState(() {
+                  _productsStream =
+                      StoreProductService.watchPublishedProducts();
+                });
+                await Future<void>.delayed(const Duration(milliseconds: 250));
+              },
+              child: CustomScrollView(
+                slivers: [
+                  SliverToBoxAdapter(child: _headerArtwork(context)),
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _searchField(),
+                          const SizedBox(height: 18),
+                          _sectionTitle('Shop by Brand'),
+                          const SizedBox(height: 10),
+                          if (brands.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              child: Text(
+                                'Partner brands will appear here as ready-to-wear '
+                                'outfits are published.',
+                                style: AppTextStyles.bodySmall.copyWith(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            )
+                          else
+                            SizedBox(
+                              height: 92,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                children: [
+                                  _BrandTile(
+                                    label: 'All Brands',
+                                    selected: _selectedBrand == null,
+                                    onTap: () =>
+                                        setState(() => _selectedBrand = null),
+                                  ),
+                                  for (final brand in brands)
+                                    _BrandTile(
+                                      label: brand,
+                                      selected: _selectedBrand == brand,
+                                      onTap: () => setState(
+                                        () => _selectedBrand =
+                                            _selectedBrand == brand
+                                            ? null
+                                            : brand,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          const SizedBox(height: 14),
+                          _sectionTitle('Shop by Category'),
+                          const SizedBox(height: 10),
+                          if (categoryLabels.isNotEmpty)
+                            SizedBox(
+                              height: 132,
+                              child: ListView(
+                                scrollDirection: Axis.horizontal,
+                                children: [
+                                  for (final category in categoryLabels)
+                                    _StoreCategoryTile(
+                                      label: category,
+                                      imageUrl: _imageForCategory(
+                                        matchingCategory,
+                                        category,
+                                      ),
+                                      selected:
+                                          _selectedSubcategory == category,
+                                      onTap: () => setState(
+                                        () => _selectedSubcategory =
+                                            _selectedSubcategory == category
+                                            ? null
+                                            : category,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            )
+                          else
+                            const SizedBox(height: 4),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            height: 40,
+                            child: ListView(
+                              scrollDirection: Axis.horizontal,
+                              children: [
+                                _PriceFilter(
+                                  lowToHigh: _sortLowToHigh,
+                                  onTap: () => setState(
+                                    () => _sortLowToHigh = !_sortLowToHigh,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                _StoreMenuFilter(
+                                  label: 'Size',
+                                  options: _filterOptions(
+                                    matchingCategory,
+                                    (product) => product.sizes,
+                                  ),
+                                  selected: _selectedSize,
+                                  onSelected: (value) =>
+                                      setState(() => _selectedSize = value),
+                                ),
+                                const SizedBox(width: 8),
+                                _StoreMenuFilter(
+                                  label: 'Color',
+                                  options: _filterOptions(
+                                    matchingCategory,
+                                    (product) => product.colors,
+                                  ),
+                                  selected: _selectedColor,
+                                  onSelected: (value) =>
+                                      setState(() => _selectedColor = value),
+                                ),
+                                const SizedBox(width: 8),
+                                _StoreMenuFilter(
+                                  label: 'Category',
+                                  options: StoreProductCategory.all
+                                      .where(
+                                        (category) => allProducts.any(
+                                          (product) =>
+                                              product.categoryCode ==
+                                              category.code,
+                                        ),
+                                      )
+                                      .map((category) => category.label)
+                                      .toList(growable: false),
+                                  selected: _categoryCode == null
+                                      ? null
+                                      : StoreProductCategory.byCode(
+                                          _categoryCode!,
+                                        ).label,
+                                  onSelected: (value) {
+                                    final categories = StoreProductCategory.all
+                                        .where(
+                                          (category) => category.label == value,
+                                        )
+                                        .toList(growable: false);
+                                    _selectCategory(
+                                      categories.isEmpty
+                                          ? null
+                                          : categories.first.code,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          if (snapshot.hasError)
+                            const _StoreMessage(
+                              icon: Icons.cloud_off_outlined,
+                              title: 'Store listings are unavailable',
+                              message:
+                                  'Please check your connection and try again shortly.',
+                            )
+                          else if (products.isEmpty)
+                            _StoreMessage(
+                              icon: Icons.storefront_outlined,
+                              title: term.isEmpty
+                                  ? _categoryCode ==
+                                            StoreProductCategory
+                                                .readyToWear
+                                                .code
+                                        ? 'No ready-to-wear outfits yet'
+                                        : 'No products in this category yet'
+                                  : 'No matching outfits found',
+                              message: term.isEmpty
+                                  ? 'Published partner outfits will appear here.'
+                                  : 'Try another search or clear a filter.',
+                            )
+                          else
+                            _sectionTitle(productSectionTitle),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
+                    ),
+                  ),
+                  if (products.isNotEmpty)
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+                      sliver: SliverGrid.builder(
+                        itemCount: products.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount: 2,
+                              crossAxisSpacing: 12,
+                              mainAxisSpacing: 12,
+                              childAspectRatio: 0.64,
+                            ),
+                        itemBuilder: (context, index) => _ProductCard(
+                          product: products[index],
+                          onTap: () => _openProduct(products[index]),
+                          onTryOn: _supportsTryOn(products[index])
+                              ? () => _openTryOn(products[index])
+                              : null,
+                        ),
+                      ),
+                    ),
+                  if (products.any(_supportsTryOn))
+                    SliverToBoxAdapter(
+                      child: _tryOnBanner(
+                        context,
+                        products.firstWhere(_supportsTryOn),
+                      ),
+                    ),
+                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                ],
+              ),
+            );
+          },
         ),
-        actions: [
-          IconButton(
-            tooltip: 'My orders',
-            onPressed: () => context.push('/orders'),
-            icon: const Icon(Icons.receipt_long_outlined),
+      ),
+    );
+  }
+
+  Widget _headerArtwork(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        final height = width * 410 / 870;
+        return SizedBox(
+          width: width,
+          height: height,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                'assets/images/fashion_store_header.png',
+                fit: BoxFit.fill,
+              ),
+              Positioned(
+                left: 0,
+                top: 0,
+                width: width * 0.085,
+                height: height * 0.18,
+                child: _HeaderHitTarget(
+                  label: 'Back',
+                  onTap: () =>
+                      context.canPop() ? context.pop() : context.go('/home'),
+                ),
+              ),
+              Positioned(
+                left: width * 0.80,
+                top: 0,
+                width: width * 0.09,
+                height: height * 0.18,
+                child: _HeaderHitTarget(
+                  label: 'My orders',
+                  onTap: () => context.push('/orders'),
+                ),
+              ),
+              Positioned(
+                right: 0,
+                top: 0,
+                width: width * 0.085,
+                height: height * 0.18,
+                child: _HeaderHitTarget(
+                  label: 'Wishlist',
+                  onTap: () => context.push('/wishlist'),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _searchField() {
+    return Container(
+      height: 52,
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: const [
+          BoxShadow(
+            color: AppColors.cardShadow,
+            blurRadius: 12,
+            offset: Offset(0, 4),
           ),
         ],
       ),
-      body: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+      child: TextField(
+        controller: _searchController,
+        onChanged: (_) => setState(() {}),
+        textInputAction: TextInputAction.search,
+        decoration: InputDecoration(
+          hintText: 'Search products, brands, outfits, fabrics, boutiques...',
+          hintStyle: AppTextStyles.bodySmall.copyWith(fontSize: 12),
+          prefixIcon: const Icon(Icons.search_rounded),
+          suffixIcon: _searchController.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: 'Clear search',
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(() {});
+                  },
+                  icon: const Icon(Icons.close_rounded),
+                ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String label) => Text(
+    label,
+    style: AppTextStyles.headlineSmall.copyWith(fontWeight: FontWeight.w700),
+  );
+
+  Widget _tryOnBanner(BuildContext context, StoreProduct product) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      child: Material(
+        color: AppColors.surfaceVariant,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _openTryOn(product),
+          child: SizedBox(
+            height: 106,
+            child: Row(
               children: [
-                Text(
-                  'Discover SuiSakhi boutiques',
-                  style: AppTextStyles.headlineSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Shop published collections from approved partners. Swipe '
-                  'through available product views before you enquire.',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textHint,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: _searchController,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    hintText: 'Search products, fabrics, boutiques',
-                    prefixIcon: const Icon(Icons.search_rounded),
-                    suffixIcon: _searchController.text.isEmpty
-                        ? null
-                        : IconButton(
-                            tooltip: 'Clear search',
-                            onPressed: () {
-                              _searchController.clear();
-                              setState(() {});
-                            },
-                            icon: const Icon(Icons.close_rounded),
-                          ),
-                    filled: true,
-                    fillColor: AppColors.surface,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
                 SizedBox(
-                  height: 42,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
+                  width: 104,
+                  height: 106,
+                  child: _productImage(product, fit: BoxFit.cover),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _CategoryChip(
-                        label: 'All',
-                        selected: _categoryCode == null,
-                        onTap: () => _selectCategory(null),
-                      ),
-                      for (final category in StoreProductCategory.all)
-                        _CategoryChip(
-                          label: category.label,
-                          selected: _categoryCode == category.code,
-                          onTap: () => _selectCategory(category.code),
+                      Text(
+                        'Virtual Try-On',
+                        style: AppTextStyles.headlineSmall.copyWith(
+                          color: AppColors.primaryDark,
                         ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'More from SuiSakhi',
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: AppColors.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                SizedBox(
-                  height: 40,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _ServiceChip(
-                        label: 'Rent outfits',
-                        onTap: () => context.push('/shop-explore?category=rent'),
                       ),
-                      _ServiceChip(
-                        label: 'Festival collections',
-                        onTap: () =>
-                            context.push('/shop-explore?category=festival'),
-                      ),
-                      _ServiceChip(
-                        label: 'T-shirt printing',
-                        onTap: () =>
-                            context.push('/shop-explore?category=tshirt_print'),
-                      ),
-                      _ServiceChip(
-                        label: 'Garment care',
-                        onTap: () => context.push(
-                          '/shop-explore?category=garment_care',
+                      Text(
+                        'Preview ${product.name} on your photo',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodySmall.copyWith(
+                          color: AppColors.textSecondary,
                         ),
                       ),
                     ],
                   ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 16),
+                  child: Icon(Icons.chevron_right, color: AppColors.primary),
                 ),
               ],
             ),
           ),
-          Expanded(
-            child: StreamBuilder<List<StoreProduct>>(
-              stream: _productsStream,
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return _StoreMessage(
-                    icon: Icons.cloud_off_outlined,
-                    title: 'Store listings are unavailable',
-                    message:
-                        'Please check your connection and try again shortly.',
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-
-                final term = _searchController.text.trim().toLowerCase();
-                final products = snapshot.data!.where((product) {
-                  if (term.isEmpty) return true;
-                  return <String>[
-                    product.name,
-                    product.subcategory,
-                    product.brandName,
-                    product.sellerName,
-                    product.description,
-                    product.category.label,
-                  ].any((value) => value.toLowerCase().contains(term));
-                }).toList(growable: false);
-
-                if (products.isEmpty) {
-                  return _StoreMessage(
-                    icon: Icons.storefront_outlined,
-                    title: term.isEmpty
-                        ? 'No products in this category yet'
-                        : 'No matching products found',
-                    message: term.isEmpty
-                        ? 'Approved boutiques will appear here when they publish '
-                            'their first listing.'
-                        : 'Try another search or choose a different category.',
-                  );
-                }
-
-                return RefreshIndicator(
-                  onRefresh: () async {
-                    _selectCategory(_categoryCode);
-                    await Future<void>.delayed(
-                      const Duration(milliseconds: 250),
-                    );
-                  },
-                  child: GridView.builder(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                    itemCount: products.length,
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 0.63,
-                        ),
-                    itemBuilder: (context, index) => _ProductCard(
-                      product: products[index],
-                      onTap: () => _openProduct(products[index]),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
+
+  void _openTryOn(StoreProduct product) {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => FashionTryOnPreviewScreen(product: product),
+      ),
+    );
+  }
+
+  bool _supportsTryOn(StoreProduct product) =>
+      product.categoryCode == StoreProductCategory.readyToWear.code ||
+      product.categoryCode == StoreProductCategory.kidsFashion.code;
+
+  String _brandFor(StoreProduct product) => product.brandName.trim().isNotEmpty
+      ? product.brandName.trim()
+      : product.sellerName.trim();
+
+  String _categoryFor(StoreProduct product) =>
+      product.subcategory.trim().isNotEmpty
+      ? product.subcategory.trim()
+      : product.category.label;
+
+  String? _imageForCategory(List<StoreProduct> products, String category) {
+    for (final product in products) {
+      if (_categoryFor(product) != category) continue;
+      for (final image in product.images) {
+        if (image.view == 'front') return image.url;
+      }
+      if (product.images.isNotEmpty) return product.images.first.url;
+    }
+    return null;
+  }
+
+  List<String> _filterOptions(
+    List<StoreProduct> products,
+    List<String> Function(StoreProduct) getValues,
+  ) =>
+      products
+          .expand(getValues)
+          .map((value) => value.trim())
+          .where((value) => value.isNotEmpty)
+          .toSet()
+          .toList()
+        ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
 }
 
-class _CategoryChip extends StatelessWidget {
-  const _CategoryChip({
+class _HeaderHitTarget extends StatelessWidget {
+  const _HeaderHitTarget({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Semantics(
+    button: true,
+    label: label,
+    child: Material(
+      color: Colors.transparent,
+      child: InkWell(onTap: onTap),
+    ),
+  );
+}
+
+class _BrandTile extends StatelessWidget {
+  const _BrandTile({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -265,63 +587,221 @@ class _CategoryChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ChoiceChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
-        selectedColor: AppColors.primary,
-        labelStyle: TextStyle(
-          color: selected ? Colors.white : AppColors.textPrimary,
-          fontWeight: FontWeight.w600,
-        ),
-        backgroundColor: AppColors.surface,
-        side: BorderSide(
-          color: selected ? AppColors.primary : AppColors.divider,
+    final allBrands = label == 'All Brands';
+    return SizedBox(
+      width: 72,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 7),
+            decoration: BoxDecoration(
+              color: selected ? AppColors.surfaceVariant : AppColors.surface,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: selected ? AppColors.primary : AppColors.divider,
+              ),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  allBrands
+                      ? Icons.grid_view_rounded
+                      : Icons.storefront_outlined,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textPrimary,
+                    fontSize: 9,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
       ),
     );
   }
 }
 
-class _ServiceChip extends StatelessWidget {
-  const _ServiceChip({required this.label, required this.onTap});
+class _StoreCategoryTile extends StatelessWidget {
+  const _StoreCategoryTile({
+    required this.label,
+    required this.imageUrl,
+    required this.selected,
+    required this.onTap,
+  });
 
   final String label;
+  final String? imageUrl;
+  final bool selected;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: ActionChip(
-        label: Text(label),
-        onPressed: onTap,
-        backgroundColor: AppColors.surface,
-        side: BorderSide(color: AppColors.divider),
-        labelStyle: const TextStyle(fontWeight: FontWeight.w600),
+    return SizedBox(
+      width: 100,
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Material(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.circular(14),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Container(
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: selected ? AppColors.primary : Colors.transparent,
+                  width: 1.4,
+                ),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Column(
+                children: [
+                  Expanded(
+                    child: SizedBox.expand(
+                      child: imageUrl == null
+                          ? const _ProductImagePlaceholder()
+                          : Image.network(
+                              imageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, _, _) =>
+                                  const _ProductImagePlaceholder(),
+                            ),
+                    ),
+                  ),
+                  SizedBox(
+                    height: 34,
+                    child: Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Text(
+                          label,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: AppTextStyles.bodySmall.copyWith(
+                            color: AppColors.textPrimary,
+                            fontSize: 9,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
+}
+
+class _PriceFilter extends StatelessWidget {
+  const _PriceFilter({required this.lowToHigh, required this.onTap});
+
+  final bool lowToHigh;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => _FilterPill(
+    label: 'Price: ${lowToHigh ? 'Low to High' : 'High to Low'}',
+    icon: Icons.keyboard_arrow_down_rounded,
+    onTap: onTap,
+  );
+}
+
+class _StoreMenuFilter extends StatelessWidget {
+  const _StoreMenuFilter({
+    required this.label,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final String label;
+  final List<String> options;
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopupMenuButton<String>(
+      onSelected: (value) => onSelected(value.isEmpty ? null : value),
+      itemBuilder: (context) => [
+        PopupMenuItem(value: '', child: Text('All $label')),
+        for (final option in options)
+          PopupMenuItem(value: option, child: Text(option)),
+      ],
+      child: _FilterPill(
+        label: selected ?? label,
+        icon: Icons.keyboard_arrow_down_rounded,
+      ),
+    );
+  }
+}
+
+class _FilterPill extends StatelessWidget {
+  const _FilterPill({required this.label, required this.icon, this.onTap});
+
+  final String label;
+  final IconData icon;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    borderRadius: BorderRadius.circular(22),
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textPrimary,
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Icon(icon, size: 17, color: AppColors.textSecondary),
+        ],
+      ),
+    ),
+  );
 }
 
 class _ProductCard extends StatelessWidget {
-  const _ProductCard({required this.product, required this.onTap});
+  const _ProductCard({
+    required this.product,
+    required this.onTap,
+    this.onTryOn,
+  });
 
   final StoreProduct product;
   final VoidCallback onTap;
-
-  String? get _frontImage {
-    for (final image in product.images) {
-      if (image.view == 'front') return image.url;
-    }
-    return product.images.isEmpty ? null : product.images.first.url;
-  }
+  final VoidCallback? onTryOn;
 
   @override
   Widget build(BuildContext context) {
-    final imageUrl = _frontImage;
     return Material(
       color: AppColors.surface,
       borderRadius: BorderRadius.circular(18),
@@ -335,15 +815,7 @@ class _ProductCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (imageUrl == null)
-                    const _ProductImagePlaceholder()
-                  else
-                    Image.network(
-                      imageUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) =>
-                          const _ProductImagePlaceholder(),
-                    ),
+                  _productImage(product, fit: BoxFit.cover),
                   Positioned(
                     left: 8,
                     top: 8,
@@ -357,7 +829,9 @@ class _ProductCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(20),
                       ),
                       child: Text(
-                        product.category.label,
+                        product.subcategory.trim().isEmpty
+                            ? product.category.label
+                            : product.subcategory,
                         style: AppTextStyles.bodySmall.copyWith(
                           fontWeight: FontWeight.w700,
                           fontSize: 10,
@@ -366,6 +840,44 @@ class _ProductCard extends StatelessWidget {
                       ),
                     ),
                   ),
+                  if (onTryOn != null)
+                    Positioned(
+                      left: 8,
+                      bottom: 8,
+                      child: Material(
+                        color: Colors.white.withValues(alpha: 0.94),
+                        borderRadius: BorderRadius.circular(20),
+                        child: InkWell(
+                          onTap: onTryOn,
+                          borderRadius: BorderRadius.circular(20),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 9,
+                              vertical: 6,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.face_retouching_natural_outlined,
+                                  size: 14,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Virtual Try-On',
+                                  style: AppTextStyles.bodySmall.copyWith(
+                                    color: AppColors.primary,
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
                   if (product.images.length > 1)
                     Positioned(
                       right: 8,
@@ -393,7 +905,7 @@ class _ProductCard extends StatelessWidget {
                 children: [
                   Text(
                     product.name,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.titleMedium.copyWith(
                       fontWeight: FontWeight.w700,
@@ -469,8 +981,7 @@ class _FashionProductDetailScreenState
         _ => 'Fabric view',
       };
     }
-    if (widget.product.categoryCode ==
-        StoreProductCategory.accessories.code) {
+    if (widget.product.categoryCode == StoreProductCategory.accessories.code) {
       return switch (view) {
         'front' => 'Main view',
         'back' => 'Back view',
@@ -500,7 +1011,8 @@ class _FashionProductDetailScreenState
       final orderId = await OrderService.createMarketplaceInterest(
         shopCategoryId: product.categoryCode,
         title: product.name,
-        notes: 'Customer enquiry for ${product.name} '
+        notes:
+            'Customer enquiry for ${product.name} '
             '(listing ${product.productId}) from ${product.sellerName}.',
       );
       if (!mounted) return;
@@ -512,7 +1024,9 @@ class _FashionProductDetailScreenState
       }
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Enquiry recorded. SuiSakhi will coordinate with the partner.'),
+          content: Text(
+            'Enquiry recorded. SuiSakhi will coordinate with the partner.',
+          ),
         ),
       );
       context.push('/orders');
@@ -540,9 +1054,8 @@ class _FashionProductDetailScreenState
                 child: OutlinedButton.icon(
                   onPressed: () => Navigator.of(context).push<void>(
                     MaterialPageRoute<void>(
-                      builder: (_) => FashionTryOnPreviewScreen(
-                        product: product,
-                      ),
+                      builder: (_) =>
+                          FashionTryOnPreviewScreen(product: product),
                     ),
                   ),
                   icon: const Icon(Icons.face_retouching_natural_outlined),
@@ -657,9 +1170,7 @@ class _FashionProductDetailScreenState
           Text(
             'Multi-angle views show the photos supplied by this partner. '
             'The try-on preview is a visual guide and does not predict fit.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
         ],
       ),
@@ -700,8 +1211,7 @@ class _ProductGallery extends StatelessWidget {
                   child: Image.network(
                     images[index].url,
                     fit: BoxFit.contain,
-                    errorBuilder: (_, _, _) =>
-                        const _ProductImagePlaceholder(),
+                    errorBuilder: (_, _, _) => const _ProductImagePlaceholder(),
                   ),
                 ),
               ),
@@ -721,8 +1231,11 @@ class _ProductGallery extends StatelessWidget {
                   child: const Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.threesixty_rounded,
-                          size: 16, color: Colors.white),
+                      Icon(
+                        Icons.threesixty_rounded,
+                        size: 16,
+                        color: Colors.white,
+                      ),
                       SizedBox(width: 4),
                       Text(
                         'Swipe through views',
@@ -832,8 +1345,7 @@ class FashionTryOnPreviewScreen extends StatefulWidget {
       _FashionTryOnPreviewScreenState();
 }
 
-class _FashionTryOnPreviewScreenState
-    extends State<FashionTryOnPreviewScreen> {
+class _FashionTryOnPreviewScreenState extends State<FashionTryOnPreviewScreen> {
   Uint8List? _customerPhoto;
   Offset _garmentOffset = Offset.zero;
   double _garmentScale = 0.85;
@@ -844,7 +1356,9 @@ class _FashionTryOnPreviewScreenState
     for (final image in widget.product.images) {
       if (image.view == 'front') return image.url;
     }
-    return widget.product.images.isEmpty ? null : widget.product.images.first.url;
+    return widget.product.images.isEmpty
+        ? null
+        : widget.product.images.first.url;
   }
 
   Future<void> _pickCustomerPhoto() async {
@@ -911,9 +1425,7 @@ class _FashionTryOnPreviewScreenState
           Text(
             'Choose a full-length photo. Drag the garment image to position it, '
             'then adjust its size and transparency.',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 14),
           if (_customerPhoto == null)
@@ -1141,4 +1653,21 @@ class _StoreMessage extends StatelessWidget {
 String _priceLabel(StoreProduct product) {
   final unit = product.unit == 'metre' ? ' / metre' : ' / piece';
   return '₹${product.displayPrice.toStringAsFixed(0)}$unit';
+}
+
+Widget _productImage(StoreProduct product, {required BoxFit fit}) {
+  StoreProductImage? image;
+  for (final candidate in product.images) {
+    if (candidate.view == 'front') {
+      image = candidate;
+      break;
+    }
+  }
+  image ??= product.images.isEmpty ? null : product.images.first;
+  if (image == null) return const _ProductImagePlaceholder();
+  return Image.network(
+    image.url,
+    fit: fit,
+    errorBuilder: (_, _, _) => const _ProductImagePlaceholder(),
+  );
 }

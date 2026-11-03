@@ -8,6 +8,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_state.dart';
+import 'app_pin.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/router_keys.dart';
@@ -81,8 +82,15 @@ class LoginScreen extends StatefulWidget {
   /// Null means the route was reached without an explicit Welcome choice, such
   /// as during the Firebase reCAPTCHA URL round-trip.
   final bool? partnerEntry;
+  final bool resetPinAfterOtp;
+  final bool resumeSession;
 
-  const LoginScreen({super.key, this.partnerEntry});
+  const LoginScreen({
+    super.key,
+    this.partnerEntry,
+    this.resetPinAfterOtp = false,
+    this.resumeSession = false,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -109,6 +117,7 @@ class _PhoneAuthFlowModel extends ChangeNotifier {
   /// Captured when the phone flow starts. Kept across the Firebase reCAPTCHA
   /// route round-trip; a successful sign-in clears it.
   bool partnerEntry = false;
+  bool resetPinAfterOtp = false;
   bool _disposed = false;
   Timer? _verificationFailDebounce;
 
@@ -155,6 +164,7 @@ class _PhoneAuthFlowModel extends ChangeNotifier {
     phoneController.clear();
     otpController.clear();
     partnerEntry = false;
+    resetPinAfterOtp = false;
     notifyListeners();
   }
 
@@ -275,25 +285,95 @@ class _PhoneAuthRouteHostState extends State<_PhoneAuthRouteHost> {
 class _LoginScreenState extends State<LoginScreen> {
   _PhoneAuthFlowModel get _phoneAuthModel => _kPhoneAuthFlowModel;
   Timer? _phoneVerifyWatchdog;
+  bool _resumeStarted = false;
+  bool _restoringSession = false;
+  String? _sessionRestoreError;
 
   @override
   void initState() {
     super.initState();
-    _applyEntryIntent(widget.partnerEntry);
+    _applyEntryIntent(widget.partnerEntry, widget.resetPinAfterOtp);
+    if (widget.resumeSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scheduleSessionRestore();
+      });
+    }
   }
 
   @override
   void didUpdateWidget(covariant LoginScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.partnerEntry != oldWidget.partnerEntry) {
-      _applyEntryIntent(widget.partnerEntry);
+    if (widget.partnerEntry != oldWidget.partnerEntry ||
+        widget.resetPinAfterOtp != oldWidget.resetPinAfterOtp) {
+      _applyEntryIntent(widget.partnerEntry, widget.resetPinAfterOtp);
+    }
+    if (widget.resumeSession && !oldWidget.resumeSession) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scheduleSessionRestore();
+      });
     }
   }
 
-  void _applyEntryIntent(bool? partnerEntry) {
-    if (partnerEntry == null || _phoneAuthModel.flowActive) return;
+  void _scheduleSessionRestore() {
+    if (_resumeStarted || !mounted) return;
+    _resumeStarted = true;
+    setState(() {
+      _restoringSession = true;
+      _sessionRestoreError = null;
+    });
+    _phoneAuthModel.setLoading(true);
+    unawaited(_restorePersistedSession());
+  }
+
+  Future<void> _restorePersistedSession() async {
+    try {
+      // Wait for Firebase to finish restoring native auth state before deciding
+      // whether this device needs a new OTP.
+      final user = await FirebaseAuth.instance.authStateChanges().first;
+      if (!mounted) return;
+      if (user == null) {
+        _phoneAuthModel.setLoading(false);
+        setState(() => _restoringSession = false);
+        GoRouter.of(context).go('/');
+        return;
+      }
+
+      final destination = await AppPinStore.readDestination(user.uid);
+      if (destination != null) {
+        await AppState.instance.loadUserProfile(user.uid);
+        await AppState.instance.loadRates();
+        if (!mounted) return;
+        _phoneAuthModel.setLoading(false);
+        GoRouter.of(context).go(destination);
+        return;
+      }
+
+      // Older sessions may not have a remembered destination. Reuse the
+      // existing post-login profile resolver once, without requesting OTP.
+      await _handleSignedInUser(user);
+      if (mounted) setState(() => _restoringSession = false);
+    } catch (e) {
+      if (!mounted) return;
+      _phoneAuthModel.setLoading(false);
+      setState(() {
+        _sessionRestoreError =
+            'Could not restore your SuiSakhi session. Check your connection and try again.';
+      });
+      debugPrint('SuiSakhi session restore failed: $e');
+    }
+  }
+
+  void _retrySessionRestore() {
+    _resumeStarted = false;
+    _scheduleSessionRestore();
+  }
+
+  void _applyEntryIntent(bool? partnerEntry, bool resetPinAfterOtp) {
+    if (_phoneAuthModel.flowActive) return;
+    if (partnerEntry == null && !resetPinAfterOtp) return;
     _phoneAuthModel.reset();
-    _phoneAuthModel.partnerEntry = partnerEntry;
+    _phoneAuthModel.partnerEntry = partnerEntry ?? false;
+    _phoneAuthModel.resetPinAfterOtp = resetPinAfterOtp;
   }
 
   void _cancelPhoneWatchdog() {
@@ -351,6 +431,7 @@ class _LoginScreenState extends State<LoginScreen> {
   String _destinationFor(UserRole role) {
     return switch (role) {
       UserRole.owner => '/owner',
+      UserRole.support => '/support',
 
       // Legacy direct-role compatibility.
       UserRole.tailor => '/tailor',
@@ -397,6 +478,12 @@ class _LoginScreenState extends State<LoginScreen> {
     // COMMON CUSTOMER FOUNDATION
     if (role == 'customer') {
       return '/home';
+    }
+
+    // Verified Helpdesk access is a selectable workspace on the signed-in
+    // person's account, alongside their ordinary Customer profile.
+    if (role == 'support') {
+      return '/support';
     }
 
     // ADMIN / OWNER
@@ -449,6 +536,19 @@ class _LoginScreenState extends State<LoginScreen> {
     return returning ? '/home' : '/onboarding';
   }
 
+  Future<void> _goToPostLoginRoute(
+    BuildContext navCtx,
+    User user,
+    String destination,
+  ) async {
+    try {
+      await AppPinStore.saveDestination(user.uid, destination);
+    } catch (e) {
+      debugPrint('Could not save PIN unlock destination: $e');
+    }
+    if (navCtx.mounted) GoRouter.of(navCtx).go(destination);
+  }
+
   // ── Shared post-auth handler ─────────────────────────────────────────────
   Future<void> _handleSignedInUser(
     User user, {
@@ -485,7 +585,13 @@ class _LoginScreenState extends State<LoginScreen> {
     bool returning = AppState.instance.hasCompletedSetup;
     final existing = AppState.instance.profile;
 
-    if (configRole != null) {
+    if (configRole == UserRole.support) {
+      // Helpdesk is an additional workspace. Keep the account's user profile
+      // as Customer so customer services and order ownership remain intact.
+      finalRole = existing?.role == UserRole.support
+          ? UserRole.customer
+          : existing?.role ?? UserRole.customer;
+    } else if (configRole != null) {
       // Email in owner/tailor/delivery config — highest priority
       finalRole = configRole;
     } else if (existing != null && existing.role != UserRole.customer) {
@@ -537,7 +643,7 @@ class _LoginScreenState extends State<LoginScreen> {
       // Most common: Firestore rules block writes to users/{uid}. Auth still succeeded.
       final navCtx0 = (mounted && context.mounted)
           ? context
-          : stitchSmartRootNavigatorKey.currentContext;
+          : suiSakhiRootNavigatorKey.currentContext;
       if (navCtx0 != null && navCtx0.mounted) {
         final pid = Firebase.app().options.projectId.trim();
         final rulesUri = pid.isEmpty
@@ -594,7 +700,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     final navCtx = (mounted && context.mounted)
         ? context
-        : stitchSmartRootNavigatorKey.currentContext;
+        : suiSakhiRootNavigatorKey.currentContext;
 
     if (navCtx != null && navCtx.mounted) {
       // Partner applicants use the same authentication and default Customer
@@ -605,7 +711,7 @@ class _LoginScreenState extends State<LoginScreen> {
           configRole == null &&
           (existing == null || existing.role == UserRole.customer)) {
         _phoneAuthModel.setLoading(false);
-        GoRouter.of(navCtx).go('/partner/opportunities');
+        await _goToPostLoginRoute(navCtx, user, '/partner/opportunities');
         return;
       }
 
@@ -620,12 +726,49 @@ class _LoginScreenState extends State<LoginScreen> {
             signedInPhone.trim(),
           );
 
-          if (accountId != null && accountId.isNotEmpty) {
-            final profiles = await AppState.instance
-                .fetchActiveProfilesForAccount(accountId);
+          final profiles = accountId != null && accountId.isNotEmpty
+              ? await AppState.instance.fetchActiveProfilesForAccount(accountId)
+              : <Map<String, dynamic>>[];
 
-            debugPrint('SuiSakhi active profile count: ${profiles.length}');
-            /*
+          if (configRole == UserRole.support) {
+            if (!profiles.any(
+              (profile) =>
+                  (profile['role'] ?? '').toString().toLowerCase() ==
+                  'customer',
+            )) {
+              final customerName = AppState.instance.profile?.name.trim();
+              profiles.insert(0, <String, dynamic>{
+                'profileId': '__suisakhi_customer__',
+                'role': 'customer',
+                'displayName': customerName?.isNotEmpty == true
+                    ? customerName
+                    : 'Customer',
+                'isDefaultProfile': true,
+                'isSyntheticCustomerProfile': true,
+              });
+            }
+            final supportIndex = profiles.indexWhere(
+              (profile) =>
+                  (profile['role'] ?? '').toString().toLowerCase() == 'support',
+            );
+            if (supportIndex >= 0) {
+              profiles[supportIndex] = {
+                ...profiles[supportIndex],
+                'displayName': 'SuiSakhi Helpdesk',
+                'isSyntheticHelpdeskProfile': true,
+              };
+            } else {
+              profiles.add(<String, dynamic>{
+                'profileId': '__suisakhi_helpdesk__',
+                'role': 'support',
+                'displayName': 'SuiSakhi Helpdesk',
+                'isSyntheticHelpdeskProfile': true,
+              });
+            }
+          }
+
+          debugPrint('SuiSakhi active profile count: ${profiles.length}');
+          /*
         debugPrint(
           'SuiSakhi profiles found for account $accountId: ${profiles.length}',
         );
@@ -636,64 +779,54 @@ class _LoginScreenState extends State<LoginScreen> {
           );
         }
 */
-            if (profiles.length > 1 && navCtx.mounted) {
-              final selectedProfile =
-                  await Navigator.of(
-                    navCtx,
-                    rootNavigator: true,
-                  ).push<Map<String, dynamic>>(
-                    MaterialPageRoute<Map<String, dynamic>>(
-                      builder: (_) =>
-                          ProfileSelectionScreen(profiles: profiles),
-                    ),
-                  );
+          if (profiles.length > 1 && navCtx.mounted) {
+            final selectedProfile =
+                await Navigator.of(
+                  navCtx,
+                  rootNavigator: true,
+                ).push<Map<String, dynamic>>(
+                  MaterialPageRoute<Map<String, dynamic>>(
+                    builder: (_) => ProfileSelectionScreen(profiles: profiles),
+                  ),
+                );
 
-              if (selectedProfile != null) {
-                final selectedProfileId =
-                    selectedProfile['profileId']?.toString() ??
-                    selectedProfile['docId']?.toString();
-
-                if (selectedProfileId != null &&
-                    selectedProfileId.trim().isNotEmpty) {
-                  await AppState.instance.setActiveProfileForAccount(
-                    accountId: accountId,
-                    profileId: selectedProfileId,
-                  );
-
-                  _phoneAuthModel.setLoading(false);
-
-                  if (navCtx.mounted) {
-                    GoRouter.of(navCtx).go(
-                      _destinationForProfile(
-                        selectedProfile,
-                        accountId: accountId,
-                        returning: returning,
-                      ),
-                    );
-                  }
-                  return;
+            if (selectedProfile != null) {
+              if (selectedProfile['isSyntheticHelpdeskProfile'] == true) {
+                _phoneAuthModel.setLoading(false);
+                if (navCtx.mounted) {
+                  await _goToPostLoginRoute(navCtx, user, '/support');
                 }
+                return;
               }
-            }
-            if (profiles.length == 1 && navCtx.mounted) {
-              final onlyProfile = profiles.first;
+              if (selectedProfile['isSyntheticCustomerProfile'] == true) {
+                _phoneAuthModel.setLoading(false);
+                if (navCtx.mounted) {
+                  await _goToPostLoginRoute(navCtx, user, '/home');
+                }
+                return;
+              }
 
-              final onlyProfileId =
-                  onlyProfile['profileId']?.toString() ??
-                  onlyProfile['docId']?.toString();
+              final selectedProfileId =
+                  selectedProfile['profileId']?.toString() ??
+                  selectedProfile['docId']?.toString();
 
-              if (onlyProfileId != null && onlyProfileId.trim().isNotEmpty) {
+              if (accountId != null &&
+                  accountId.isNotEmpty &&
+                  selectedProfileId != null &&
+                  selectedProfileId.trim().isNotEmpty) {
                 await AppState.instance.setActiveProfileForAccount(
                   accountId: accountId,
-                  profileId: onlyProfileId,
+                  profileId: selectedProfileId,
                 );
 
                 _phoneAuthModel.setLoading(false);
 
                 if (navCtx.mounted) {
-                  GoRouter.of(navCtx).go(
+                  await _goToPostLoginRoute(
+                    navCtx,
+                    user,
                     _destinationForProfile(
-                      onlyProfile,
+                      selectedProfile,
                       accountId: accountId,
                       returning: returning,
                     ),
@@ -701,6 +834,49 @@ class _LoginScreenState extends State<LoginScreen> {
                 }
                 return;
               }
+            }
+          }
+          if (profiles.length == 1 && navCtx.mounted) {
+            final onlyProfile = profiles.first;
+
+            if (onlyProfile['isSyntheticHelpdeskProfile'] == true) {
+              _phoneAuthModel.setLoading(false);
+              await _goToPostLoginRoute(navCtx, user, '/support');
+              return;
+            }
+            if (onlyProfile['isSyntheticCustomerProfile'] == true) {
+              _phoneAuthModel.setLoading(false);
+              await _goToPostLoginRoute(navCtx, user, '/home');
+              return;
+            }
+
+            final onlyProfileId =
+                onlyProfile['profileId']?.toString() ??
+                onlyProfile['docId']?.toString();
+
+            if (accountId != null &&
+                accountId.isNotEmpty &&
+                onlyProfileId != null &&
+                onlyProfileId.trim().isNotEmpty) {
+              await AppState.instance.setActiveProfileForAccount(
+                accountId: accountId,
+                profileId: onlyProfileId,
+              );
+
+              _phoneAuthModel.setLoading(false);
+
+              if (navCtx.mounted) {
+                await _goToPostLoginRoute(
+                  navCtx,
+                  user,
+                  _destinationForProfile(
+                    onlyProfile,
+                    accountId: accountId,
+                    returning: returning,
+                  ),
+                );
+              }
+              return;
             }
           }
         }
@@ -711,7 +887,13 @@ class _LoginScreenState extends State<LoginScreen> {
       _phoneAuthModel.setLoading(false);
 
       if (navCtx.mounted) {
-        GoRouter.of(navCtx).go(_destinationFor(finalRole));
+        await _goToPostLoginRoute(
+          navCtx,
+          user,
+          configRole == UserRole.support
+              ? '/support'
+              : _destinationFor(finalRole),
+        );
       }
     }
   }
@@ -733,6 +915,40 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _sendPhoneFlowOtp() async {
+    // Lock synchronously before any network lookup. This blocks a fast double
+    // tap/keyboard submit from starting a second Firebase SMS request.
+    if (_phoneAuthModel.loading) return;
+    _phoneAuthModel.setLoading(true);
+
+    // Wait for Firebase's initial auth event before deciding whether this
+    // device needs OTP. currentUser can still be null while native credentials
+    // are being restored immediately after app startup.
+    User? existingUser;
+    try {
+      existingUser =
+          FirebaseAuth.instance.currentUser ??
+          await FirebaseAuth.instance.authStateChanges().first.timeout(
+            const Duration(seconds: 10),
+          );
+    } catch (e) {
+      if (mounted && _phoneAuthModel.loading) {
+        _phoneAuthModel.setFailed(
+          'Could not check your existing sign-in. Check your connection and try again.',
+        );
+      }
+      debugPrint('Firebase auth state check failed before OTP: $e');
+      return;
+    }
+
+    // The user may have closed the login page while Firebase initialized.
+    if (!mounted || !_phoneAuthModel.loading) return;
+
+    // A restored Firebase session must never trigger another OTP just because
+    // the login screen was opened directly.
+    if (existingUser != null) {
+      _scheduleSessionRestore();
+      return;
+    }
     final nameCtrl = _phoneAuthModel.nameController;
     final phoneCtrl = _phoneAuthModel.phoneController;
     final raw = phoneCtrl.text.trim().replaceAll(RegExp(r'\s+'), '');
@@ -744,16 +960,22 @@ class _LoginScreenState extends State<LoginScreen> {
     final display = raw.startsWith('+') ? raw : '+91$raw';
 
     _phoneAuthModel.clearError();
+    _phoneAuthModel.flowActive = true;
+    _armPhoneWatchdog();
 
-    final reg = await AppState.instance.fetchPhoneRegistry(e164);
-    if (reg != null && reg.uid.isNotEmpty) {
-      debugPrint(
-        'Legacy phoneRegistry role found: ${reg.roleName}. '
-        'Skipping old account-type popup because SuiSakhi now supports multiple profiles.',
-      );
+    try {
+      final reg = await AppState.instance.fetchPhoneRegistry(e164);
+      if (reg != null && reg.uid.isNotEmpty) {
+        debugPrint(
+          'Legacy phoneRegistry role found: ${reg.roleName}. '
+          'Skipping old account-type popup because SuiSakhi now supports multiple profiles.',
+        );
+      }
+    } catch (e) {
+      // Registry lookup is advisory; a temporary Firestore issue must not send
+      // a second SMS or prevent Firebase phone verification.
+      debugPrint('Phone registry lookup skipped: $e');
     }
-
-    _phoneAuthModel.setLoading(true);
 
     var name = nameCtrl.text.trim();
     try {
@@ -773,8 +995,13 @@ class _LoginScreenState extends State<LoginScreen> {
     // prefer the saved Firestore name for returning users.
     _phoneAuthModel.collectedDisplayName = name;
     _phoneAuthModel.phoneDisplay = display;
-    _phoneAuthModel.flowActive = true;
-    _armPhoneWatchdog();
+
+    // If the user closed the page while the Firestore preflight was waiting,
+    // don't send an SMS after the flow has already been cancelled.
+    if (!_phoneAuthModel.flowActive) {
+      _cancelPhoneWatchdog();
+      return;
+    }
 
     try {
       await FirebaseAuth.instance.verifyPhoneNumber(
@@ -828,6 +1055,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _verifyPhoneFlowOtp() async {
+    // Pinput can fire both onCompleted and onSubmitted for the same code.
+    if (_phoneAuthModel.loading) return;
     final vid = _phoneAuthModel.verificationId;
     final otpCtrl = _phoneAuthModel.otpController;
     if (vid == null) {
@@ -1191,6 +1420,46 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Widget _buildSessionRestoringPage() {
+    final error = _sessionRestoreError;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (error == null)
+                  const CircularProgressIndicator()
+                else
+                  const Icon(
+                    Icons.cloud_off_outlined,
+                    color: AppColors.error,
+                    size: 48,
+                  ),
+                const SizedBox(height: 18),
+                Text(
+                  error ?? 'Restoring your SuiSakhi session…',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.bodyMedium,
+                ),
+                if (error != null) ...[
+                  const SizedBox(height: 18),
+                  FilledButton(
+                    onPressed: _retrySessionRestore,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _signInWithPhoneCredential(
     PhoneAuthCredential credential,
   ) async {
@@ -1203,6 +1472,26 @@ class _LoginScreenState extends State<LoginScreen> {
         _phoneAuthModel.setLoading(false);
         return;
       }
+      if (!kPilotBypassAppPin) {
+        final resetPin = _kPhoneAuthFlowModel.resetPinAfterOtp;
+        final hasPin = await AppPinStore.hasPin(user.uid);
+        if (resetPin || !hasPin) {
+          final saved = await suiSakhiRootNavigatorKey.currentState?.push<bool>(
+            MaterialPageRoute<bool>(
+              builder: (_) =>
+                  PinSetupScreen(uid: user.uid, replacing: resetPin),
+            ),
+          );
+          if (saved != true) {
+            await FirebaseAuth.instance.signOut();
+            _phoneAuthModel.setFailed(
+              'PIN setup was not completed. Please sign in again.',
+            );
+            return;
+          }
+        }
+      }
+      _kPhoneAuthFlowModel.resetPinAfterOtp = false;
       final partnerEntry = _kPhoneAuthFlowModel.partnerEntry;
       await _handleSignedInUser(
         user,
@@ -1232,7 +1521,9 @@ class _LoginScreenState extends State<LoginScreen> {
       },
       child: _PhoneAuthRouteHost(
         model: _phoneAuthModel,
-        pageBuilder: _buildPhoneOtpPage,
+        pageBuilder: _restoringSession
+            ? _buildSessionRestoringPage
+            : _buildPhoneOtpPage,
       ),
     );
   }

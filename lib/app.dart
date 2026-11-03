@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'core/router_keys.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/auth/app_pin.dart';
 import 'screens/profile/profile_selection_screen.dart';
 import 'screens/profile/customer_account_center_screen.dart';
 import 'screens/profile/customer_orders_hub_screen.dart';
@@ -15,6 +16,7 @@ import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/onboarding/profile_setup_screen.dart';
 import 'screens/home/home_screen.dart';
+import 'screens/home/customer_service_guide_screen.dart';
 import 'screens/measurements/measurement_dashboard_screen.dart';
 import 'screens/measurements/camera_measurement_screen.dart';
 import 'screens/measurements/measurement_result_screen.dart';
@@ -29,15 +31,21 @@ import 'screens/orders/order_tag_lookup_screen.dart';
 import 'screens/prd/tailor_style_hub_screen.dart';
 import 'screens/prd/quick_fix_screen.dart';
 import 'screens/prd/bulk_orders_screen.dart';
+import 'screens/prd/dress_rental_request_screen.dart';
 import 'screens/prd/shop_explore_screen.dart';
 import 'screens/prd/garment_care_screen.dart';
 import 'screens/partner/garment_care_jobs_screen.dart';
+import 'screens/partner/quickcare_jobs_screen.dart';
 import 'screens/partner/garment_care_completion_templates_screen.dart';
 import 'screens/prd/fashion_store_screen.dart';
 import 'screens/prd/offers_membership_screen.dart';
 import 'screens/prd/customer_fabric_help_screen.dart';
 import 'screens/owner/owner_dashboard_screen.dart';
 import 'screens/owner/owner_support_inbox_screen.dart';
+import 'screens/owner/owner_support_access_screen.dart';
+import 'screens/owner/owner_customer_360_screen.dart';
+import 'screens/owner/owner_partner_management_screen.dart';
+import 'screens/owner/helpdesk_order_explorer_screen.dart';
 import 'screens/owner/owner_order_routing_screen.dart';
 import 'screens/owner/owner_design_templates_screen.dart';
 import 'screens/owner/owner_partner_applications_screen.dart';
@@ -68,6 +76,7 @@ import 'screens/delivery/delivery_services_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
 import 'screens/partner/partner_workspace_screen.dart';
 import 'screens/partner/partner_profile_view_screen.dart';
+import 'widgets/partner_presence_reporter.dart';
 import 'screens/partner/partner_business_details_screen.dart';
 import 'screens/partner/partner_addresses_view_screen.dart';
 import 'screens/partner/measurement_partner_assignments_screen.dart';
@@ -82,8 +91,8 @@ import 'screens/partner/designer_catalogue_screen.dart';
 import 'screens/partner/designer_catalogue_details_screen.dart';
 import 'screens/partner/designer_catalogue_correction_screen.dart';
 
-class StitchSmartApp extends StatelessWidget {
-  const StitchSmartApp({super.key});
+class SuiSakhiApp extends StatelessWidget {
+  const SuiSakhiApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -91,13 +100,15 @@ class StitchSmartApp extends StatelessWidget {
       title: 'SuiSakhi',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
+      builder: (context, child) =>
+          PinLockGate(child: child ?? const SizedBox.shrink()),
       routerConfig: _router,
     );
   }
 }
 
 final _router = GoRouter(
-  navigatorKey: stitchSmartRootNavigatorKey,
+  navigatorKey: suiSakhiRootNavigatorKey,
   initialLocation: '/',
   // Firebase Phone reCAPTCHA returns a custom iOS URL scheme. Redirect it to
   // LoginScreen so the shared phone/OTP flow can rebuild with its current state.
@@ -174,6 +185,8 @@ final _router = GoRouter(
               : intent == 'customer'
               ? false
               : null,
+          resetPinAfterOtp: state.uri.queryParameters['resetPin'] == '1',
+          resumeSession: state.uri.queryParameters['resume'] == '1',
         );
       },
     ),
@@ -218,6 +231,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerOrdersHubScreen(),
     ),
     GoRoute(
+      path: '/service-guide',
+      builder: (ctx, state) => const CustomerServiceGuideScreen(),
+    ),
+    GoRoute(
       path: '/partner/landing',
       builder: (context, state) => PartnerProfileLandingScreen(
         accountId: state.uri.queryParameters['accountId'],
@@ -227,19 +244,25 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/partner/workspace',
-      builder: (context, state) => PartnerWorkspaceScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        partnerProfileId: state.uri.queryParameters['profileId'] ?? '',
-        partnerCategoryCode: state.uri.queryParameters['category'],
+      builder: (context, state) => _withPartnerPresence(
+        state,
+        PartnerWorkspaceScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          partnerProfileId: state.uri.queryParameters['profileId'] ?? '',
+          partnerCategoryCode: state.uri.queryParameters['category'],
+        ),
       ),
     ),
     GoRoute(
       path: '/partner/account',
-      builder: (context, state) => PartnerWorkspaceScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        partnerProfileId: state.uri.queryParameters['profileId'] ?? '',
-        partnerCategoryCode: state.uri.queryParameters['category'],
-        showAccountCenter: true,
+      builder: (context, state) => _withPartnerPresence(
+        state,
+        PartnerWorkspaceScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          partnerProfileId: state.uri.queryParameters['profileId'] ?? '',
+          partnerCategoryCode: state.uri.queryParameters['category'],
+          showAccountCenter: true,
+        ),
       ),
     ),
     GoRoute(
@@ -251,10 +274,24 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/partner/garment-care',
-      builder: (ctx, state) => GarmentCareJobsScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        profileId: state.uri.queryParameters['profileId'] ?? '',
-        partnerName: 'Garment Care Partner',
+      builder: (ctx, state) => _withPartnerPresence(
+        state,
+        GarmentCareJobsScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          profileId: state.uri.queryParameters['profileId'] ?? '',
+          partnerName: 'Garment Care Partner',
+        ),
+      ),
+    ),
+    GoRoute(
+      path: '/partner/quick-care',
+      builder: (ctx, state) => _withPartnerPresence(
+        state,
+        QuickCareJobsScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          profileId: state.uri.queryParameters['profileId'] ?? '',
+          partnerName: 'QuickCare Partner',
+        ),
       ),
     ),
     GoRoute(
@@ -295,9 +332,12 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/partner/measurement/assignments',
-      builder: (context, state) => MeasurementPartnerAssignmentsScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        profileId: state.uri.queryParameters['profileId'] ?? '',
+      builder: (context, state) => _withPartnerPresence(
+        state,
+        MeasurementPartnerAssignmentsScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          profileId: state.uri.queryParameters['profileId'] ?? '',
+        ),
       ),
     ),
     GoRoute(
@@ -432,6 +472,22 @@ final _router = GoRouter(
       builder: (ctx, state) => const OwnerSupportInboxScreen(),
     ),
     GoRoute(
+      path: '/owner/support-access',
+      builder: (ctx, state) => const OwnerSupportAccessScreen(),
+    ),
+    GoRoute(
+      path: '/owner/customer-360',
+      builder: (ctx, state) => const OwnerCustomer360Screen(),
+    ),
+    GoRoute(
+      path: '/support',
+      builder: (ctx, state) => const OwnerSupportInboxScreen(),
+    ),
+    GoRoute(
+      path: '/support/orders',
+      builder: (ctx, state) => const HelpdeskOrderExplorerScreen(),
+    ),
+    GoRoute(
       path: '/owner/order-routing',
       builder: (ctx, state) => const OwnerOrderRoutingScreen(),
     ),
@@ -456,6 +512,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const OwnerPartnerApplicationsScreen(),
     ),
     GoRoute(
+      path: '/owner/partner-management',
+      builder: (ctx, state) => const OwnerPartnerManagementScreen(),
+    ),
+    GoRoute(
       path: '/owner/partner-applications/:applicationId',
       builder: (ctx, state) => OwnerPartnerApplicationReviewScreen(
         applicationId: state.pathParameters['applicationId']!,
@@ -469,9 +529,12 @@ final _router = GoRouter(
     // ── Tailor routes ─────────────────────────────────────────────────────
     GoRoute(
       path: '/tailor',
-      builder: (context, state) => TailorDashboardScreen(
-        accountId: state.uri.queryParameters['accountId'],
-        tailorProfileId: state.uri.queryParameters['profileId'],
+      builder: (context, state) => _withPartnerPresence(
+        state,
+        TailorDashboardScreen(
+          accountId: state.uri.queryParameters['accountId'],
+          tailorProfileId: state.uri.queryParameters['profileId'],
+        ),
       ),
     ),
     GoRoute(
@@ -481,9 +544,12 @@ final _router = GoRouter(
     // ── Delivery routes ───────────────────────────────────────────────────
     GoRoute(
       path: '/delivery/services',
-      builder: (ctx, state) => DeliveryServicesScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        profileId: state.uri.queryParameters['profileId'] ?? '',
+      builder: (ctx, state) => _withPartnerPresence(
+        state,
+        DeliveryServicesScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          profileId: state.uri.queryParameters['profileId'] ?? '',
+        ),
       ),
     ),
     GoRoute(
@@ -513,9 +579,12 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/partner/designer/catalogue',
-      builder: (context, state) => DesignerCatalogueScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        designerProfileId: state.uri.queryParameters['profileId'] ?? '',
+      builder: (context, state) => _withPartnerPresence(
+        state,
+        DesignerCatalogueScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          designerProfileId: state.uri.queryParameters['profileId'] ?? '',
+        ),
       ),
     ),
     GoRoute(
@@ -614,6 +683,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const BulkOrdersScreen(),
     ),
     GoRoute(
+      path: '/dress-rental-request',
+      builder: (ctx, state) => const DressRentalRequestScreen(),
+    ),
+    GoRoute(
       path: '/shop-explore',
       builder: (ctx, state) {
         final category = state.uri.queryParameters['category'];
@@ -625,7 +698,10 @@ final _router = GoRouter(
           'kids_fashion',
         };
         if (category == null || storeCategories.contains(category)) {
-          return FashionStoreScreen(initialCategoryCode: category);
+          return FashionStoreScreen(
+            initialCategoryCode: category,
+            initialSearchQuery: state.uri.queryParameters['q'],
+          );
         }
         return ShopExploreScreen(initialCategoryId: category);
       },
@@ -679,3 +755,12 @@ final _router = GoRouter(
     ),
   ],
 );
+
+Widget _withPartnerPresence(GoRouterState state, Widget child) {
+  final query = state.uri.queryParameters;
+  return PartnerPresenceReporter(
+    accountId: query['accountId'] ?? '',
+    profileId: query['profileId'] ?? '',
+    child: child,
+  );
+}

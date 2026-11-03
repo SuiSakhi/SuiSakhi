@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/prd_catalog.dart';
@@ -10,6 +11,20 @@ class OrderService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
 
   static String? get _uid => _auth.currentUser?.uid;
+
+  /// Allocate the support-friendly reference after the order exists. The
+  /// customer order document remains valid if the optional callable is not
+  /// deployed yet; the UI can still identify it by its Firestore ID.
+  static Future<void> _ensureOrderTrackingId(String orderId) async {
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('ensureCustomerOrderTrackingId')
+          .call(<String, dynamic>{'orderId': orderId});
+    } catch (_) {
+      // Keep order placement successful if reference allocation is temporarily
+      // unavailable. Helpdesk can still locate the order by its document ID.
+    }
+  }
 
   /// Snapshots the common Customer account/profile onto each newly created order.
   /// Keep this optional for older or temporarily incomplete account records; the
@@ -117,8 +132,7 @@ class OrderService {
       'fit': fit,
       'measurements': measurements,
       'notes': notes,
-      if (personId?.trim().isNotEmpty == true)
-        'personId': personId!.trim(),
+      if (personId?.trim().isNotEmpty == true) 'personId': personId!.trim(),
       if (personName?.trim().isNotEmpty == true)
         'personName': personName!.trim(),
       if (relationship?.trim().isNotEmpty == true)
@@ -147,8 +161,7 @@ class OrderService {
           'commercialType': catalogueCommercialType,
           'approvedDesignCharge': approvedDesignCharge ?? 0,
           'monochromeReferenceImageUrl': designImageUrl,
-          'cataloguePriceVersion':
-              'version:${catalogueVersionId.trim()}',
+          'cataloguePriceVersion': 'version:${catalogueVersionId.trim()}',
         },
       if (designSource?.trim().isNotEmpty == true)
         'designSource': designSource!.trim(),
@@ -178,6 +191,7 @@ class OrderService {
             'pincode': deliveryPincode!.trim(),
         },
     });
+    await _ensureOrderTrackingId(ref.id);
     return ref.id;
   }
 
@@ -187,7 +201,10 @@ class OrderService {
     required String notes,
     required String slotLabel,
     required String addressLine,
+    String? addressId,
     String? landmark,
+    String? pincode,
+    DateTime? scheduledAt,
     bool express = false,
   }) async {
     final uid = _uid;
@@ -198,9 +215,9 @@ class OrderService {
     final titles = serviceIds
         .map((id) => QuickFixService.byId(id)?.title ?? id)
         .join(', ');
-    final advPct = 50;
-    final advance = estimatedTotal * advPct / 100.0;
-    final balance = (estimatedTotal - advance).clamp(0.0, double.infinity);
+    final requiresQuote = serviceIds.any(
+      (id) => QuickFixService.byId(id)?.requiresPartnerQuote ?? false,
+    );
     final ref = await _db.collection('orders').add({
       'customerId': uid,
       ...ownershipFields,
@@ -209,20 +226,36 @@ class OrderService {
       'status': 'pending',
       'orderDate': FieldValue.serverTimestamp(),
       'price': estimatedTotal,
+      'estimatedPrice': estimatedTotal,
+      'priceEstimateOnly': true,
       'paymentStatus': 'unpaid',
-      'advancePercent': advPct,
-      'advanceAmount': advance,
-      'balanceAmount': balance,
+      'advancePercent': 0,
+      'advanceAmount': 0,
+      'balanceAmount': estimatedTotal,
+      'paymentTiming': 'afterServiceCompletion',
       'orderModuleType': OrderModuleType.quickFix.name,
       'quickFixServiceIds': serviceIds,
       'notes': notes,
       'pickupSlot': slotLabel,
-      'deliveryAddress': [
-        addressLine,
-        if (landmark != null && landmark.isNotEmpty) 'Landmark: $landmark',
-      ].join('\n'),
+      if (scheduledAt != null)
+        'quickCareScheduledAt': Timestamp.fromDate(scheduledAt),
+      'quickCareWorkflowStatus': 'requestSubmitted',
+      'quickCareAssignmentStatus': 'searching',
+      'quickCareQuoteStatus': requiresQuote
+          ? 'partnerQuoteRequired'
+          : 'partnerEstimateConfirmationRequired',
+      'deliveryAddress': addressLine.trim(),
+      if (addressId?.trim().isNotEmpty == true)
+        'deliveryAddressId': addressId!.trim(),
+      if (landmark?.trim().isNotEmpty == true)
+        'serviceVisitLandmark': landmark!.trim(),
+      if (pincode != null && pincode.trim().isNotEmpty)
+        'deliveryPincode': pincode.trim(),
+      if (pincode?.trim().isNotEmpty == true)
+        'deliveryLocation': {'countryCode': 'IN', 'pincode': pincode!.trim()},
       'expressQuickFix': express,
     });
+    await _ensureOrderTrackingId(ref.id);
     return ref.id;
   }
 
@@ -263,6 +296,7 @@ class OrderService {
       'consultationPreference': consultationPreference,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
     });
+    await _ensureOrderTrackingId(ref.id);
     return ref.id;
   }
 
@@ -293,6 +327,7 @@ class OrderService {
       'marketplaceCategoryId': shopCategoryId,
       if (notes != null && notes.isNotEmpty) 'notes': notes,
     });
+    await _ensureOrderTrackingId(ref.id);
     return ref.id;
   }
 }

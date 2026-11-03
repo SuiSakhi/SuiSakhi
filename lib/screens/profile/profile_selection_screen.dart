@@ -47,6 +47,9 @@ class ProfileSelectionScreen extends StatelessWidget {
       case 'supplier':
         return Icons.inventory_2;
 
+      case 'support':
+        return Icons.support_agent;
+
       case 'customer':
       default:
         return Icons.person;
@@ -72,6 +75,9 @@ class ProfileSelectionScreen extends StatelessWidget {
         }
         return (profile['displayName'] ?? 'Profile').toString();
 
+      case 'support':
+        return 'SuiSakhi Helpdesk';
+
       case 'delivery':
       case 'delivery_partner':
       case 'customer':
@@ -95,6 +101,9 @@ class ProfileSelectionScreen extends StatelessWidget {
     switch (role) {
       case 'owner':
         return 'Owner';
+
+      case 'support':
+        return 'Helpdesk';
 
       case 'customer':
       default:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate StitchSmart Architecture Diagram PDF"""
+"""Generate SuiSakhi Architecture Diagram PDF"""
 
 from reportlab.lib.pagesizes import A3, landscape
 from reportlab.lib import colors
@@ -7,7 +7,7 @@ from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 from reportlab.lib.colors import HexColor, Color
 
-OUTPUT = "StitchSmart_Architecture.pdf"
+OUTPUT = "SuiSakhi_Architecture.pdf"
 PAGE_W, PAGE_H = landscape(A3)
 
 # ── Palette ────────────────────────────────────────────────────────────────
@@ -156,7 +156,7 @@ def build():
     c.rect(0, H - 22*mm, W, 22*mm, fill=1, stroke=0)
     c.setFont("Helvetica-Bold", 18)
     c.setFillColor(C_WHITE)
-    c.drawString(14*mm, H - 14*mm, "StitchSmart — Application Architecture")
+    c.drawString(14*mm, H - 14*mm, "SuiSakhi — Application Architecture")
     c.setFont("Helvetica", 9)
     c.setFillColor(HexColor("#90CAF9"))
     c.drawString(14*mm, H - 19*mm, "Flutter · Firebase · Google Sign-In · Claude AI · GoRouter")
@@ -438,7 +438,7 @@ def build():
     # ── Footer ─────────────────────────────────────────────────────────────
     c.setFont("Helvetica", 7)
     c.setFillColor(C_GREY)
-    c.drawString(MARGIN, 2.5*mm, "StitchSmart · Flutter + Firebase Architecture · Generated 2026")
+    c.drawString(MARGIN, 2.5*mm, "SuiSakhi · Flutter + Firebase Architecture · Generated 2026")
     c.drawRightString(W - MARGIN, 2.5*mm, "Roles: Customer | Tailor | Owner | Delivery Partner")
 
     c.save()

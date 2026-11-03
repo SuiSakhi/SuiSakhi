@@ -174,7 +174,7 @@ class _CatalogueViewCandidatesPanelState
   }
 
   Widget _requestMissingView(CatalogueDesignViewType targetType) => Card(
-    color: const Color(0xFFF0EDF8),
+    color: const Color(0xFFFCEAF1),
     child: Padding(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -210,7 +210,7 @@ class _CatalogueViewCandidatesPanelState
   );
 
   Widget _requestFromSingleView() => Card(
-    color: const Color(0xFFF0EDF8),
+    color: const Color(0xFFFCEAF1),
     child: Padding(
       padding: const EdgeInsets.all(14),
       child: Column(
@@ -265,7 +265,7 @@ class _CatalogueViewCandidatesPanelState
     return Card(
       color: run.status == 'failed'
           ? const Color(0xFFFFF0EF)
-          : const Color(0xFFF0EDF8),
+          : const Color(0xFFFCEAF1),
       child: Padding(
         padding: const EdgeInsets.all(12),
         child: Column(
@@ -312,14 +312,14 @@ class _CatalogueViewCandidatesPanelState
               aspectRatio: 0.8,
               child: url == null || url.isEmpty
                   ? const ColoredBox(
-                      color: Color(0xFFF0EDF8),
+                      color: Color(0xFFFCEAF1),
                       child: Icon(Icons.image_not_supported_outlined),
                     )
                   : Image.network(
                       url,
                       fit: BoxFit.contain,
                       errorBuilder: (_, _, _) => const ColoredBox(
-                        color: Color(0xFFF0EDF8),
+                        color: Color(0xFFFCEAF1),
                         child: Icon(Icons.broken_image_outlined),
                       ),
                     ),

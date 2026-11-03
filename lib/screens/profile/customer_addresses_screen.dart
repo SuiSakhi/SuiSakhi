@@ -14,8 +14,8 @@ class CustomerAddressesScreen extends StatefulWidget {
 }
 
 class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
-  static const Color _primaryColor = Color(0xFF7B3FB2);
-  static const Color _backgroundColor = Color(0xFFF8F5FC);
+  static const Color _primaryColor = Color(0xFFB70D5C);
+  static const Color _backgroundColor = Color(0xFFFFF8FA);
 
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
@@ -48,8 +48,9 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
         return;
       }
 
-      final accountId =
-          await AppState.instance.fetchAccountIdForMobile(phone.trim());
+      final accountId = await AppState.instance.fetchAccountIdForMobile(
+        phone.trim(),
+      );
 
       if (accountId == null || accountId.isEmpty) {
         setState(() {
@@ -67,10 +68,7 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
           .get();
 
       final addresses = snap.docs.map((doc) {
-        return _CustomerAddress.fromMap(
-          doc.id,
-          doc.data(),
-        );
+        return _CustomerAddress.fromMap(doc.id, doc.data());
       }).toList();
 
       addresses.sort((a, b) {
@@ -119,9 +117,7 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (sheetContext) {
-        return _AddressFormSheet(
-          initialAddress: existingAddress,
-        );
+        return _AddressFormSheet(initialAddress: existingAddress);
       },
     );
 
@@ -136,8 +132,9 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
       final shouldMakeDefault = result.isDefault || _addresses.isEmpty;
 
       if (shouldMakeDefault) {
-        final activeSnap =
-            await addressesRef.where('status', isEqualTo: 'active').get();
+        final activeSnap = await addressesRef
+            .where('status', isEqualTo: 'active')
+            .get();
 
         final batch = _db.batch();
 
@@ -157,10 +154,9 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
           isDefault: shouldMakeDefault,
         );
 
-        await addressesRef.doc(existingAddress.addressId).set(
-              addressToSave.toMap(),
-              SetOptions(merge: true),
-            );
+        await addressesRef
+            .doc(existingAddress.addressId)
+            .set(addressToSave.toMap(), SetOptions(merge: true));
       } else {
         final ref = addressesRef.doc();
 
@@ -169,9 +165,7 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
           isDefault: shouldMakeDefault,
         );
 
-        await ref.set(
-          addressToSave.toMap(includeCreatedAt: true),
-        );
+        await ref.set(addressToSave.toMap(includeCreatedAt: true));
       }
 
       await _loadAddresses();
@@ -204,7 +198,9 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
     if (accountId == null || accountId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Unable to update default address. Account not loaded.'),
+          content: Text(
+            'Unable to update default address. Account not loaded.',
+          ),
         ),
       );
       return;
@@ -218,8 +214,9 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
           .doc(accountId)
           .collection('addresses');
 
-      final activeSnap =
-          await addressesRef.where('status', isEqualTo: 'active').get();
+      final activeSnap = await addressesRef
+          .where('status', isEqualTo: 'active')
+          .get();
 
       final batch = _db.batch();
 
@@ -280,9 +277,7 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
               child: const Text('Cancel'),
             ),
             FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: Colors.red,
-              ),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
               onPressed: () => Navigator.pop(dialogContext, true),
               child: const Text('Delete'),
             ),
@@ -301,25 +296,21 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
 
       final wasDefault = address.isDefault;
 
-      await addressesRef.doc(address.addressId).set(
-        {
-          'status': 'inactive',
-          'isDefault': false,
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      await addressesRef.doc(address.addressId).set({
+        'status': 'inactive',
+        'isDefault': false,
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
 
       await _loadAddresses();
 
-      if (wasDefault && _addresses.isNotEmpty && !_addresses.any((a) => a.isDefault)) {
-        await addressesRef.doc(_addresses.first.addressId).set(
-          {
-            'isDefault': true,
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+      if (wasDefault &&
+          _addresses.isNotEmpty &&
+          !_addresses.any((a) => a.isDefault)) {
+        await addressesRef.doc(_addresses.first.addressId).set({
+          'isDefault': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
 
         await _loadAddresses();
       }
@@ -356,64 +347,59 @@ class _CustomerAddressesScreenState extends State<CustomerAddressesScreen> {
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.black54,
-                      ),
-                    ),
-                  ),
-                )
-                : ListView(
-                    padding: const EdgeInsets.all(16),
+          ? Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 16, color: Colors.black54),
+                ),
+              ),
+            )
+          : ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                const _InfoCard(),
+                const SizedBox(height: 20),
+                if (_addresses.isEmpty)
+                  _EmptyAddressState(onAddAddress: () => _openAddressForm())
+                else ...[
+                  Row(
                     children: [
-                      const _InfoCard(),
-                      const SizedBox(height: 20),
-                      if (_addresses.isEmpty)
-                        _EmptyAddressState(
-                          onAddAddress: () => _openAddressForm(),
-                        )
-                      else ...[
-                        Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Saved Addresses',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                            TextButton.icon(
-                              onPressed: () => _openAddressForm(),
-                              icon: const Icon(Icons.add_location_alt_outlined),
-                              label: const Text('Add New'),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
-                        for (var i = 0; i < _addresses.length; i++)
-                          _AddressCard(
-                            address: _addresses[i],
-                            onEdit: () {
-                              _openAddressForm(
-                                existingAddress: _addresses[i],
-                                editIndex: i,
-                              );
-                            },
-                            onSetDefault: () => _setDefaultAddress(i),
-                            onDelete: () => _deleteAddress(i),
+                      const Expanded(
+                        child: Text(
+                          'Saved Addresses',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
                           ),
-                        const SizedBox(height: 86),
-                      ],
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: () => _openAddressForm(),
+                        icon: const Icon(Icons.add_location_alt_outlined),
+                        label: const Text('Add New'),
+                      ),
                     ],
                   ),
+                  const SizedBox(height: 10),
+                  for (var i = 0; i < _addresses.length; i++)
+                    _AddressCard(
+                      address: _addresses[i],
+                      onEdit: () {
+                        _openAddressForm(
+                          existingAddress: _addresses[i],
+                          editIndex: i,
+                        );
+                      },
+                      onSetDefault: () => _setDefaultAddress(i),
+                      onDelete: () => _deleteAddress(i),
+                    ),
+                  const SizedBox(height: 86),
+                ],
+              ],
+            ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _primaryColor,
         foregroundColor: Colors.white,
@@ -487,31 +473,29 @@ class _CustomerAddress {
       isDefault: isDefault ?? this.isDefault,
     );
   }
-    Map<String, dynamic> toMap({bool includeCreatedAt = false}) {
-      return {
-        'addressId': addressId,
-        'addressType': addressType,
-        'name': name,
-        'mobileNumber': mobileNumber,
-        'addressLine1': addressLine1,
-        'addressLine2': addressLine2,
-        'landmark': landmark,
-        'city': city,
-        if (cityCode?.trim().isNotEmpty == true) 'cityCode': cityCode,
-        'state': state,
-        if (stateCode?.trim().isNotEmpty == true) 'stateCode': stateCode,
-        'pincode': pincode,
-        'isDefault': isDefault,
-        'status': 'active',
-        if (includeCreatedAt) 'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      };
-    }
-    
-    factory _CustomerAddress.fromMap(
-    String id,
-    Map<String, dynamic> data,
-  ) {
+
+  Map<String, dynamic> toMap({bool includeCreatedAt = false}) {
+    return {
+      'addressId': addressId,
+      'addressType': addressType,
+      'name': name,
+      'mobileNumber': mobileNumber,
+      'addressLine1': addressLine1,
+      'addressLine2': addressLine2,
+      'landmark': landmark,
+      'city': city,
+      if (cityCode?.trim().isNotEmpty == true) 'cityCode': cityCode,
+      'state': state,
+      if (stateCode?.trim().isNotEmpty == true) 'stateCode': stateCode,
+      'pincode': pincode,
+      'isDefault': isDefault,
+      'status': 'active',
+      if (includeCreatedAt) 'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  factory _CustomerAddress.fromMap(String id, Map<String, dynamic> data) {
     return _CustomerAddress(
       addressId: data['addressId']?.toString() ?? id,
       addressType: data['addressType']?.toString() ?? 'Home',
@@ -528,19 +512,15 @@ class _CustomerAddress {
       isDefault: data['isDefault'] == true,
     );
   }
-
 }
 
 class _AddressFormSheet extends StatefulWidget {
   final _CustomerAddress? initialAddress;
 
-  const _AddressFormSheet({
-    required this.initialAddress,
-  });
+  const _AddressFormSheet({required this.initialAddress});
 
   @override
   State<_AddressFormSheet> createState() => _AddressFormSheetState();
-
 }
 
 class _AddressFormSheetState extends State<_AddressFormSheet> {
@@ -561,10 +541,7 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
   static const String _defaultCountryName = 'India';
   static const String _defaultCountryCode = '+91';
 
-  static const List<String> _addressTypes = [
-    'Home',
-    'Other',
-  ];
+  static const List<String> _addressTypes = ['Home', 'Other'];
   static const List<String> _maharashtraCities = [
     'Pune',
     'Mumbai',
@@ -601,16 +578,15 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
 
     _nameCtrl = TextEditingController(text: address?.name ?? '');
     _mobileCtrl = TextEditingController(
-        text: (address?.mobileNumber ?? '')
-            .replaceFirst('+91 ', ''),
-      );
+      text: (address?.mobileNumber ?? '').replaceFirst('+91 ', ''),
+    );
     _line1Ctrl = TextEditingController(text: address?.addressLine1 ?? '');
     _line2Ctrl = TextEditingController(text: address?.addressLine2 ?? '');
     _landmarkCtrl = TextEditingController(text: address?.landmark ?? '');
     _cityCtrl = TextEditingController(text: address?.city ?? 'Pune');
     _stateCtrl = TextEditingController(text: address?.state ?? 'Maharashtra');
     _pincodeCtrl = TextEditingController(text: address?.pincode ?? '');
-     
+
     final initialCity = address?.city ?? 'Pune';
 
     _selectedCity = _maharashtraCities.contains(initialCity)
@@ -655,27 +631,26 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
     if (!_formKey.currentState!.validate()) return;
 
     final address = _CustomerAddress(
-      addressId: widget.initialAddress?.addressId ??
+      addressId:
+          widget.initialAddress?.addressId ??
           DateTime.now().millisecondsSinceEpoch.toString(),
       addressType: _addressType,
       name: _nameCtrl.text.trim(),
       mobileNumber:
-      '$_defaultCountryCode ${_normalizeIndianMobile(_mobileCtrl.text.trim())}',
+          '$_defaultCountryCode ${_normalizeIndianMobile(_mobileCtrl.text.trim())}',
       addressLine1: _line1Ctrl.text.trim(),
       addressLine2: _line2Ctrl.text.trim(),
       landmark: _landmarkCtrl.text.trim(),
       city: _cityCtrl.text.trim(),
       cityCode: IndiaAddressMetadata.instance.cityCodeForLabel(
-        stateCode: IndiaAddressMetadata.instance.stateCodeForLabel(
-              _stateCtrl.text,
-            ) ??
+        stateCode:
+            IndiaAddressMetadata.instance.stateCodeForLabel(_stateCtrl.text) ??
             'MH',
         cityLabel: _cityCtrl.text.trim(),
       ),
       state: _stateCtrl.text.trim(),
-      stateCode: IndiaAddressMetadata.instance.stateCodeForLabel(
-            _stateCtrl.text,
-          ) ??
+      stateCode:
+          IndiaAddressMetadata.instance.stateCodeForLabel(_stateCtrl.text) ??
           'MH',
       pincode: _pincodeCtrl.text.trim(),
       isDefault: _isDefault,
@@ -726,10 +701,7 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                       ? 'Update only this selected address.'
                       : 'Add a new address. Existing addresses will remain intact.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.black54,
-                    height: 1.35,
-                  ),
+                  style: const TextStyle(color: Colors.black54, height: 1.35),
                 ),
                 const SizedBox(height: 20),
                 DropdownButtonFormField<String>(
@@ -872,7 +844,7 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                     'Only one address can be default at a time.',
                   ),
                   value: _isDefault,
-                  activeThumbColor: const Color(0xFF7B3FB2),
+                  activeThumbColor: const Color(0xFFB70D5C),
                   onChanged: (value) {
                     setState(() => _isDefault = value);
                   },
@@ -883,9 +855,11 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                   child: ElevatedButton.icon(
                     onPressed: _saveAddress,
                     icon: const Icon(Icons.save_outlined),
-                    label: Text(_isEditMode ? 'Update Address' : 'Save Address'),
+                    label: Text(
+                      _isEditMode ? 'Update Address' : 'Save Address',
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF7B3FB2),
+                      backgroundColor: const Color(0xFFB70D5C),
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 15),
                       shape: RoundedRectangleBorder(
@@ -903,9 +877,7 @@ class _AddressFormSheetState extends State<_AddressFormSheet> {
                     },
                     child: const Text(
                       'Cancel',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                      ),
+                      style: TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -946,7 +918,8 @@ class _AddressTextField extends StatelessWidget {
         prefixIcon: Icon(icon),
         border: const OutlineInputBorder(),
       ),
-      validator: validator ??
+      validator:
+          validator ??
           (value) {
             if (value == null || value.trim().isEmpty) {
               return validatorMessage;
@@ -1034,11 +1007,8 @@ class _InfoCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           CircleAvatar(
-            backgroundColor: Color(0xFFF3EAFB),
-            child: Icon(
-              Icons.location_on_outlined,
-              color: Color(0xFF7B3FB2),
-            ),
+            backgroundColor: Color(0xFFFCEAF1),
+            child: Icon(Icons.location_on_outlined, color: Color(0xFFB70D5C)),
           ),
           SizedBox(width: 14),
           Expanded(
@@ -1047,10 +1017,7 @@ class _InfoCard extends StatelessWidget {
               children: [
                 Text(
                   'Your Addresses',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                 ),
                 SizedBox(height: 6),
                 Text(
@@ -1087,7 +1054,7 @@ class _AddressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final typeColor = address.isDefault
         ? const Color(0xFF2E7D32)
-        : const Color(0xFF7B3FB2);
+        : const Color(0xFFB70D5C);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 14),
@@ -1113,38 +1080,26 @@ class _AddressCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              _AddressTypeBadge(
-                label: address.addressType,
-                color: typeColor,
-              ),
+              _AddressTypeBadge(label: address.addressType, color: typeColor),
               const SizedBox(width: 8),
               if (address.isDefault) const _DefaultBadge(),
               const Spacer(),
               IconButton(
                 tooltip: 'Edit Address',
                 onPressed: onEdit,
-                icon: const Icon(
-                  Icons.edit_outlined,
-                  color: Color(0xFF7B3FB2),
-                ),
+                icon: const Icon(Icons.edit_outlined, color: Color(0xFFB70D5C)),
               ),
             ],
           ),
           const SizedBox(height: 10),
           Text(
             address.name,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-            ),
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
             address.mobileNumber,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Colors.black54,
-            ),
+            style: const TextStyle(fontSize: 13, color: Colors.black54),
           ),
           const SizedBox(height: 10),
           Text(
@@ -1178,10 +1133,8 @@ class _AddressCard extends StatelessWidget {
                   icon: const Icon(Icons.check_circle_outline, size: 18),
                   label: const Text('Set Default'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF7B3FB2),
-                    side: const BorderSide(
-                      color: Color(0xFF7B3FB2),
-                    ),
+                    foregroundColor: const Color(0xFFB70D5C),
+                    side: const BorderSide(color: Color(0xFFB70D5C)),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
@@ -1192,9 +1145,7 @@ class _AddressCard extends StatelessWidget {
                 onPressed: onDelete,
                 icon: const Icon(Icons.delete_outline, size: 18),
                 label: const Text('Delete'),
-                style: TextButton.styleFrom(
-                  foregroundColor: Colors.red,
-                ),
+                style: TextButton.styleFrom(foregroundColor: Colors.red),
               ),
             ],
           ),
@@ -1208,18 +1159,12 @@ class _AddressTypeBadge extends StatelessWidget {
   final String label;
   final Color color;
 
-  const _AddressTypeBadge({
-    required this.label,
-    required this.color,
-  });
+  const _AddressTypeBadge({required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(18),
@@ -1242,10 +1187,7 @@ class _DefaultBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: const Color(0xFFE8F5E9),
         borderRadius: BorderRadius.circular(18),
@@ -1265,23 +1207,16 @@ class _DefaultBadge extends StatelessWidget {
 class _EmptyAddressState extends StatelessWidget {
   final VoidCallback onAddAddress;
 
-  const _EmptyAddressState({
-    required this.onAddAddress,
-  });
+  const _EmptyAddressState({required this.onAddAddress});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 20,
-        vertical: 36,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 36),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(
-          color: const Color(0xFFE6DDF1),
-        ),
+        border: Border.all(color: const Color(0xFFE6DDF1)),
       ),
       child: Column(
         children: [
@@ -1289,40 +1224,33 @@ class _EmptyAddressState extends StatelessWidget {
             width: 86,
             height: 86,
             decoration: BoxDecoration(
-              color: const Color(0xFFF3EAFB),
+              color: const Color(0xFFFCEAF1),
               borderRadius: BorderRadius.circular(28),
             ),
             child: const Icon(
               Icons.add_home_work_outlined,
               size: 42,
-              color: Color(0xFF7B3FB2),
+              color: Color(0xFFB70D5C),
             ),
           ),
           const SizedBox(height: 18),
           const Text(
             'No addresses added yet',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 20,
-              fontWeight: FontWeight.w800,
-            ),
+            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 8),
           const Text(
             'Add your first address to make pickup and delivery easier for your tailoring orders.',
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Colors.black54,
-              height: 1.35,
-            ),
+            style: TextStyle(fontSize: 14, color: Colors.black54, height: 1.35),
           ),
           const SizedBox(height: 22),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF7B3FB2),
+                backgroundColor: const Color(0xFFB70D5C),
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
@@ -1332,9 +1260,7 @@ class _EmptyAddressState extends StatelessWidget {
               icon: const Icon(Icons.add_location_alt_outlined),
               label: const Text(
                 'Add New Address',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
               onPressed: onAddAddress,
             ),

@@ -236,6 +236,19 @@ class PartnerWorkspaceRegistry {
           order: 10,
         ),
       );
+    } else if (partnerType == 'doorstepServices') {
+      modules.add(
+        const PartnerWorkspaceModule(
+          code: 'quickCare.jobs',
+          label: 'Quick Care Requests',
+          subtitle: 'Accept local service requests and update each job',
+          icon: Icons.home_repair_service_outlined,
+          section: operationsSection,
+          route: 'quick-care-jobs',
+          state: PartnerWorkspaceModuleState.available,
+          order: 10,
+        ),
+      );
     } else if (partnerType == 'designer') {
       modules.add(
         const PartnerWorkspaceModule(

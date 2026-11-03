@@ -50,6 +50,13 @@ class OrderLifecycleService {
   static Future<Map<String, dynamic>> cancelOrder(String orderId) =>
       _call('cancelCoreTailoringOrder', {'orderId': orderId});
 
+  static Future<Map<String, dynamic>> requestQuickCareCancellation(
+    String orderId,
+  ) => _call('requestQuickCareCancellation', {'orderId': orderId});
+
+  static Future<Map<String, dynamic>> cancelQuickCareOrder(String orderId) =>
+      _call('cancelQuickCareOrder', {'orderId': orderId});
+
   static Future<Map<String, dynamic>> getCustomerOrderPartnerContacts(
     String orderId,
   ) => _call('getCustomerOrderPartnerContacts', {'orderId': orderId});

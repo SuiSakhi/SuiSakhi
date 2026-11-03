@@ -65,10 +65,7 @@ class PaymentCompletionService {
       try {
         await FirebaseFunctions.instance
             .httpsCallable('completeSandboxOrderAdvance')
-            .call({
-              'orderId': orderId,
-              'paymentMethod': method.name,
-            });
+            .call({'orderId': orderId, 'paymentMethod': method.name});
       } on FirebaseFunctionsException catch (error) {
         return error.message ?? 'Could not complete the advance payment.';
       } catch (_) {
@@ -91,8 +88,11 @@ class PaymentCompletionService {
       ledger = _applyUpiOverride(ledger, 'tailor', tailorUpiOverride.trim());
     }
     if (deliveryUpiOverride != null && deliveryUpiOverride.trim().isNotEmpty) {
-      ledger =
-          _applyUpiOverride(ledger, 'delivery', deliveryUpiOverride.trim());
+      ledger = _applyUpiOverride(
+        ledger,
+        'delivery',
+        deliveryUpiOverride.trim(),
+      );
     }
 
     await orderRef.update({
@@ -143,20 +143,95 @@ class PaymentCompletionService {
     }
   }
 
+  /// Completes a Quick Care customer payment in the configured test payment
+  /// environment. The callable verifies the customer and closes the job only
+  /// after the payment state is recorded.
+  static Future<String?> completeQuickCarePayment({
+    required String orderId,
+    required OnlinePaymentMethod method,
+    required double expectedAmount,
+  }) async {
+    if (_auth.currentUser == null) return 'Sign in to pay.';
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('completeSandboxQuickCarePayment')
+          .call(<String, dynamic>{
+            'orderId': orderId,
+            'paymentMethod': method.name,
+          });
+      final snapshot = await _db
+          .collection('orders')
+          .doc(orderId)
+          .get(const GetOptions(source: Source.server));
+      final order = snapshot.data();
+      final provider = order?['paymentProvider']?.toString();
+      final verified =
+          order?['quickCareWorkflowStatus'] == 'completed' &&
+          order?['paymentStatus'] == 'fullyPaid' &&
+          order?['amountPaid'] is num &&
+          (order?['amountPaid'] as num).round() == expectedAmount.round() &&
+          ((provider == 'sandbox' &&
+                  (order?['quickCarePaymentMethod']?.toString().isNotEmpty ??
+                      false)) ||
+              (provider == 'razorpay' &&
+                  (order?['quickCareGatewayPaymentId']?.toString().isNotEmpty ??
+                      false)));
+      if (!verified) {
+        return 'Payment is not confirmed for this booking yet. Refresh its status before trying again; do not pay again if your bank shows a successful charge.';
+      }
+      return null;
+    } on FirebaseFunctionsException catch (error) {
+      return error.message ?? 'Could not complete the Quick Care payment.';
+    } catch (_) {
+      return 'Could not verify this Quick Care payment. Refresh the booking before retrying, and contact Helpdesk if your bank shows a successful charge.';
+    }
+  }
+
+  /// Creates a Razorpay order using the customer-approved Quick Care amount.
+  /// The key secret is held only by the callable backend.
+  static Future<Map<String, dynamic>> createQuickCareGatewayOrder({
+    required String orderId,
+  }) async {
+    final result = await FirebaseFunctions.instance
+        .httpsCallable('createQuickCareGatewayOrder')
+        .call(<String, dynamic>{'orderId': orderId});
+    return Map<String, dynamic>.from(result.data as Map);
+  }
+
+  /// Verifies Razorpay's signed result server-side and closes the job only
+  /// after the payment is captured.
+  static Future<void> verifyQuickCareGatewayPayment({
+    required String orderId,
+    required String razorpayOrderId,
+    required String razorpayPaymentId,
+    required String razorpaySignature,
+  }) async {
+    await FirebaseFunctions.instance
+        .httpsCallable('verifyQuickCareGatewayPayment')
+        .call(<String, dynamic>{
+          'orderId': orderId,
+          'razorpayOrderId': razorpayOrderId,
+          'razorpayPaymentId': razorpayPaymentId,
+          'razorpaySignature': razorpaySignature,
+        });
+  }
+
   static List<OrderPayoutLine> _applyUpiOverride(
     List<OrderPayoutLine> lines,
     String role,
     String upi,
   ) {
     return lines
-        .map((l) => l.role == role
-            ? OrderPayoutLine(
-                role: l.role,
-                amount: l.amount,
-                percent: l.percent,
-                creditToUpi: upi,
-              )
-            : l)
+        .map(
+          (l) => l.role == role
+              ? OrderPayoutLine(
+                  role: l.role,
+                  amount: l.amount,
+                  percent: l.percent,
+                  creditToUpi: upi,
+                )
+              : l,
+        )
         .toList();
   }
 }

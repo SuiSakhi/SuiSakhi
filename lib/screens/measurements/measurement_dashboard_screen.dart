@@ -17,26 +17,26 @@ class MeasurementDashboardScreen extends StatefulWidget {
   const MeasurementDashboardScreen({super.key});
 
   @override
-    State<MeasurementDashboardScreen> createState() =>
-        _MeasurementDashboardScreenState();
-  }
+  State<MeasurementDashboardScreen> createState() =>
+      _MeasurementDashboardScreenState();
+}
 
-  class _MeasurementDashboardScreenState
-      extends State<MeasurementDashboardScreen> {
-      final FirebaseFirestore _db = FirebaseFirestore.instance;
+class _MeasurementDashboardScreenState
+    extends State<MeasurementDashboardScreen> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-      final List<_MeasurementDashboardPerson> _people = [];
-      _MeasurementDashboardPerson? _selectedPerson;
+  final List<_MeasurementDashboardPerson> _people = [];
+  _MeasurementDashboardPerson? _selectedPerson;
 
-      bool _loadingPeople = true;
-      bool _loadingDraft = false;
-      bool _loadingPersonMeasurements = false;
-      
+  bool _loadingPeople = true;
+  bool _loadingDraft = false;
+  bool _loadingPersonMeasurements = false;
+
   Map<String, dynamic>? _latestDraft;
   BodyMeasurements? _selectedPersonMeasurements;
   List<CustomerMeasurementRecord> _measurementHistory = const [];
-      
-    @override
+
+  @override
   void initState() {
     super.initState();
     _loadPeople();
@@ -64,12 +64,13 @@ class MeasurementDashboardScreen extends StatefulWidget {
       final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
 
       if (phone != null && phone.trim().isNotEmpty) {
-        final accountId =
-            await AppState.instance.fetchAccountIdForMobile(phone.trim());
+        final accountId = await AppState.instance.fetchAccountIdForMobile(
+          phone.trim(),
+        );
 
         if (accountId != null && accountId.isNotEmpty) {
-          final profiles =
-              await AppState.instance.fetchActiveProfilesForAccount(accountId);
+          final profiles = await AppState.instance
+              .fetchActiveProfilesForAccount(accountId);
 
           Map<String, dynamic>? customerProfile;
 
@@ -83,7 +84,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
 
           final customerProfileId =
               customerProfile?['profileId']?.toString() ??
-                  customerProfile?['docId']?.toString();
+              customerProfile?['docId']?.toString();
 
           if (customerProfileId != null &&
               customerProfileId.trim().isNotEmpty) {
@@ -195,87 +196,85 @@ class MeasurementDashboardScreen extends StatefulWidget {
   }
 
   Future<void> _loadLatestMeasurementDraft() async {
-      final person = _selectedPerson;
-
-      if (person == null) return;
-
-      setState(() {
-        _loadingDraft = true;
-        _latestDraft = null;
-      });
-
-      try {
-        final accountId = await _currentAccountId();
-
-        if (accountId == null || accountId.isEmpty) {
-          if (!mounted) return;
-          setState(() {
-            _loadingDraft = false;
-          });
-          return;
-        }
-
-        final snap = await _db
-            .collection('measurements')
-            .where('accountId', isEqualTo: accountId)
-            .where('personId', isEqualTo: person.id)
-            .get();
-
-        final activeDrafts = snap.docs
-            .map((doc) => {
-                  'id': doc.id,
-                  ...doc.data(),
-                })
-            .where((data) {
-                final status = (data['status'] ?? '').toString();
-                final source = (data['source'] ?? '').toString();
-
-                final isActiveMeasurementStatus = status == 'draft' ||
-                    status == 'ai_estimated' ||
-                    status == 'customer_review_required';
-
-                final isCurrentlyResumableSource = source == 'ai_camera';
-
-                return isActiveMeasurementStatus && isCurrentlyResumableSource;
-              })
-            .toList();
-
-        activeDrafts.sort((a, b) {
-          final aTime = a['updatedAt'];
-          final bTime = b['updatedAt'];
-
-          if (aTime is Timestamp && bTime is Timestamp) {
-            return bTime.compareTo(aTime);
-          }
-
-          return 0;
-        });
-
-        if (!mounted) return;
-
-        setState(() {
-          _latestDraft = activeDrafts.isEmpty ? null : activeDrafts.first;
-          _loadingDraft = false;
-        });
-      } catch (_) {
-        if (!mounted) return;
-
-        setState(() {
-          _loadingDraft = false;
-        });
-      }
-    }
-
-    Future<void> _loadLatestPersonMeasurements() async {
     final person = _selectedPerson;
 
     if (person == null) return;
 
-      setState(() {
-        _loadingPersonMeasurements = true;
-        _selectedPersonMeasurements = null;
-        _measurementHistory = const [];
+    setState(() {
+      _loadingDraft = true;
+      _latestDraft = null;
+    });
+
+    try {
+      final accountId = await _currentAccountId();
+
+      if (accountId == null || accountId.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _loadingDraft = false;
+        });
+        return;
+      }
+
+      final snap = await _db
+          .collection('measurements')
+          .where('accountId', isEqualTo: accountId)
+          .where('personId', isEqualTo: person.id)
+          .get();
+
+      final activeDrafts = snap.docs
+          .map((doc) => {'id': doc.id, ...doc.data()})
+          .where((data) {
+            final status = (data['status'] ?? '').toString();
+            final source = (data['source'] ?? '').toString();
+
+            final isActiveMeasurementStatus =
+                status == 'draft' ||
+                status == 'ai_estimated' ||
+                status == 'customer_review_required';
+
+            final isCurrentlyResumableSource = source == 'ai_camera';
+
+            return isActiveMeasurementStatus && isCurrentlyResumableSource;
+          })
+          .toList();
+
+      activeDrafts.sort((a, b) {
+        final aTime = a['updatedAt'];
+        final bTime = b['updatedAt'];
+
+        if (aTime is Timestamp && bTime is Timestamp) {
+          return bTime.compareTo(aTime);
+        }
+
+        return 0;
       });
+
+      if (!mounted) return;
+
+      setState(() {
+        _latestDraft = activeDrafts.isEmpty ? null : activeDrafts.first;
+        _loadingDraft = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+
+      setState(() {
+        _loadingDraft = false;
+      });
+    }
+  }
+
+  Future<void> _loadLatestPersonMeasurements() async {
+    final person = _selectedPerson;
+
+    if (person == null) return;
+
+    setState(() {
+      _loadingPersonMeasurements = true;
+      _selectedPersonMeasurements = null;
+      _measurementHistory = const [];
+    });
 
     try {
       final accountId = await _currentAccountId();
@@ -319,10 +318,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
           .get();
 
       final usableDocs = snap.docs
-          .map((doc) => {
-                'id': doc.id,
-                ...doc.data(),
-              })
+          .map((doc) => {'id': doc.id, ...doc.data()})
           .where((data) {
             final status = (data['status'] ?? '').toString();
 
@@ -355,8 +351,9 @@ class MeasurementDashboardScreen extends StatefulWidget {
         if (values is Map<String, dynamic>) {
           loadedMeasurements = _bodyMeasurementsFromValues(values);
         } else if (values is Map) {
-          loadedMeasurements =
-              _bodyMeasurementsFromValues(Map<String, dynamic>.from(values));
+          loadedMeasurements = _bodyMeasurementsFromValues(
+            Map<String, dynamic>.from(values),
+          );
         }
 
         if (loadedMeasurements != null) {
@@ -379,8 +376,9 @@ class MeasurementDashboardScreen extends StatefulWidget {
       });
     }
   }
-    @override
-    Widget build(BuildContext context) {
+
+  @override
+  Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: AppState.instance,
       builder: (context, _) {
@@ -417,49 +415,52 @@ class MeasurementDashboardScreen extends StatefulWidget {
                 _buildMeasurementDraftCard(context),
                 if (_latestDraft != null) const SizedBox(height: 20),
                 if (_loadingPersonMeasurements) ...[
-                    const LinearProgressIndicator(),
-                    const SizedBox(height: 20),
-                  ],
-                  if (measurements == null && _measurementHistory.isEmpty) ...[
-                    _buildNoMeasurementState(context),
-                    const SizedBox(height: 28),
-                  ] else if (measurements != null) ...[
-                    _buildMeasurementSummaryCard(measurements, unit),
-                    const SizedBox(height: 28),
-                    Text('Body Measurements', style: AppTextStyles.headlineMedium),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Last updated: Today · values shown in ${unit.abbrev} (with alternate)',
-                      style: AppTextStyles.bodySmall,
-                    ),
-                    const SizedBox(height: 16),
-                    _buildGrid(measurements, unit),
-                    const SizedBox(height: 28),
-                  ],
-                  if (_measurementHistory.isNotEmpty) ...[
-                    _buildMeasurementHistory(),
-                    const SizedBox(height: 24),
-                  ],
-                  PrimaryButton(
-                    label: 'Start New Measurement',
-                    icon: Icons.add_circle_outline_rounded,
-                    onTap: () async {
-                      final person = _selectedPerson;
-
-                      if (person == null) {
-                        await context.push('/measurement-context');
-                      } else {
-                        await context.push(
-                          '/measurement-context'
-                          '?clientName=${Uri.encodeComponent(person.name)}'
-                          '&personId=${Uri.encodeComponent(person.id)}'
-                          '&relationship=${Uri.encodeComponent(person.relationship)}',
-                        );
-                      }
-                      if (!mounted) return;
-                      await _loadLatestPersonMeasurements();
-                    },
+                  const LinearProgressIndicator(),
+                  const SizedBox(height: 20),
+                ],
+                if (measurements == null && _measurementHistory.isEmpty) ...[
+                  _buildNoMeasurementState(context),
+                  const SizedBox(height: 28),
+                ] else if (measurements != null) ...[
+                  _buildMeasurementSummaryCard(measurements, unit),
+                  const SizedBox(height: 28),
+                  Text(
+                    'Body Measurements',
+                    style: AppTextStyles.headlineMedium,
                   ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Last updated: Today · values shown in ${unit.abbrev} (with alternate)',
+                    style: AppTextStyles.bodySmall,
+                  ),
+                  const SizedBox(height: 16),
+                  _buildGrid(measurements, unit),
+                  const SizedBox(height: 28),
+                ],
+                if (_measurementHistory.isNotEmpty) ...[
+                  _buildMeasurementHistory(),
+                  const SizedBox(height: 24),
+                ],
+                PrimaryButton(
+                  label: 'Start New Measurement',
+                  icon: Icons.add_circle_outline_rounded,
+                  onTap: () async {
+                    final person = _selectedPerson;
+
+                    if (person == null) {
+                      await context.push('/measurement-context');
+                    } else {
+                      await context.push(
+                        '/measurement-context'
+                        '?clientName=${Uri.encodeComponent(person.name)}'
+                        '&personId=${Uri.encodeComponent(person.id)}'
+                        '&relationship=${Uri.encodeComponent(person.relationship)}',
+                      );
+                    }
+                    if (!mounted) return;
+                    await _loadLatestPersonMeasurements();
+                  },
+                ),
               ],
             ),
           ),
@@ -527,9 +528,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
         const SizedBox(height: 6),
         Text(
           'Measurements shown below belong to the selected person.',
-          style: AppTextStyles.bodySmall.copyWith(
-            color: AppColors.textHint,
-          ),
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
         ),
       ],
     );
@@ -561,7 +560,8 @@ class MeasurementDashboardScreen extends StatefulWidget {
         (draft['personName'] ?? _selectedPerson?.name ?? 'Selected Person')
             .toString();
     final relationship =
-        (draft['relationship'] ?? _selectedPerson?.relationship ?? '').toString();
+        (draft['relationship'] ?? _selectedPerson?.relationship ?? '')
+            .toString();
 
     final readableStatus = switch (status) {
       'ai_estimated' => 'AI Estimate Ready',
@@ -587,9 +587,7 @@ class MeasurementDashboardScreen extends StatefulWidget {
       decoration: BoxDecoration(
         color: AppColors.accent.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.accent.withValues(alpha: 0.28),
-        ),
+        border: Border.all(color: AppColors.accent.withValues(alpha: 0.28)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -621,16 +619,12 @@ class MeasurementDashboardScreen extends StatefulWidget {
           const SizedBox(height: 4),
           Text(
             'Source: $readableSource',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 4),
           Text(
             'Status: $readableStatus',
-            style: AppTextStyles.bodySmall.copyWith(
-              color: AppColors.textHint,
-            ),
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
           SecondaryButton(
@@ -651,12 +645,13 @@ class MeasurementDashboardScreen extends StatefulWidget {
     final source = (draft['source'] ?? '').toString();
     final status = (draft['status'] ?? '').toString();
 
-    final personId =
-        (draft['personId'] ?? _selectedPerson?.id ?? '').toString();
-    final personName =
-        (draft['personName'] ?? _selectedPerson?.name ?? '').toString();
+    final personId = (draft['personId'] ?? _selectedPerson?.id ?? '')
+        .toString();
+    final personName = (draft['personName'] ?? _selectedPerson?.name ?? '')
+        .toString();
     final relationship =
-        (draft['relationship'] ?? _selectedPerson?.relationship ?? '').toString();
+        (draft['relationship'] ?? _selectedPerson?.relationship ?? '')
+            .toString();
 
     if (draftId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -825,7 +820,10 @@ class MeasurementDashboardScreen extends StatefulWidget {
                       Text(
                         record.values.entries
                             .take(3)
-                            .map((entry) => '${_measurementLabel(entry.key)}: ${entry.value} ${record.unit}')
+                            .map(
+                              (entry) =>
+                                  '${_measurementLabel(entry.key)}: ${entry.value} ${record.unit}',
+                            )
                             .join('   ·   '),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
@@ -880,7 +878,9 @@ class MeasurementDashboardScreen extends StatefulWidget {
                     ),
                   ),
                 if (record.values.isEmpty)
-                  const Text('This saved garment reference has no measurement values.'),
+                  const Text(
+                    'This saved garment reference has no measurement values.',
+                  ),
                 if (record.note?.isNotEmpty == true) ...[
                   const SizedBox(height: 10),
                   Text(record.note!, style: AppTextStyles.bodySmall),
@@ -899,7 +899,10 @@ class MeasurementDashboardScreen extends StatefulWidget {
     );
   }
 
-  Widget _buildMeasurementSummaryCard(BodyMeasurements m, MeasurementUnit unit) {
+  Widget _buildMeasurementSummaryCard(
+    BodyMeasurements m,
+    MeasurementUnit unit,
+  ) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -941,8 +944,11 @@ class MeasurementDashboardScreen extends StatefulWidget {
                 ),
                 Text(
                   m.height != null
-                      ? MeasurementFormat.formatDual(m.height, unit,
-                          fractionDigits: 0)
+                      ? MeasurementFormat.formatDual(
+                          m.height,
+                          unit,
+                          fractionDigits: 0,
+                        )
                       : 'Height: —',
                   style: AppTextStyles.headlineMedium.copyWith(
                     color: Colors.white,
@@ -990,13 +996,28 @@ class MeasurementDashboardScreen extends StatefulWidget {
   Widget _buildGrid(BodyMeasurements m, MeasurementUnit unit) {
     final items = [
       ('Chest', m.chest, Icons.straighten_rounded, AppColors.primary),
-      ('Waist', m.waist, Icons.radio_button_unchecked, const Color(0xFFFF6B6B)),
+      ('Waist', m.waist, Icons.radio_button_unchecked, const Color(0xFFE84F8B)),
       ('Hips', m.hips, Icons.accessibility_rounded, const Color(0xFFF5A623)),
-      ('Shoulder', m.shoulder, Icons.width_wide_rounded, const Color(0xFF4CAF50)),
-      ('Arm Length', m.armLength, Icons.back_hand_outlined, AppColors.primaryDark),
+      (
+        'Shoulder',
+        m.shoulder,
+        Icons.width_wide_rounded,
+        const Color(0xFF4CAF50),
+      ),
+      (
+        'Arm Length',
+        m.armLength,
+        Icons.back_hand_outlined,
+        AppColors.primaryDark,
+      ),
       ('Height', m.height, Icons.height_rounded, const Color(0xFF9C27B0)),
       ('Neck', m.neck, Icons.circle_outlined, const Color(0xFF00BCD4)),
-      ('Thigh', m.thigh, Icons.airline_seat_legroom_normal, const Color(0xFFFF5722)),
+      (
+        'Thigh',
+        m.thigh,
+        Icons.airline_seat_legroom_normal,
+        const Color(0xFFFF5722),
+      ),
     ];
 
     return GridView.builder(
@@ -1035,10 +1056,8 @@ class _MeasurementDashboardPerson {
 String _formatMeasurementDate(DateTime date) =>
     '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
 
-String _measurementLabel(String key) => key.replaceFirst(
-      RegExp(r'^\s*\d+\s*[·.\-:]?\s*'),
-      '',
-    );
+String _measurementLabel(String key) =>
+    key.replaceFirst(RegExp(r'^\s*\d+\s*[·.\-:]?\s*'), '');
 
 String _measurementStatusLabel(CustomerMeasurementRecord record) {
   if (record.isCustomerReference) return 'Your reference';

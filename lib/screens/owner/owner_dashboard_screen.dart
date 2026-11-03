@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
@@ -21,6 +22,11 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   bool _loadingOrders = true;
   int _totalOrders = 0;
   int _pendingOrders = 0;
+  Map<String, int> _helpdeskStatusCounts = const {};
+  int _closedByHelpdeskThisMonth = 0;
+  int _closedByAdminThisMonth = 0;
+  bool _loadingHelpdeskOverview = true;
+  String? _helpdeskOverviewError;
 
   /// Rich enrollments (name + mobile + optional login email).
   List<Map<String, dynamic>> _tailorProfiles = [];
@@ -41,6 +47,61 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     super.initState();
     _loadOrders();
     _loadTailors();
+    _loadHelpdeskOverview();
+  }
+
+  Future<void> _loadHelpdeskOverview() async {
+    if (mounted) {
+      setState(() {
+        _loadingHelpdeskOverview = true;
+        _helpdeskOverviewError = null;
+      });
+    }
+    try {
+      final response = await FirebaseFunctions.instance
+          .httpsCallable('listHelpdeskOrders')
+          .call(<String, dynamic>{'limit': 1, 'includeAdminOverview': true});
+      final payload = Map<String, dynamic>.from(response.data as Map);
+      final overview = Map<String, dynamic>.from(
+        payload['adminOverview'] as Map? ?? const {},
+      );
+      final statuses = Map<String, dynamic>.from(
+        overview['statuses'] as Map? ?? const {},
+      );
+      if (!mounted) return;
+      setState(() {
+        _helpdeskStatusCounts = statuses.map(
+          (key, value) => MapEntry(key, (value as num?)?.toInt() ?? 0),
+        );
+        _closedByHelpdeskThisMonth =
+            (overview['closedByHelpdeskThisMonth'] as num?)?.toInt() ?? 0;
+        _closedByAdminThisMonth =
+            (overview['closedByAdminThisMonth'] as num?)?.toInt() ?? 0;
+        _loadingHelpdeskOverview = false;
+      });
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _loadingHelpdeskOverview = false;
+        _helpdeskOverviewError = switch (error.code) {
+          'permission-denied' =>
+            'Configured Admin access is required to view Helpdesk totals.',
+          'unauthenticated' =>
+            'Firebase could not verify your sign-in. Sign in again and retry.',
+          'not-found' =>
+            'The staging Helpdesk function is not deployed to this Firebase project.',
+          _ =>
+            'Helpdesk totals are not available (${error.code}). Check staging Function access and retry.',
+        };
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loadingHelpdeskOverview = false;
+        _helpdeskOverviewError =
+            'Helpdesk totals could not be loaded. Please retry.';
+      });
+    }
   }
 
   Future<void> _loadTailors() async {
@@ -107,16 +168,16 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         setState(() {
           _totalOrders = productionOrders.length;
           _pendingOrders = productionOrders
-              .where((order) => [
-                'searching',
-                'queued_for_dispatch',
-                'offered',
-                'needs_admin_follow_up',
-              ].contains(order.assignmentStatus))
+              .where(
+                (order) => [
+                  'searching',
+                  'queued_for_dispatch',
+                  'offered',
+                  'needs_admin_follow_up',
+                ].contains(order.assignmentStatus),
+              )
               .length;
-          _recentOrders = (productionOrders.isNotEmpty
-                  ? productionOrders
-                  : all)
+          _recentOrders = (productionOrders.isNotEmpty ? productionOrders : all)
               .take(3)
               .toList();
           _loadingOrders = false;
@@ -149,10 +210,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               ),
               const SizedBox(height: 24),
               _buildStatRow(),
-              const SizedBox(height: 28),
-              Text('Quick Actions', style: AppTextStyles.headlineMedium),
+              const SizedBox(height: 18),
+              _buildHelpdeskOverview(context),
+              const SizedBox(height: 26),
+              Text('Admin workspace', style: AppTextStyles.headlineMedium),
               const SizedBox(height: 16),
-              _buildActionGrid(context),
+              _buildActionGroups(context),
               const SizedBox(height: 28),
               Text('Recent Orders', style: AppTextStyles.headlineMedium),
               const SizedBox(height: 16),
@@ -160,6 +223,140 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildHelpdeskOverview(BuildContext context) {
+    const metrics = <(String, String, Color)>[
+      ('Open', 'Open', Color(0xFFE58A19)),
+      ('In progress', 'In Progress', Color(0xFF2878C8)),
+      ('Waiting customer', 'Waiting Customer', Color(0xFF7956A8)),
+      ('Escalated', 'Escalated', Color(0xFFD64A4A)),
+      ('Resolved', 'Resolved', Color(0xFF44946A)),
+      ('Closed', 'Closed', Color(0xFF697386)),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.support_agent_rounded, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Helpdesk overview',
+                  style: AppTextStyles.titleLarge,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh Helpdesk totals',
+                onPressed: _loadingHelpdeskOverview
+                    ? null
+                    : _loadHelpdeskOverview,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          ),
+          if (_loadingHelpdeskOverview)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_helpdeskOverviewError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Text(
+                _helpdeskOverviewError!,
+                style: AppTextStyles.bodySmall.copyWith(color: AppColors.error),
+              ),
+            )
+          else ...[
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final width = (constraints.maxWidth - 10) / 2;
+                return Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: metrics.map((metric) {
+                    return InkWell(
+                      onTap: () => context.push('/owner/support-requests'),
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        width: width,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: metric.$3.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Text(
+                              '${_helpdeskStatusCounts[metric.$2] ?? 0}',
+                              style: TextStyle(
+                                color: metric.$3,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                metric.$1,
+                                style: AppTextStyles.bodySmall,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Resolved / closed this month · Helpdesk: $_closedByHelpdeskThisMonth  |  Admin: $_closedByAdminThisMonth',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Role attribution starts with this rollout; earlier case closures are not included.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 12),
+          ],
+          Wrap(
+            spacing: 10,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => context.push('/owner/support-requests'),
+                icon: const Icon(Icons.inbox_outlined),
+                label: const Text('Open Helpdesk'),
+              ),
+              FilledButton.tonalIcon(
+                onPressed: () => context.push('/owner/customer-360'),
+                icon: const Icon(Icons.person_search_outlined),
+                label: const Text('Customer 360°'),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -705,145 +902,230 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     );
   }
 
-  Widget _buildActionGrid(BuildContext context) {
-    final actions = [
-      (
-        'Dress designs',
-        Icons.checkroom_outlined,
-        const Color(0xFFE91E63),
-        () => context.push('/owner/designs'),
-      ),
-      (
-        'Partner Catalogue Review',
-        Icons.rate_review_outlined,
-        const Color(0xFF673AB7),
-        () => context.push('/owner/catalogue'),
-      ),
-      (
-        'Customer Home Groups',
-        Icons.dashboard_customize_outlined,
-        const Color(0xFF009688),
-        () => context.push('/owner/customer-home'),
-      ),
-      (
-        'Manage Rates',
-        Icons.payments_rounded,
-        AppColors.primary,
-        () => context.push('/owner/rates'),
-      ),
-      (
-        'Payments & payouts',
-        Icons.account_balance_wallet_outlined,
-        const Color(0xFF795548),
-        () => context.push('/owner/payouts'),
-      ),
-      (
-        'Order Routing by PIN',
-        Icons.receipt_long_rounded,
-        const Color(0xFF4CAF50),
-        () => context.push('/owner/order-routing'),
-      ),
-      (
-        'Garment Care Pricing',
-        Icons.price_change_outlined,
-        const Color(0xFF8E44AD),
-        () => context.push('/owner/garment-care/pricing'),
-      ),
-      (
-        'Garment Care Completion Templates',
-        Icons.note_alt_outlined,
-        const Color(0xFF8E44AD),
-        () => context.push('/owner/garment-care/completion-templates'),
-      ),
-      (
-        'Garment Care Routing',
-        Icons.local_laundry_service_outlined,
-        const Color(0xFF8E44AD),
-        () => context.push('/owner/garment-care/routing'),
-      ),
-      (
-        'Support Requests',
-        Icons.support_agent_rounded,
-        const Color(0xFFAB47BC),
-        () => context.push('/owner/support-requests'),
-      ),
-      (
-        'Partner Applications',
-        Icons.assignment_outlined,
-        const Color(0xFFFF9800),
-        () => context.push('/owner/partner-applications'),
-      ),
-      (
-        'Add Fashion Partner',
-        Icons.person_add_rounded,
-        const Color(0xFF2196F3),
-        () => _showEnrollTailorDialog(context),
-      ),
-      (
-        'Delivery Partners',
-        Icons.delivery_dining_rounded,
-        const Color(0xFF00BCD4),
-        () => _showDeliveryPartnersSheet(context),
-      ),
-      (
-        'Delivery Settings',
-        Icons.tune_rounded,
-        const Color(0xFF9C27B0),
-        () => _showDeliverySettingsDialog(context),
-      ),
-    ];
+  Widget _buildActionGroups(BuildContext context) {
+    final groups =
+        <
+          ({
+            String title,
+            String summary,
+            IconData icon,
+            Color color,
+            List<(String, IconData, Color, VoidCallback)> actions,
+          })
+        >[
+          (
+            title: 'Customers & Helpdesk',
+            summary: 'Customer 360°, support cases and staff access',
+            icon: Icons.support_agent_rounded,
+            color: const Color(0xFFAB47BC),
+            actions: [
+              (
+                'Customer 360°',
+                Icons.person_search_outlined,
+                const Color(0xFFAB47BC),
+                () => context.push('/owner/customer-360'),
+              ),
+              (
+                'Support Requests',
+                Icons.inbox_outlined,
+                const Color(0xFFAB47BC),
+                () => context.push('/owner/support-requests'),
+              ),
+              (
+                'Helpdesk Access',
+                Icons.manage_accounts_outlined,
+                const Color(0xFFAB47BC),
+                () => context.push('/owner/support-access'),
+              ),
+            ],
+          ),
+          (
+            title: 'Partner Applications & Access',
+            summary: 'Review onboarding, partner activity and current work',
+            icon: Icons.assignment_outlined,
+            color: const Color(0xFFFF9800),
+            actions: [
+              (
+                'Partner Management',
+                Icons.groups_2_outlined,
+                const Color(0xFF00897B),
+                () => context.push('/owner/partner-management'),
+              ),
+              (
+                'Partner Applications',
+                Icons.assignment_outlined,
+                const Color(0xFFFF9800),
+                () => context.push('/owner/partner-applications'),
+              ),
+              (
+                'Partner Catalogue Review',
+                Icons.rate_review_outlined,
+                const Color(0xFF673AB7),
+                () => context.push('/owner/catalogue'),
+              ),
+              (
+                'Delivery Partners',
+                Icons.delivery_dining_rounded,
+                const Color(0xFF00BCD4),
+                () => _showDeliveryPartnersSheet(context),
+              ),
+            ],
+          ),
+          (
+            title: 'Rates & Payments',
+            summary: 'Service pricing, rates and partner payouts',
+            icon: Icons.payments_rounded,
+            color: AppColors.primary,
+            actions: [
+              (
+                'Manage Rates',
+                Icons.payments_rounded,
+                AppColors.primary,
+                () => context.push('/owner/rates'),
+              ),
+              (
+                'Garment Care Pricing',
+                Icons.price_change_outlined,
+                const Color(0xFF8E44AD),
+                () => context.push('/owner/garment-care/pricing'),
+              ),
+              (
+                'Payments & payouts',
+                Icons.account_balance_wallet_outlined,
+                const Color(0xFF795548),
+                () => context.push('/owner/payouts'),
+              ),
+            ],
+          ),
+          (
+            title: 'Orders & Routing',
+            summary: 'PIN-based assignment, service and delivery routing',
+            icon: Icons.route_outlined,
+            color: const Color(0xFF4CAF50),
+            actions: [
+              (
+                'Order Routing by PIN',
+                Icons.receipt_long_rounded,
+                const Color(0xFF4CAF50),
+                () => context.push('/owner/order-routing'),
+              ),
+              (
+                'Garment Care Routing',
+                Icons.local_laundry_service_outlined,
+                const Color(0xFF8E44AD),
+                () => context.push('/owner/garment-care/routing'),
+              ),
+              (
+                'Delivery Settings',
+                Icons.tune_rounded,
+                const Color(0xFF9C27B0),
+                () => _showDeliverySettingsDialog(context),
+              ),
+            ],
+          ),
+          (
+            title: 'Catalogue, Templates & Home',
+            summary: 'Designs, service templates and customer home groups',
+            icon: Icons.dashboard_customize_outlined,
+            color: const Color(0xFF009688),
+            actions: [
+              (
+                'Dress designs',
+                Icons.checkroom_outlined,
+                const Color(0xFFE91E63),
+                () => context.push('/owner/designs'),
+              ),
+              (
+                'Garment Care Templates',
+                Icons.note_alt_outlined,
+                const Color(0xFF8E44AD),
+                () => context.push('/owner/garment-care/completion-templates'),
+              ),
+              (
+                'Customer Home Groups',
+                Icons.dashboard_customize_outlined,
+                const Color(0xFF009688),
+                () => context.push('/owner/customer-home'),
+              ),
+            ],
+          ),
+        ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        // Taller cells: two-line labels (e.g. "Delivery Partners") were ~18px over limit at 1.6.
-        childAspectRatio: 1.32,
-      ),
-      itemCount: actions.length,
-      itemBuilder: (ctx, i) {
-        final a = actions[i];
-        return GestureDetector(
-          onTap: a.$4,
-          behavior: HitTestBehavior.opaque,
-          child: Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: a.$3.withValues(alpha: 0.08),
+    return Column(
+      children: [
+        for (final group in groups)
+          Card(
+            color: AppColors.surface,
+            margin: const EdgeInsets.only(bottom: 10),
+            shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: a.$3.withValues(alpha: 0.25)),
+              side: BorderSide(color: AppColors.divider),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
+            child: ExpansionTile(
+              leading: CircleAvatar(
+                backgroundColor: group.color.withValues(alpha: 0.1),
+                child: Icon(group.icon, color: group.color),
+              ),
+              title: Text(
+                group.title,
+                style: AppTextStyles.titleMedium.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              subtitle: Text(group.summary, style: AppTextStyles.bodySmall),
+              childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
               children: [
-                Icon(a.$2, color: a.$3, size: 26),
-                const SizedBox(height: 6),
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      a.$1,
-                      style: AppTextStyles.titleMedium.copyWith(
-                        color: a.$3,
-                        fontSize: 13,
-                        height: 1.2,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                GridView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 10,
+                    mainAxisSpacing: 10,
+                    childAspectRatio: 1.55,
                   ),
+                  itemCount: group.actions.length,
+                  itemBuilder: (context, index) =>
+                      _buildActionTile(group.actions[index]),
                 ),
               ],
             ),
           ),
-        );
-      },
+      ],
     );
   }
+
+  Widget _buildActionTile((String, IconData, Color, VoidCallback) action) =>
+      InkWell(
+        onTap: action.$4,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: action.$3.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: action.$3.withValues(alpha: 0.25)),
+          ),
+          child: Row(
+            children: [
+              Icon(action.$2, color: action.$3, size: 22),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  action.$1,
+                  style: AppTextStyles.titleMedium.copyWith(
+                    color: action.$3,
+                    fontSize: 12,
+                    height: 1.2,
+                  ),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
 
   Widget _buildRecentOrders() {
     if (_loadingOrders) {

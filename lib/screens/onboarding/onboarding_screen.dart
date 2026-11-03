@@ -36,18 +36,18 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     _OnboardPage(
       title: 'Perfect Fit,\nEvery Time',
       subtitle:
-          'Say goodbye to ill-fitting clothes. StitchSmart captures your exact body measurements using your phone camera.',
+          'Say goodbye to ill-fitting clothes. SuiSakhi captures your exact body measurements using your phone camera.',
       icon: Icons.camera_alt_rounded,
       color: AppColors.primary,
-      gradient: [Color(0xFF5C35E5), Color(0xFF8B6FF0)],
+      gradient: [Color(0xFFB70D5C), Color(0xFFE84F8B)],
     ),
     _OnboardPage(
       title: 'Kurti, Blouse,\nSuit & More',
       subtitle:
           'Browse hundreds of dress styles for ladies and gents. From everyday kurtis to grand sherwanis — we cover it all.',
       icon: Icons.checkroom_rounded,
-      color: Color(0xFFFF6B6B),
-      gradient: [Color(0xFFFF6B6B), Color(0xFFFF9B9B)],
+      color: Color(0xFFE84F8B),
+      gradient: [Color(0xFFE84F8B), Color(0xFFF69AB9)],
     ),
     _OnboardPage(
       title: 'Connect With\nYour Tailor',

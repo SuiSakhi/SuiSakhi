@@ -15,6 +15,7 @@ import '../profile/profile_selection_screen.dart';
 import 'measurement_partner_assignments_screen.dart';
 import 'garment_care_jobs_screen.dart';
 import 'store_product_management_screen.dart';
+import 'quickcare_jobs_screen.dart';
 
 class PartnerWorkspaceScreen extends StatefulWidget {
   const PartnerWorkspaceScreen({
@@ -190,6 +191,9 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
       case 'garment-care-jobs':
         await context.push('/partner/garment-care$_query');
         return;
+      case 'quick-care-jobs':
+        await context.push('/partner/quick-care$_query');
+        return;
       case 'measurement-assignments':
         await context.push('/partner/measurement/assignments$_query');
         return;
@@ -259,6 +263,14 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
             profile.partnerType == 'measurementPartner';
         if (profile.partnerType == 'garmentCare' && !widget.showAccountCenter) {
           return GarmentCareJobsScreen(
+            accountId: widget.accountId,
+            profileId: widget.partnerProfileId,
+            partnerName: profile.businessDisplayName,
+          );
+        }
+        if (profile.partnerType == 'doorstepServices' &&
+            !widget.showAccountCenter) {
+          return QuickCareJobsScreen(
             accountId: widget.accountId,
             profileId: widget.partnerProfileId,
             partnerName: profile.businessDisplayName,
