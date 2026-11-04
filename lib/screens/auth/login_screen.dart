@@ -1472,7 +1472,7 @@ class _LoginScreenState extends State<LoginScreen> {
         _phoneAuthModel.setLoading(false);
         return;
       }
-      if (!kPilotBypassAppPin) {
+      if (kAppPinEnabled) {
         final resetPin = _kPhoneAuthFlowModel.resetPinAfterOtp;
         final hasPin = await AppPinStore.hasPin(user.uid);
         if (resetPin || !hasPin) {

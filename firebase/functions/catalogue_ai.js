@@ -16,30 +16,35 @@ function imageApiUrl(projectId) {
 
 async function generateImage({ projectId, prompt, inputs }) {
   const imageParts = await Promise.all(inputs.map(async (input) => {
-    const optimized = await sharp(input.buffer)
+    let image = sharp(input.buffer)
       .rotate()
       .flatten({ background: "#ffffff" })
       .resize({
-        width: input.maxWidth || 1600,
-        height: input.maxHeight || 2000,
+        width: input.maxWidth || (input.preserveLineArt ? 2200 : 1600),
+        height: input.maxHeight || (input.preserveLineArt ? 2200 : 2000),
         fit: "inside",
         withoutEnlargement: true,
-      })
-      .jpeg({ quality: input.quality || 88, mozjpeg: true })
-      .toBuffer();
+      });
+    const optimized = input.preserveLineArt
+      ? await image.png({ compressionLevel: 9 }).toBuffer()
+      : await image.jpeg({ quality: input.quality || 88, mozjpeg: true }).toBuffer();
     return {
+      label: input.label || null,
       inlineData: {
-        mimeType: "image/jpeg",
+        mimeType: input.preserveLineArt ? "image/png" : "image/jpeg",
         data: optimized.toString("base64"),
       },
     };
   }));
+  const requestParts = [];
+  for (const imagePart of imageParts) {
+    if (imagePart.label) requestParts.push({ text: imagePart.label });
+    requestParts.push({ inlineData: imagePart.inlineData });
+  }
+  requestParts.push({ text: prompt });
   const contents = [{
     role: "user",
-    parts: [
-      ...imageParts,
-      { text: prompt },
-    ],
+    parts: requestParts,
   }];
   const auth = new GoogleAuth({
     scopes: ["https://www.googleapis.com/auth/cloud-platform"],
@@ -91,14 +96,76 @@ function reconstructionPrompt({ design, sourceType, targetType, candidateIndex }
   ].join(" ");
 }
 
-function fabricPreviewPrompt(viewType) {
-  const view = viewType === "back" ? "back" : "front";
+function fabricPreviewPrompt(viewType, design = {}) {
+  const isCombined = viewType === "combinedFrontBack";
+  const isSingleView = viewType === "singleView";
+  const view = isCombined
+    ? "combined front and back"
+    : ({
+      front: "front",
+      back: "back",
+      side: "side",
+      detail: "detail",
+    }[viewType] || "front");
+  const metadata = design.constructionMetadata || {};
+  const typeLabels = {
+    blouse: "blouse",
+    sareeBlouse: "saree blouse",
+    kurti: "kurti",
+    kurtaSet: "kurta set",
+    salwarSuit: "salwar suit",
+    anarkali: "Anarkali suit",
+    lehengaCholi: "lehenga choli",
+    gown: "gown",
+    coat: "coat",
+    topTunic: "top or tunic",
+    shirt: "shirt",
+    palazzoPant: "palazzo or trousers",
+    skirt: "skirt",
+    dress: "dress",
+    other: "women's garment",
+  };
+  const typeCodes = Array.isArray(design.garmentTypeCodes)
+    ? design.garmentTypeCodes
+    : [];
+  const garmentTypes = typeCodes
+    .map((code) => typeLabels[String(code)] || String(code))
+    .filter(Boolean);
+  const garmentType = garmentTypes[0] || metadata.dressType || "women's garment";
+  const title = String(design.title || "Untitled design").slice(0, 100);
+  const constructionDetails = [
+    metadata.silhouette && `silhouette: ${metadata.silhouette}`,
+    metadata.neckType && `neckline: ${metadata.neckType}`,
+    metadata.sleeveType && `sleeves: ${metadata.sleeveType}`,
+    metadata.lengthType && `length: ${metadata.lengthType}`,
+    metadata.complexity && `detail level: ${metadata.complexity}`,
+  ].filter(Boolean);
+  const isDetailedDesign = metadata.complexity === "high" ||
+    /blouse|embroider|lace|ornate|intricate/i.test(`${garmentType} ${title}`);
+  const targetViews = isCombined
+    ? "combined front and back views"
+    : isSingleView
+    ? "single approved garment view"
+    : `${view} view`;
   return [
-    `Create a customer fabric visualization for the supplied ${view} technical garment design.`,
-    "The first image is the approved monochrome design. The second image is the customer's fabric sample.",
-    "Apply the fabric's color, weave, and print only inside the garment panels. Preserve the exact garment silhouette, neckline, sleeve length, seams, darts, hems, panel boundaries, and proportions.",
-    "Keep the line drawing readable, do not invent garment details, and do not add a model, body, mannequin, text, or background objects.",
-    "Return one clean front or back flat on white. This is a visual approximation; it is not a tailoring or color-match guarantee.",
+    `Create one fabric visualization of the ${targetViews} of this exact women's ${garmentType}. Design title: ${title}.`,
+    constructionDetails.length
+      ? `Known construction details: ${constructionDetails.join(", ")}.`
+      : "Use the supplied drawing as the authority for all construction details.",
+    "Image 1 is the approved monochrome technical drawing and is the immutable garment template. Image 2 is only a fabric swatch; use it only to sample color, print, weave, and texture.",
+    ...(isCombined
+      ? [
+        "Image 1 is a single combined sheet with the FRONT garment panel on the left and the BACK garment panel on the right. Return both panels together in the same left/right arrangement.",
+        "Keep each panel's original position, orientation, crop, scale, silhouette, spacing, and visible construction details. Apply the fabric separately within the garment boundaries of both panels. Do not crop to one view, merge the garments, duplicate a panel, or omit either view.",
+      ]
+      : []),
+    "Do not substitute another garment, reinterpret the design, redraw its silhouette, or add views. Keep image 1's canvas, orientation, crop, garment scale, outline, proportions, neckline, armholes, sleeves, seams, darts, closures, hems, and panel boundaries in their exact positions.",
+    isDetailedDesign
+      ? "This design has dense or complex monochrome details. Preserve every visible contour, seam, embroidery/lace motif, cutwork mark, pleat, trim, and small line-art detail. Do not simplify, blur, cover, or replace the decorative linework; keep its dark strokes visible above the applied fabric."
+      : "Keep all visible technical linework crisp and visible above the applied fabric.",
+    "Apply the swatch only within the existing garment panels. Do not invent new panel shapes, ornaments, stitching, or garment parts. If a panel boundary or detail is unclear, leave that small area as the original monochrome line art instead of guessing.",
+    "Return one clean flat drawing on the same plain white background, without a model, body, mannequin, text, labels, or background objects.",
+    "This is a visual approximation, not a tailoring specification or color-match guarantee. The original approved monochrome drawing remains the tailor's construction reference.",
   ].join(" ");
 }
 
@@ -578,10 +645,51 @@ function createCatalogueAiFunctions({ functions, admin }) {
       }
       const versionRef = db.collection("designs").doc(designId).collection("versions").doc(versionId);
       const viewsSnapshot = await versionRef.collection("views").orderBy("displayOrder").get();
-      const views = viewsSnapshot.docs
+      const publishedViewDocs = viewsSnapshot.docs
+        .filter((doc) => doc.get("excludedFromVersion") !== true);
+      const approvedViews = publishedViewDocs
         .map((doc) => ({ id: doc.id, ...doc.data() }))
-        .filter((view) => ["front", "back"].includes(view.viewType));
-      if (!views.length) throw new functions.https.HttpsError("failed-precondition", "This design has no approved Front or Back views yet.");
+        .filter((view) => ["front", "back", "side", "detail", "combinedFrontBack", "singleView"].includes(view.viewType));
+      if (!publishedViewDocs.length) {
+        const versionSnapshot = await versionRef.get();
+        const legacyAsset = versionSnapshot.get("originalAsset");
+        if (legacyAsset && typeof legacyAsset.storagePath === "string" && legacyAsset.storagePath.trim()) {
+          approvedViews.push({
+            id: "legacy-single-view",
+            viewType: "singleView",
+            originalAsset: legacyAsset,
+            displayOrder: 1,
+          });
+        }
+      }
+      const previewableViews = approvedViews.filter((view) =>
+        typeof (view.originalAsset && view.originalAsset.storagePath) === "string" &&
+        view.originalAsset.storagePath.trim()
+      );
+      if (!previewableViews.length) {
+        if (approvedViews.length) {
+          throw new functions.https.HttpsError("failed-precondition", "The approved design view is missing its original image. Ask an Admin to review the catalogue entry.");
+        }
+        throw new functions.https.HttpsError("failed-precondition", "This design has no approved Front, Back, Side, Detail, Combined Front + Back, or Single View image yet.");
+      }
+      const frontViews = previewableViews.filter((view) => view.viewType === "front");
+      const backViews = previewableViews.filter((view) => view.viewType === "back");
+      const combinedViews = previewableViews.filter((view) => view.viewType === "combinedFrontBack");
+      const singleViews = previewableViews.filter((view) => view.viewType === "singleView");
+      const supplementaryViews = previewableViews.filter((view) =>
+        view.viewType === "side" || view.viewType === "detail"
+      );
+      // Prefer a complete separate pair. If only one separate side is published,
+      // use the combined sheet when available so the customer still sees both.
+      const primaryViews = frontViews.length && backViews.length
+        ? [...frontViews, ...backViews]
+        : combinedViews.length
+        ? combinedViews
+        : frontViews.length || backViews.length
+        ? [...frontViews, ...backViews]
+        : singleViews;
+      const views = [...primaryViews, ...supplementaryViews];
+      if (!primaryViews.length) throw new functions.https.HttpsError("failed-precondition", "This design has no approved Front, Back, Combined Front + Back, or Single View image yet.");
       const fabricBuffer = Buffer.from(encoded, "base64");
       if (!fabricBuffer.length || fabricBuffer.length > 5 * 1024 * 1024) {
         throw new functions.https.HttpsError("invalid-argument", "Fabric sample image must be smaller than 5 MB.");
@@ -590,14 +698,25 @@ function createCatalogueAiFunctions({ functions, admin }) {
       const previews = [];
       for (const view of views) {
         const path = view.originalAsset && view.originalAsset.storagePath;
-        if (!path) continue;
         const [designBuffer] = await bucket.file(path).download();
         const generated = await generateImage({
           projectId,
-          prompt: fabricPreviewPrompt(view.viewType),
+          prompt: fabricPreviewPrompt(view.viewType, design),
           inputs: [
-            { buffer: designBuffer, mimeType: view.originalAsset.mimeType || "image/png", quality: 94 },
-            { buffer: fabricBuffer, mimeType, maxWidth: 1200, maxHeight: 1200, quality: 86 },
+            {
+              buffer: designBuffer,
+              mimeType: view.originalAsset.mimeType || "image/png",
+              label: "IMAGE 1 — approved monochrome tailoring reference; preserve this drawing exactly.",
+              preserveLineArt: true,
+            },
+            {
+              buffer: fabricBuffer,
+              mimeType,
+              label: "IMAGE 2 — customer fabric sample; use only its material appearance.",
+              maxWidth: 1200,
+              maxHeight: 1200,
+              quality: 90,
+            },
           ],
         });
         const compressed = await sharp(generated.buffer)

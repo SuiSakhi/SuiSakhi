@@ -115,6 +115,11 @@ class _WishlistDesignTile extends StatelessWidget {
               .whereType<Map>()
               .map((preview) => Map<String, dynamic>.from(preview))
               .toList(growable: false);
+      final catalogueViews =
+          (data['catalogueViews'] as List<dynamic>? ?? const [])
+              .whereType<Map>()
+              .map((view) => Map<String, dynamic>.from(view))
+              .toList(growable: false);
       final catalogueImage = data['catalogueImage']?.toString() ?? '';
       final fabricPhoto = data['fabricPhoto']?.toString() ?? '';
       final thumbnail = preview.isNotEmpty ? preview : catalogueImage;
@@ -162,6 +167,8 @@ class _WishlistDesignTile extends StatelessWidget {
                   title: title,
                   previewUrl: preview,
                   previewViews: fabricPreviews,
+                  catalogueViews: catalogueViews,
+                  catalogueImage: catalogueImage,
                   fabricUrl: fabricPhoto,
                   versionId: versionId,
                 )
@@ -179,6 +186,7 @@ class _WishlistDesignTile extends StatelessWidget {
         .doc(designId)
         .get();
     var catalogueImage = '';
+    var catalogueViews = <Map<String, dynamic>>[];
     var title = 'Saved design';
     var published = false;
     if (document.exists) {
@@ -214,8 +222,26 @@ class _WishlistDesignTile extends StatelessWidget {
                 (primary.isEmpty ? views.first : primary.first)
                     .bestPreviewUrl ??
                 '';
+            catalogueViews = views
+                .where((view) => view.bestPreviewUrl?.trim().isNotEmpty == true)
+                .map(
+                  (view) => <String, dynamic>{
+                    'url': view.bestPreviewUrl!.trim(),
+                    'viewType': view.viewType.name,
+                  },
+                )
+                .toList(growable: false);
           } else {
             catalogueImage = version.legacyView?.bestPreviewUrl ?? '';
+            final legacyView = version.legacyView;
+            if (legacyView?.bestPreviewUrl?.trim().isNotEmpty == true) {
+              catalogueViews = [
+                {
+                  'url': legacyView!.bestPreviewUrl!.trim(),
+                  'viewType': legacyView.viewType.name,
+                },
+              ];
+            }
           }
         }
       }
@@ -241,6 +267,7 @@ class _WishlistDesignTile extends StatelessWidget {
       'title': title,
       'published': published,
       'catalogueImage': catalogueImage,
+      'catalogueViews': catalogueViews,
       'fabricPreviews': downloadedPreviews,
       'fabricPreview': downloadedPreviews.isEmpty
           ? ''
@@ -264,10 +291,21 @@ class _WishlistDesignTile extends StatelessWidget {
     required String title,
     required String previewUrl,
     required List<Map<String, dynamic>> previewViews,
+    required List<Map<String, dynamic>> catalogueViews,
+    required String catalogueImage,
     required String fabricUrl,
     required String versionId,
   }) {
     final references = <({String label, String url})>[
+      for (final view in catalogueViews)
+        if (view['url']?.toString().isNotEmpty == true)
+          (
+            label:
+                'Original monochrome tailoring reference · ${_viewLabel(view['viewType']?.toString())}',
+            url: view['url'].toString(),
+          ),
+      if (catalogueViews.isEmpty && catalogueImage.isNotEmpty)
+        (label: 'Original monochrome tailoring reference', url: catalogueImage),
       for (final preview in previewViews)
         if (preview['url']?.toString().isNotEmpty == true)
           (
@@ -300,7 +338,7 @@ class _WishlistDesignTile extends StatelessWidget {
                   Text('Saved catalogue version $versionId'),
                   const SizedBox(height: 4),
                   const Text(
-                    'Your saved fabric comparison is available here as a design reference.',
+                    'The original monochrome design remains the tailor reference. Fabric previews are visual comparisons.',
                   ),
                 ],
               ),
@@ -327,7 +365,7 @@ class _WishlistDesignTile extends StatelessWidget {
                         const Padding(
                           padding: EdgeInsets.only(top: 8),
                           child: Text(
-                            'Swipe to compare front, back and fabric photo',
+                            'Swipe to compare the original design, fabric previews and fabric photo',
                           ),
                         ),
                     ],
@@ -342,8 +380,6 @@ class _WishlistDesignTile extends StatelessWidget {
   }
 
   String _viewLabel(String? viewType) {
-    final normalized = (viewType ?? '').trim().toLowerCase();
-    if (normalized.isEmpty) return 'AI preview';
-    return '${normalized[0].toUpperCase()}${normalized.substring(1)} view';
+    return customerFabricPreviewViewLabel(viewType);
   }
 }

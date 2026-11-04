@@ -87,6 +87,9 @@ class _CatalogueFabricPreviewButtonState
       if (previews.isEmpty) {
         throw StateError('The preview service returned no images.');
       }
+      final hasCombinedView = previews.any(
+        (preview) => preview['viewType'] == 'combinedFrontBack',
+      );
       final selectedPreviews = await showDialog<List<CustomerFabricViewPreview>>(
         context: context,
         builder: (dialogContext) {
@@ -115,7 +118,11 @@ class _CatalogueFabricPreviewButtonState
                               ),
                             ),
                             const SizedBox(height: 8),
-                            Text('${preview['viewType'] ?? 'Garment'} view'),
+                            Text(
+                              customerFabricPreviewViewLabel(
+                                preview['viewType']?.toString(),
+                              ),
+                            ),
                           ],
                         );
                       },
@@ -123,8 +130,10 @@ class _CatalogueFabricPreviewButtonState
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    previews.length > 1
-                        ? 'Swipe through all views. Front and Back will both be saved with your fabric comparison.'
+                    hasCombinedView
+                        ? 'The combined preview includes both the published Front and Back views. All shown previews will be saved; the original monochrome design remains the tailoring reference.'
+                        : previews.length > 1
+                        ? 'Swipe through the generated views. All shown previews will be saved with your fabric comparison.'
                         : 'AI visual approximation only. The original monochrome design remains the tailoring reference.',
                     style: const TextStyle(fontSize: 12),
                     textAlign: TextAlign.center,
@@ -153,8 +162,12 @@ class _CatalogueFabricPreviewButtonState
                       .toList(growable: false),
                 ),
                 icon: const Icon(Icons.check_rounded),
-                label: Text(
-                  previews.length > 1 ? 'Use Front & Back' : 'Use this preview',
+                  label: Text(
+                    hasCombinedView
+                        ? 'Use Combined Preview'
+                        : previews.length > 1
+                        ? 'Use All Previews'
+                      : 'Use this preview',
                 ),
               ),
             ],

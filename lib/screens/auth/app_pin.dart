@@ -11,11 +11,9 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/router_keys.dart';
 
-/// Enable only for pilot builds that should use Firebase OTP without a local PIN.
-/// Production/default builds keep the PIN flow enabled.
-const bool kPilotBypassAppPin = bool.fromEnvironment(
-  'SUISAKHI_PILOT_BYPASS_PIN',
-);
+/// App access is managed by the persistent Firebase sign-in session.
+/// OTP is required after sign-out or when authenticating on another device.
+const bool kAppPinEnabled = false;
 
 class AppPinStore {
   AppPinStore._();
@@ -452,7 +450,7 @@ class _PinLockGateState extends State<PinLockGate> with WidgetsBindingObserver {
     final isInitial = !_receivedInitialAuthState;
     _receivedInitialAuthState = true;
 
-    if (kPilotBypassAppPin) {
+    if (!kAppPinEnabled) {
       if (mounted) setState(() => _lockedUid = null);
       return;
     }
@@ -488,7 +486,7 @@ class _PinLockGateState extends State<PinLockGate> with WidgetsBindingObserver {
   }
 
   Future<void> _lockWhenBackgrounded() async {
-    if (kPilotBypassAppPin) return;
+    if (!kAppPinEnabled) return;
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || user.phoneNumber == null) return;
     if (!await AppPinStore.hasPin(user.uid) || !mounted) return;
@@ -522,7 +520,7 @@ class _PinLockGateState extends State<PinLockGate> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    if (kPilotBypassAppPin) return widget.child;
+    if (!kAppPinEnabled) return widget.child;
     return Stack(
       fit: StackFit.expand,
       children: [

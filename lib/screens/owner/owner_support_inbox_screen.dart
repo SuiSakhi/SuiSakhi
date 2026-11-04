@@ -131,10 +131,18 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
       leading: IconButton(
         tooltip: 'Back',
         onPressed: () {
+          // Helpdesk staff enter this route with go('/support') after
+          // workspace selection, so there is no useful route beneath it.
+          // Popping can reopen LoginScreen, which restores the same saved
+          // Helpdesk destination and sends the user straight back here.
+          if (GoRouterState.of(context).uri.path == '/support') {
+            context.go('/home');
+            return;
+          }
           if (context.canPop()) {
             context.pop();
           } else {
-            context.go('/');
+            context.go('/owner');
           }
         },
         icon: const Icon(Icons.arrow_back_rounded),

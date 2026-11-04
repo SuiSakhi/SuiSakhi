@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/catalogue_design.dart';
 import '../../models/catalogue_design_view.dart';
+import '../../models/customer_design.dart';
 import '../../services/catalogue_design_service.dart';
+import '../../services/customer_design_service.dart';
 import '../../services/customer_fabric_asset_service.dart';
 import '../../services/customer_wishlist_service.dart';
 import '../../widgets/catalogue/catalogue_fabric_preview_button.dart';
@@ -21,6 +24,44 @@ class SmartStyleIdeasScreen extends StatefulWidget {
 class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
   String _query = '';
   String _filter = 'all';
+  String? _categoryFilter;
+  bool _showUploads = false;
+
+  late final Future<_CustomerUploadSource?> _uploadSourceFuture =
+      _resolveCustomerUploadSource();
+
+  static const _categories = <_SmartStyleCategory>[
+    _SmartStyleCategory('blouse', 'Blouse', {'blouse', 'saree blouse'}),
+    _SmartStyleCategory('coat', 'Coat', {'coat'}),
+    _SmartStyleCategory('kurti', 'Kurti', {'kurti'}),
+    _SmartStyleCategory('kurtaSet', 'Kurta Set', {'kurta set'}),
+    _SmartStyleCategory('salwarSuit', 'Salwar Suit', {'salwar suit'}),
+    _SmartStyleCategory('anarkali', 'Anarkali Suit', {
+      'anarkali',
+      'anarkali suit',
+    }),
+    _SmartStyleCategory('lehengaCholi', 'Lehenga Choli', {'lehenga choli'}),
+    _SmartStyleCategory('gown', 'Gown', {'gown'}),
+    _SmartStyleCategory('topTunic', 'Top / Tunic', {
+      'top tunic',
+      'top',
+      'tunic',
+    }),
+    _SmartStyleCategory('shirt', 'Shirt', {'shirt'}),
+    _SmartStyleCategory('palazzoPant', 'Palazzo / Pant', {
+      'palazzo pant',
+      'palazzo',
+      'pant',
+      'trousers',
+    }),
+    _SmartStyleCategory('skirt', 'Skirt', {'skirt'}),
+    _SmartStyleCategory('dress', 'Dress / One Piece', {
+      'dress',
+      'one piece',
+      'dress one piece',
+    }),
+    _SmartStyleCategory('other', 'Other', {'other'}),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -48,12 +89,16 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Browse, preview and save your favourites.',
+                  _showUploads
+                      ? 'Your private tailor references.'
+                      : 'Browse, preview and save your favourites.',
                   style: AppTextStyles.titleMedium,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Try your fabric on an approved design. Browsing is free; a paid design charge applies only when you place a stitching order.',
+                  _showUploads
+                      ? 'Your uploads stay private to your account and can be used as references for your tailor.'
+                      : 'Try your fabric on an approved design. Browsing is free; a paid design charge applies only when you place a stitching order.',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.textHint,
                     height: 1.35,
@@ -63,7 +108,9 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
                 TextField(
                   onChanged: (value) => setState(() => _query = value.trim()),
                   decoration: InputDecoration(
-                    hintText: 'Search designs',
+                    hintText: _showUploads
+                        ? 'Search your uploads'
+                        : 'Search designs',
                     prefixIcon: const Icon(Icons.search_rounded),
                     filled: true,
                     fillColor: AppColors.surface,
@@ -74,67 +121,38 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
                   ),
                 ),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  children: [
+                _horizontalChips([
+                  _sourceChip(false, 'Catalogue'),
+                  _sourceChip(true, 'My uploads'),
+                ]),
+                if (!_showUploads) ...[
+                  const SizedBox(height: 6),
+                  _horizontalChips([
                     _filterChip('all', 'All designs'),
                     _filterChip('free', 'Free'),
                     _filterChip('paid', 'Paid'),
-                  ],
-                ),
+                  ]),
+                ],
+                const SizedBox(height: 6),
+                _horizontalChips([
+                  ChoiceChip(
+                    label: const Text('All categories'),
+                    selected: _categoryFilter == null,
+                    onSelected: (_) => setState(() => _categoryFilter = null),
+                  ),
+                  for (final category in _categories)
+                    ChoiceChip(
+                      label: Text(category.label),
+                      selected: _categoryFilter == category.code,
+                      onSelected: (_) =>
+                          setState(() => _categoryFilter = category.code),
+                    ),
+                ]),
               ],
             ),
           ),
           Expanded(
-            child: StreamBuilder<List<CatalogueDesign>>(
-              stream: CatalogueDesignService.watchPublishedDesigns(),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return const Center(
-                    child: Text('Could not load the design catalogue.'),
-                  );
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
-                final designs =
-                    snapshot.data!
-                        .where(_matchesFilter)
-                        .where(_matchesSearch)
-                        .toList()
-                      ..sort((a, b) => a.title.compareTo(b.title));
-                if (designs.isEmpty) {
-                  return Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Text(
-                        _query.isEmpty
-                            ? 'No approved designs are available yet.'
-                            : 'No designs match your search.',
-                        textAlign: TextAlign.center,
-                        style: AppTextStyles.bodyMedium.copyWith(
-                          color: AppColors.textHint,
-                        ),
-                      ),
-                    ),
-                  );
-                }
-                return GridView.builder(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                    childAspectRatio: 0.66,
-                  ),
-                  itemCount: designs.length,
-                  itemBuilder: (context, index) => _SmartStyleDesignCard(
-                    design: designs[index],
-                    onTap: () => _openDesign(designs[index]),
-                  ),
-                );
-              },
-            ),
+            child: _showUploads ? _buildCustomerUploads() : _buildCatalogue(),
           ),
         ],
       ),
@@ -147,6 +165,159 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
     onSelected: (_) => setState(() => _filter = value),
   );
 
+  Widget _sourceChip(bool uploads, String label) => ChoiceChip(
+    label: Text(label),
+    selected: _showUploads == uploads,
+    onSelected: (_) => setState(() {
+      _showUploads = uploads;
+      _filter = 'all';
+    }),
+  );
+
+  Widget _horizontalChips(List<Widget> chips) => SingleChildScrollView(
+    scrollDirection: Axis.horizontal,
+    child: Row(
+      children: [
+        for (var index = 0; index < chips.length; index++) ...[
+          if (index > 0) const SizedBox(width: 8),
+          chips[index],
+        ],
+      ],
+    ),
+  );
+
+  Widget _buildCatalogue() => StreamBuilder<List<CatalogueDesign>>(
+    stream: CatalogueDesignService.watchPublishedDesigns(),
+    builder: (context, snapshot) {
+      if (snapshot.hasError) {
+        return const Center(
+          child: Text('Could not load the design catalogue.'),
+        );
+      }
+      if (!snapshot.hasData) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final designs =
+          snapshot.data!
+              .where(_matchesFilter)
+              .where(_matchesCategory)
+              .where(_matchesSearch)
+              .toList()
+            ..sort((a, b) => a.title.compareTo(b.title));
+      if (designs.isEmpty) {
+        return _emptyMessage(
+          _query.isEmpty
+              ? 'No approved designs are available for this selection yet.'
+              : 'No designs match your search.',
+        );
+      }
+      return GridView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 2,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 12,
+          childAspectRatio: 0.66,
+        ),
+        itemCount: designs.length,
+        itemBuilder: (context, index) => _SmartStyleDesignCard(
+          design: designs[index],
+          onTap: () => _openDesign(designs[index]),
+        ),
+      );
+    },
+  );
+
+  Widget _buildCustomerUploads() => FutureBuilder<_CustomerUploadSource?>(
+    future: _uploadSourceFuture,
+    builder: (context, sourceSnapshot) {
+      if (sourceSnapshot.connectionState == ConnectionState.waiting) {
+        return const Center(child: CircularProgressIndicator());
+      }
+      final source = sourceSnapshot.data;
+      if (source == null) {
+        return _emptyMessage(
+          'Sign in with your customer account to see your uploaded designs.',
+        );
+      }
+      return StreamBuilder<List<CustomerDesign>>(
+        stream: source.designs,
+        builder: (context, snapshot) {
+          if (snapshot.hasError) {
+            return _emptyMessage('Could not load your uploaded designs.');
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          final designs = snapshot.data!
+              .where(_matchesUploadCategory)
+              .where(_matchesUploadSearch)
+              .toList(growable: false);
+          if (designs.isEmpty) {
+            return _emptyMessage(
+              _query.isEmpty
+                  ? 'No uploaded designs match this category yet. Your existing uploads will appear here.'
+                  : 'No uploads match your search.',
+            );
+          }
+          return GridView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              childAspectRatio: 0.66,
+            ),
+            itemCount: designs.length,
+            itemBuilder: (context, index) => _CustomerUploadCard(
+              design: designs[index],
+              onTap: () => _openCustomerUpload(designs[index]),
+            ),
+          );
+        },
+      );
+    },
+  );
+
+  Widget _emptyMessage(String message) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Text(
+        message,
+        textAlign: TextAlign.center,
+        style: AppTextStyles.bodyMedium.copyWith(color: AppColors.textHint),
+      ),
+    ),
+  );
+
+  Future<_CustomerUploadSource?> _resolveCustomerUploadSource() async {
+    final phone = FirebaseAuth.instance.currentUser?.phoneNumber?.trim() ?? '';
+    if (phone.isEmpty) return null;
+    final accountId = await AppState.instance.fetchAccountIdForMobile(phone);
+    if (accountId == null || accountId.isEmpty) return null;
+    final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+      accountId,
+    );
+    Map<String, dynamic>? customerProfile;
+    for (final profile in profiles) {
+      if ((profile['role'] ?? '').toString() == 'customer') {
+        customerProfile = profile;
+        break;
+      }
+    }
+    final profileIdValue = customerProfile?['profileId']?.toString().trim();
+    final profileId = profileIdValue?.isNotEmpty == true
+        ? profileIdValue
+        : customerProfile?['docId']?.toString().trim();
+    if (profileId == null || profileId.isEmpty) return null;
+    return _CustomerUploadSource(
+      designs: CustomerDesignService.watchActiveDesigns(
+        accountId: accountId,
+        profileId: profileId,
+      ),
+    );
+  }
+
   bool _matchesFilter(CatalogueDesign design) {
     final type = design.commercial.commercialType;
     return switch (_filter) {
@@ -157,6 +328,35 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
       _ => true,
     };
   }
+
+  bool _matchesCategory(CatalogueDesign design) {
+    final category = _selectedCategory;
+    if (category == null) return true;
+    final codes = design.garmentTypeCodes.map(_normalizeCategory).toSet();
+    if (category.code == 'other' && codes.isEmpty) return true;
+    return category.values.map(_normalizeCategory).any(codes.contains);
+  }
+
+  bool _matchesUploadCategory(CustomerDesign design) {
+    final category = _selectedCategory;
+    if (category == null) return true;
+    final dressType = _normalizeCategory(design.dressType);
+    if (category.code == 'other' && dressType.isEmpty) return true;
+    return category.values.map(_normalizeCategory).contains(dressType) ||
+        _normalizeCategory(category.code) == dressType;
+  }
+
+  _SmartStyleCategory? get _selectedCategory {
+    final code = _categoryFilter;
+    if (code == null) return null;
+    for (final category in _categories) {
+      if (category.code == code) return category;
+    }
+    return null;
+  }
+
+  String _normalizeCategory(String value) =>
+      value.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
 
   bool _matchesSearch(CatalogueDesign design) {
     final query = _query.toLowerCase();
@@ -169,6 +369,66 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
       ...design.styleCodes,
     ].join(' ').toLowerCase();
     return searchable.contains(query);
+  }
+
+  bool _matchesUploadSearch(CustomerDesign design) {
+    final query = _query.toLowerCase();
+    return query.isEmpty ||
+        '${design.title} ${design.dressType} ${design.notes ?? ''}'
+            .toLowerCase()
+            .contains(query);
+  }
+
+  Future<void> _openCustomerUpload(CustomerDesign design) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: true,
+      backgroundColor: AppColors.surface,
+      builder: (sheetContext) => Padding(
+        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(design.title, style: AppTextStyles.headlineMedium),
+              const SizedBox(height: 4),
+              Text(
+                '${design.dressType} · Your private upload',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(height: 14),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: Image.network(
+                  design.imageUrl,
+                  height: 360,
+                  fit: BoxFit.contain,
+                  errorBuilder: (_, _, _) => const SizedBox(
+                    height: 220,
+                    child: Center(child: Icon(Icons.broken_image_outlined)),
+                  ),
+                ),
+              ),
+              if (design.notes?.trim().isNotEmpty == true) ...[
+                const SizedBox(height: 12),
+                Text(design.notes!, style: AppTextStyles.bodyMedium),
+              ],
+              const SizedBox(height: 12),
+              Text(
+                'This upload remains your original tailor reference. Fabric AI preview is available for approved catalogue designs.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _openDesign(CatalogueDesign design) async {
@@ -230,7 +490,7 @@ class _SmartStyleIdeasScreenState extends State<SmartStyleIdeasScreen> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Swipe to view the published front and back. The original catalogue design stays unchanged as the Tailor reference.',
+                  'Swipe to view the published views. Compare any AI fabric preview with the original monochrome drawing; that original stays the Tailor reference.',
                   textAlign: TextAlign.center,
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.textHint,
@@ -408,7 +668,7 @@ class _FabricComparisonCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text('${preview.viewType} view'),
+                    Text(customerFabricPreviewViewLabel(preview.viewType)),
                   ],
                 );
               },
@@ -530,6 +790,92 @@ class _SmartStyleDesignCardState extends State<_SmartStyleDesignCard> {
         ),
       );
     },
+  );
+}
+
+class _SmartStyleCategory {
+  const _SmartStyleCategory(this.code, this.label, this.values);
+
+  final String code;
+  final String label;
+  final Set<String> values;
+}
+
+class _CustomerUploadSource {
+  const _CustomerUploadSource({required this.designs});
+
+  final Stream<List<CustomerDesign>> designs;
+}
+
+class _CustomerUploadCard extends StatelessWidget {
+  const _CustomerUploadCard({required this.design, required this.onTap});
+
+  final CustomerDesign design;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => Material(
+    color: AppColors.surface,
+    borderRadius: BorderRadius.circular(16),
+    clipBehavior: Clip.antiAlias,
+    child: InkWell(
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: design.imageUrl.trim().isEmpty
+                ? const ColoredBox(
+                    color: AppColors.surfaceVariant,
+                    child: Center(child: Icon(Icons.image_outlined, size: 42)),
+                  )
+                : Image.network(
+                    design.thumbnailUrl?.trim().isNotEmpty == true
+                        ? design.thumbnailUrl!.trim()
+                        : design.imageUrl,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) => const ColoredBox(
+                      color: AppColors.surfaceVariant,
+                      child: Center(
+                        child: Icon(Icons.broken_image_outlined, size: 42),
+                      ),
+                    ),
+                  ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  design.title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.titleMedium,
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  design.dressType,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.labelMedium.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Private tailor reference',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
   );
 }
 

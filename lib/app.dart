@@ -3,7 +3,6 @@ import 'package:go_router/go_router.dart';
 import 'core/router_keys.dart';
 import 'core/theme/app_theme.dart';
 import 'screens/auth/login_screen.dart';
-import 'screens/auth/app_pin.dart';
 import 'screens/profile/profile_selection_screen.dart';
 import 'screens/profile/customer_account_center_screen.dart';
 import 'screens/profile/customer_orders_hub_screen.dart';
@@ -100,8 +99,6 @@ class SuiSakhiApp extends StatelessWidget {
       title: 'SuiSakhi',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      builder: (context, child) =>
-          PinLockGate(child: child ?? const SizedBox.shrink()),
       routerConfig: _router,
     );
   }

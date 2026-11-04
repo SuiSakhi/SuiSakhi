@@ -3,6 +3,29 @@ import 'dart:typed_data';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 
+String customerFabricPreviewViewLabel(String? viewType) {
+  switch ((viewType ?? '').trim()) {
+    case 'front':
+      return 'Front view';
+    case 'back':
+      return 'Back view';
+    case 'combinedFrontBack':
+      return 'Combined Front + Back';
+    case 'singleView':
+      return 'Single design view';
+    default:
+      final normalized = (viewType ?? '').trim();
+      if (normalized.isEmpty) return 'AI preview';
+      final label = normalized
+          .replaceAllMapped(
+            RegExp(r'([a-z])([A-Z])'),
+            (match) => '${match[1]} ${match[2]}',
+          )
+          .replaceAll('_', ' ');
+      return '${label[0].toUpperCase()}${label.substring(1)} view';
+  }
+}
+
 class CustomerFabricPreviewSelection {
   const CustomerFabricPreviewSelection({
     required this.fabricPhoto,
@@ -152,7 +175,8 @@ class CustomerFabricAssetService {
     if (photoPath.isEmpty && previews.isEmpty) {
       throw StateError('The saved Wishlist item has no fabric references.');
     }
-    final wishlistItemId = savedAssets['wishlistItemId']?.toString().trim() ?? '';
+    final wishlistItemId =
+        savedAssets['wishlistItemId']?.toString().trim() ?? '';
     final expectedPrefix =
         'customer_fabrics/$customerUid/wishlists/$wishlistItemId/';
     final sourcePaths = [
@@ -182,7 +206,8 @@ class CustomerFabricAssetService {
         }
         String contentType = photo['contentType']?.toString() ?? '';
         if (contentType.isEmpty) {
-          contentType = (await source.getMetadata()).contentType ?? 'image/jpeg';
+          contentType =
+              (await source.getMetadata()).contentType ?? 'image/jpeg';
         }
         final extension = contentType == 'image/png' ? 'png' : 'jpg';
         final target = root.child('fabric_photo.$extension');
@@ -214,7 +239,8 @@ class CustomerFabricAssetService {
         if (bytes == null || bytes.isEmpty) {
           throw StateError('A saved fabric preview could not be read.');
         }
-        final contentType = preview['contentType']?.toString() ??
+        final contentType =
+            preview['contentType']?.toString() ??
             (await source.getMetadata()).contentType ??
             'image/png';
         final extension = contentType == 'image/jpeg' ? 'jpg' : 'png';

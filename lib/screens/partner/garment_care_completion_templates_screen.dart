@@ -33,6 +33,8 @@ class _GarmentCareCompletionTemplatesScreenState
       garmentCareStarterCompletionTemplates;
   bool _loading = true;
   bool _saving = false;
+  bool _loadFailed = false;
+  bool _hasLoadedOnce = false;
   String? _error;
   int _version = 1;
 
@@ -53,14 +55,16 @@ class _GarmentCareCompletionTemplatesScreenState
         accountId: widget.accountId,
         profileId: widget.profileId,
       );
-      final raw = (widget.isAdmin
-              ? result['templates']
-              : result['partnerTemplates']) as List<dynamic>? ??
+      final raw =
+          (widget.isAdmin ? result['templates'] : result['partnerTemplates'])
+              as List<dynamic>? ??
           const [];
       final starters = result['starterTemplates'] as List<dynamic>? ?? const [];
       final shared = result['templates'] as List<dynamic>? ?? const [];
       if (!mounted) return;
       setState(() {
+        _loadFailed = false;
+        _hasLoadedOnce = true;
         _templates = raw
             .whereType<Map>()
             .map(
@@ -94,28 +98,54 @@ class _GarmentCareCompletionTemplatesScreenState
     } on FirebaseFunctionsException catch (error) {
       if (mounted) {
         setState(() {
-          _error = error.message ?? 'Could not load completion templates.';
-          _templates = widget.isAdmin
-              ? garmentCareStarterCompletionTemplates
-              : const [];
-          _sharedTemplates = garmentCareStarterCompletionTemplates;
+          _loadFailed = true;
+          _error = _functionErrorMessage(
+            error,
+            fallback: 'Could not load completion templates.',
+          );
+          // Keep the original template cards visible on first load, and retain
+          // the last successfully loaded library if a later refresh fails.
+          if (widget.isAdmin && !_hasLoadedOnce) {
+            _templates = garmentCareStarterCompletionTemplates;
+            _version = 1;
+          }
           _starterTemplates = garmentCareStarterCompletionTemplates;
         });
       }
     } catch (_) {
       if (mounted) {
         setState(() {
+          _loadFailed = true;
           _error = 'Could not load completion templates.';
-          _templates = widget.isAdmin
-              ? garmentCareStarterCompletionTemplates
-              : const [];
-          _sharedTemplates = garmentCareStarterCompletionTemplates;
+          if (widget.isAdmin && !_hasLoadedOnce) {
+            _templates = garmentCareStarterCompletionTemplates;
+            _version = 1;
+          }
           _starterTemplates = garmentCareStarterCompletionTemplates;
         });
       }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  String _functionErrorMessage(
+    FirebaseFunctionsException error, {
+    required String fallback,
+  }) {
+    final code = error.code.toLowerCase();
+    if (code == 'unauthenticated' ||
+        error.message?.trim().toUpperCase() == 'UNAUTHENTICATED') {
+      return 'Published templates could not be loaded. Check staging Function access and refresh.';
+    }
+    if (code == 'permission-denied') {
+      return 'Your account is signed in but does not have permission to access these templates.';
+    }
+    if (code == 'not-found' ||
+        error.message?.trim().toUpperCase() == 'NOT_FOUND') {
+      return 'The staging template service is not deployed yet. Deploy it, then refresh.';
+    }
+    return error.message ?? fallback;
   }
 
   Future<void> _createOrEdit([
@@ -142,6 +172,10 @@ class _GarmentCareCompletionTemplatesScreenState
       finishingDetails: edited.finishingDetails,
       qualityNotes: edited.qualityNotes,
     );
+    if (widget.isAdmin && _loadFailed) {
+      setState(() => _error = _libraryUnavailableMessage);
+      return;
+    }
     await _persist(template);
   }
 
@@ -178,7 +212,14 @@ class _GarmentCareCompletionTemplatesScreenState
         if (mounted) _message('Partner template saved.');
       }
     } on FirebaseFunctionsException catch (error) {
-      if (mounted) setState(() => _error = error.message ?? 'Could not save template.');
+      if (mounted) {
+        setState(
+          () => _error = _functionErrorMessage(
+            error,
+            fallback: 'Could not save template.',
+          ),
+        );
+      }
     } catch (_) {
       if (mounted) setState(() => _error = 'Could not save template.');
     } finally {
@@ -188,7 +229,13 @@ class _GarmentCareCompletionTemplatesScreenState
 
   Future<void> _delete(GarmentCareCompletionTemplate template) async {
     if (widget.isAdmin) {
-      final updated = _templates.where((item) => item.id != template.id).toList();
+      if (_loadFailed) {
+        setState(() => _error = _libraryUnavailableMessage);
+        return;
+      }
+      final updated = _templates
+          .where((item) => item.id != template.id)
+          .toList();
       setState(() => _saving = true);
       try {
         final result = await GarmentCareService.publishCompletionTemplates(
@@ -201,7 +248,14 @@ class _GarmentCareCompletionTemplatesScreenState
         });
         _message('Template removed from the published library.');
       } on FirebaseFunctionsException catch (error) {
-        if (mounted) setState(() => _error = error.message ?? 'Could not remove template.');
+        if (mounted) {
+          setState(
+            () => _error = _functionErrorMessage(
+              error,
+              fallback: 'Could not remove template.',
+            ),
+          );
+        }
       } finally {
         if (mounted) setState(() => _saving = false);
       }
@@ -217,17 +271,25 @@ class _GarmentCareCompletionTemplatesScreenState
       await _load();
       if (mounted) _message('Partner template deleted.');
     } on FirebaseFunctionsException catch (error) {
-      if (mounted) setState(() => _error = error.message ?? 'Could not delete template.');
+      if (mounted) {
+        setState(() => _error = error.message ?? 'Could not delete template.');
+      }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
+  static const String _libraryUnavailableMessage =
+      'The published library could not be loaded. Refresh after staging Function access is restored before saving or deleting.';
+
   void _message(String message) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  List<String> get _allServiceIds => GarmentCareServiceCatalog.serviceIdsByGroup
+  List<String> get _allServiceIds => GarmentCareServiceCatalog
+      .serviceIdsByGroup
       .values
       .expand((items) => items)
       .toList(growable: false);
@@ -237,7 +299,16 @@ class _GarmentCareCompletionTemplatesScreenState
     child: Scaffold(
       backgroundColor: GarmentCareColors.background,
       appBar: AppBar(
-        title: Text(widget.isAdmin ? 'Completion templates' : 'My care templates'),
+        title: Text(
+          widget.isAdmin ? 'Completion templates' : 'My care templates',
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Refresh templates',
+            onPressed: _loading || _saving ? null : _load,
+            icon: const Icon(Icons.refresh_rounded),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _saving ? null : () => _createOrEdit(),
@@ -250,7 +321,9 @@ class _GarmentCareCompletionTemplatesScreenState
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
               children: [
                 Text(
-                  widget.isAdmin ? 'Shared Partner library' : 'Reusable care notes',
+                  widget.isAdmin
+                      ? 'Shared Partner library'
+                      : 'Reusable care notes',
                   style: Theme.of(context).textTheme.titleLarge,
                 ),
                 const SizedBox(height: 6),
@@ -265,12 +338,18 @@ class _GarmentCareCompletionTemplatesScreenState
                 ],
                 if (_error != null) ...[
                   const SizedBox(height: 12),
-                  Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+                  Text(
+                    _error!,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
                 ],
                 if (widget.isAdmin) ...[
                   const SizedBox(height: 16),
                   _sectionTitle('Published templates'),
-                  if (_templates.isEmpty) const _EmptyTemplatesNote(),
+                  if (_templates.isEmpty && !_loadFailed)
+                    const _EmptyTemplatesNote(),
                   for (final template in _templates)
                     _TemplateCard(
                       template: template,
@@ -297,9 +376,10 @@ class _GarmentCareCompletionTemplatesScreenState
                         ? 'Starter templates'
                         : 'Shared Admin templates',
                   ),
-                  for (final template in _sharedTemplates.isEmpty
-                      ? _starterTemplates
-                      : _sharedTemplates)
+                  for (final template
+                      in _sharedTemplates.isEmpty
+                          ? _starterTemplates
+                          : _sharedTemplates)
                     _TemplateCard(
                       template: template,
                       busy: _saving,
@@ -319,7 +399,10 @@ class _GarmentCareCompletionTemplatesScreenState
 
   Widget _sectionTitle(String title) => Padding(
     padding: const EdgeInsets.only(bottom: 8),
-    child: Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700)),
+    child: Text(
+      title,
+      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+    ),
   );
 }
 
@@ -351,12 +434,17 @@ class _TemplateCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(template.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+          Text(
+            template.name,
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+          ),
           const SizedBox(height: 4),
           Text(template.methodUsed),
           if (template.serviceIds.isNotEmpty) ...[
             const SizedBox(height: 4),
-            Text('Services: ${template.serviceIds.map(GarmentCareServiceCatalog.labelFor).join(', ')}'),
+            Text(
+              'Services: ${template.serviceIds.map(GarmentCareServiceCatalog.labelFor).join(', ')}',
+            ),
           ],
           if (template.materialKeywords.isNotEmpty) ...[
             const SizedBox(height: 4),
@@ -368,9 +456,15 @@ class _TemplateCard extends StatelessWidget {
               spacing: 4,
               children: [
                 if (onCopy != null)
-                  TextButton(onPressed: busy ? null : onCopy, child: Text(copyLabel ?? 'Copy')),
+                  TextButton(
+                    onPressed: busy ? null : onCopy,
+                    child: Text(copyLabel ?? 'Copy'),
+                  ),
                 if (canEdit && onEdit != null)
-                  TextButton(onPressed: busy ? null : onEdit, child: const Text('Edit')),
+                  TextButton(
+                    onPressed: busy ? null : onEdit,
+                    child: const Text('Edit'),
+                  ),
                 if (canEdit && onDelete != null)
                   IconButton(
                     tooltip: 'Delete template',
@@ -425,7 +519,9 @@ class _CompletionTemplateEditorDialogState
     super.initState();
     final template = widget.initial;
     _name = TextEditingController(text: template?.name ?? '');
-    _materials = TextEditingController(text: template?.materialKeywords.join(', ') ?? '');
+    _materials = TextEditingController(
+      text: template?.materialKeywords.join(', ') ?? '',
+    );
     _method = TextEditingController(text: template?.methodUsed ?? '');
     _process = TextEditingController(text: template?.processDetails ?? '');
     _finishing = TextEditingController(text: template?.finishingDetails ?? '');
@@ -465,7 +561,9 @@ class _CompletionTemplateEditorDialogState
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: Text(widget.initial == null ? 'Create care template' : 'Edit care template'),
+    title: Text(
+      widget.initial == null ? 'Create care template' : 'Edit care template',
+    ),
     content: SizedBox(
       width: 520,
       child: SingleChildScrollView(
@@ -473,7 +571,9 @@ class _CompletionTemplateEditorDialogState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Leave services unselected to make this template available for every service.'),
+            const Text(
+              'Leave services unselected to make this template available for every service.',
+            ),
             const SizedBox(height: 10),
             TextField(
               controller: _name,
@@ -491,7 +591,10 @@ class _CompletionTemplateEditorDialogState
               ),
             ),
             const SizedBox(height: 4),
-            const Text('Services (optional)', style: TextStyle(fontWeight: FontWeight.w700)),
+            const Text(
+              'Services (optional)',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
             Wrap(
               spacing: 4,
               children: [
@@ -514,19 +617,44 @@ class _CompletionTemplateEditorDialogState
               controller: _method,
               maxLength: 240,
               onChanged: (_) => setState(() {}),
-              decoration: const InputDecoration(labelText: 'Care method used *'),
+              decoration: const InputDecoration(
+                labelText: 'Care method used *',
+              ),
             ),
-            TextField(controller: _process, maxLines: 3, maxLength: 800, decoration: const InputDecoration(labelText: 'Process details')),
-            TextField(controller: _finishing, maxLines: 3, maxLength: 500, decoration: const InputDecoration(labelText: 'Finishing details')),
-            TextField(controller: _quality, maxLines: 3, maxLength: 500, decoration: const InputDecoration(labelText: 'Quality check notes')),
+            TextField(
+              controller: _process,
+              maxLines: 3,
+              maxLength: 800,
+              decoration: const InputDecoration(labelText: 'Process details'),
+            ),
+            TextField(
+              controller: _finishing,
+              maxLines: 3,
+              maxLength: 500,
+              decoration: const InputDecoration(labelText: 'Finishing details'),
+            ),
+            TextField(
+              controller: _quality,
+              maxLines: 3,
+              maxLength: 500,
+              decoration: const InputDecoration(
+                labelText: 'Quality check notes',
+              ),
+            ),
           ],
         ),
       ),
     ),
     actions: [
-      TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancel')),
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Cancel'),
+      ),
       FilledButton(
-        onPressed: _name.text.trim().isNotEmpty && _method.text.trim().isNotEmpty ? _submit : null,
+        onPressed:
+            _name.text.trim().isNotEmpty && _method.text.trim().isNotEmpty
+            ? _submit
+            : null,
         child: const Text('Save template'),
       ),
     ],

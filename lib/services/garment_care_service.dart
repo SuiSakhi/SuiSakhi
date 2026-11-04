@@ -15,6 +15,12 @@ class GarmentCareService {
   static final FirebaseAuth _auth = FirebaseAuth.instance;
   static final FirebaseFunctions _functions = FirebaseFunctions.instance;
 
+  static Future<void> _refreshCompletionTemplateAuth() async {
+    // Keep these Admin/Partner callables aligned with the other protected
+    // Admin flows, which refresh the Firebase identity before invoking them.
+    await _auth.currentUser?.getIdToken(true);
+  }
+
   static Future<({String accountId, String profileId})>
   customerContext() async {
     final uid = _auth.currentUser?.uid;
@@ -1097,6 +1103,7 @@ class GarmentCareService {
     String accountId = '',
     String profileId = '',
   }) async {
+    await _refreshCompletionTemplateAuth();
     final result = await _functions
         .httpsCallable('getGarmentCareCompletionTemplates')
         .call({
@@ -1110,6 +1117,7 @@ class GarmentCareService {
   static Future<Map<String, dynamic>> publishCompletionTemplates({
     required List<Map<String, dynamic>> templates,
   }) async {
+    await _refreshCompletionTemplateAuth();
     final result = await _functions
         .httpsCallable('publishGarmentCareCompletionTemplates')
         .call({'templates': templates});
@@ -1121,6 +1129,7 @@ class GarmentCareService {
     required String profileId,
     required Map<String, dynamic> template,
   }) async {
+    await _refreshCompletionTemplateAuth();
     await _functions
         .httpsCallable('savePartnerGarmentCareCompletionTemplate')
         .call({
@@ -1135,6 +1144,7 @@ class GarmentCareService {
     required String profileId,
     required String templateId,
   }) async {
+    await _refreshCompletionTemplateAuth();
     await _functions
         .httpsCallable('deletePartnerGarmentCareCompletionTemplate')
         .call({
