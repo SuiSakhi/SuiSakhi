@@ -58,13 +58,21 @@ bool _isPendingOrder(DressOrder order) {
 }
 
 class OrdersScreen extends StatefulWidget {
-  const OrdersScreen({super.key, this.initialFilter, this.initialModuleType});
+  const OrdersScreen({
+    super.key,
+    this.initialFilter,
+    this.initialModuleType,
+    this.initialOrderId,
+  });
 
   /// Optional status filter to select when opening the order list.
   final String? initialFilter;
 
   /// Optional service category used by the customer Orders hub.
   final String? initialModuleType;
+
+  /// Optional order document ID to open directly from dashboard cards.
+  final String? initialOrderId;
 
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
@@ -837,22 +845,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   List<DressOrder> get _filtered {
     final orders = _ordersForModule;
-    switch (_filter) {
-      case _OrdersFilter.all:
-        return orders;
-      case _OrdersFilter.active:
-        return orders.where(_isActiveOrder).toList();
-      case _OrdersFilter.pending:
-        return orders.where(_isPendingOrder).toList();
-      case _OrdersFilter.delivered:
-        return orders
-            .where((order) => order.status == OrderStatus.delivered)
-            .toList();
-      case _OrdersFilter.onTheWay:
-        return orders
+    final statusFiltered = switch (_filter) {
+      _OrdersFilter.all => orders,
+      _OrdersFilter.active => orders.where(_isActiveOrder).toList(),
+      _OrdersFilter.pending => orders.where(_isPendingOrder).toList(),
+      _OrdersFilter.delivered =>
+        orders.where((order) => order.status == OrderStatus.delivered).toList(),
+      _OrdersFilter.onTheWay =>
+        orders
             .where((order) => order.status == OrderStatus.outForDelivery)
-            .toList();
-    }
+            .toList(),
+    };
+    final initialOrderId = widget.initialOrderId?.trim();
+    if (initialOrderId == null || initialOrderId.isEmpty) return statusFiltered;
+    return statusFiltered.where((order) => order.id == initialOrderId).toList();
   }
 
   List<DressOrder> get _ordersForModule {
@@ -862,7 +868,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 
   bool get _showTailoringDrafts =>
-      _moduleFilter == null || _moduleFilter == OrderModuleType.coreTailoring;
+      (widget.initialOrderId == null ||
+          widget.initialOrderId!.trim().isEmpty) &&
+      (_moduleFilter == null || _moduleFilter == OrderModuleType.coreTailoring);
 
   String get _pageTitle => switch (_moduleFilter) {
     OrderModuleType.coreTailoring => 'Tailoring Orders',

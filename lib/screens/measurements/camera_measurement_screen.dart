@@ -12,6 +12,7 @@ import '../../core/app_state.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/measurement.dart';
 import '../../services/body_measurement_calculator.dart';
+import '../../services/measurement_draft_service.dart';
 import '../../services/pose_measurement_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
@@ -49,6 +50,8 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
   String? _clientName;
   String? _personId;
   String? _relationship;
+  double? _profileHeightCm;
+  Future<void>? _profileHeightLoad;
 
   // ── multi-angle scan storage ───────────────────────────────────────────
   Pose? _frontPose;
@@ -81,7 +84,10 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     // Start camera immediately — no manual height entry needed
-    WidgetsBinding.instance.addPostFrameCallback((_) => _initCamera());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _profileHeightLoad = _loadProfileHeightFromDraft();
+      _initCamera();
+    });
   }
 
   @override
@@ -112,7 +118,24 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
     _clientName = params['clientName'];
     _personId = params['personId'];
     _relationship = params['relationship'];
+    _profileHeightCm ??= (_personId == null || _personId == 'self')
+        ? _validProfileHeight(AppState.instance.profile?.heightCm)
+        : null;
   }
+
+  Future<void> _loadProfileHeightFromDraft() async {
+    final draftId = _draftId?.trim();
+    if (draftId == null || draftId.isEmpty) return;
+    final height = await MeasurementDraftService.profileHeightForDraft(draftId);
+    if (!mounted) return;
+    final validHeight = _validProfileHeight(height);
+    if (validHeight != null) {
+      setState(() => _profileHeightCm = validHeight);
+    }
+  }
+
+  double? _validProfileHeight(double? value) =>
+      value != null && value >= 100 && value <= 220 ? value : null;
 
   // ─────────────────────────────────────────────────────────────────────────
   // Camera initialisation
@@ -193,7 +216,9 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
         pose,
         _imageSize,
       );
-      final heightEst = BodyMeasurementCalculator.estimateHeightCm(pose);
+      final heightEst =
+          _validProfileHeight(_profileHeightCm) ??
+          BodyMeasurementCalculator.estimateHeightCm(pose);
 
       if (mounted) {
         setState(() {
@@ -208,7 +233,7 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
       if (conf >= 0.85 && dist == DistanceCategory.perfect) {
         _stableFrames++;
         if (_stableFrames >= _autoCaptureFrms) {
-          _captureAndCalculate(pose);
+          await _captureAndCalculate(pose);
         }
       } else {
         _stableFrames = 0;
@@ -229,7 +254,7 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
   // ─────────────────────────────────────────────────────────────────────────
   // Capture & calculate
   // ─────────────────────────────────────────────────────────────────────────
-  void _captureAndCalculate(Pose pose) {
+  Future<void> _captureAndCalculate(Pose pose) async {
     if (!_isScanning) return;
     _cameraController?.stopImageStream();
 
@@ -263,6 +288,13 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
       // Back scan done — combine views using consensus height
       setState(() => _step = _ScanStep.processing);
 
+      // Profile height is the best available real-world scale. The draft read
+      // runs alongside camera startup; wait briefly before using pose-only
+      // height so a slow connection does not stall capture.
+      try {
+        await _profileHeightLoad?.timeout(const Duration(seconds: 2));
+      } catch (_) {}
+
       final front = _frontPose;
       final side = _sidePose;
       final back = pose;
@@ -273,7 +305,8 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
       final consensus = BodyMeasurementCalculator.consensusHeightCm(
         posesForHeight,
       );
-      final heightCm = consensus ?? _frontHeightCm;
+      final heightCm =
+          _validProfileHeight(_profileHeightCm) ?? consensus ?? _frontHeightCm;
 
       final BodyMeasurements? result =
           (front != null && side != null && heightCm != null)
@@ -546,6 +579,8 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
                         builder: (context, _) {
                           final u = AppState.instance.measurementUnit;
                           final h = _estimatedHeightCm!;
+                          final usesProfileHeight =
+                              _validProfileHeight(_profileHeightCm) != null;
                           final line = MeasurementFormat.formatDual(
                             h,
                             u,
@@ -555,7 +590,7 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               Text(
-                                '~$line',
+                                usesProfileHeight ? line : '~$line',
                                 textAlign: TextAlign.center,
                                 style: const TextStyle(
                                   color: Colors.white,
@@ -578,9 +613,9 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: () {
+                onTap: () async {
                   if (_isScanning && _posesNotifier.value.isNotEmpty) {
-                    _captureAndCalculate(_posesNotifier.value.first);
+                    await _captureAndCalculate(_posesNotifier.value.first);
                   } else if (_posesNotifier.value.isEmpty) {
                     _showSnack('No pose detected yet. Step into the oval.');
                   }

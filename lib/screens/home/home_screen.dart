@@ -93,7 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
               return;
             }
             if (i == 3) {
-              context.push('/orders');
+              context.push('/customer-orders');
               return;
             }
             if (i == 4) {

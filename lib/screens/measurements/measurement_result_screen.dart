@@ -5,7 +5,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/measurement.dart';
-import '../../services/claude_fit_advice_service.dart';
+import '../../services/local_fit_advice_service.dart';
 import '../../widgets/common/custom_button.dart';
 import '../../widgets/common/measurement_card.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
@@ -38,7 +38,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       _aiLoading = true;
       _aiResult = null;
     });
-    final r = await ClaudeFitAdviceService.getTailoringTips(m);
+    final r = await LocalFitAdviceService.getTailoringTips(m);
     if (!mounted) return;
     setState(() {
       _aiLoading = false;
@@ -236,7 +236,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  'AI tailoring tips',
+                  'Local measurement guidance',
                   style: AppTextStyles.titleMedium.copyWith(
                     color: AppColors.primary,
                   ),
@@ -246,7 +246,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            'SuiSakhi fit guidance is general advice only. Please confirm key measurements before stitching.',
+            'Guidance is calculated on this device from available measurements. Values are not sent to an external AI provider.',
             style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
           ),
           const SizedBox(height: 12),
@@ -261,8 +261,8 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                       color: Colors.white,
                     ),
                   )
-                : const Icon(Icons.psychology_outlined, size: 20),
-            label: Text(_aiLoading ? 'Getting tips…' : 'Get tips'),
+                : const Icon(Icons.rule_outlined, size: 20),
+            label: Text(_aiLoading ? 'Checking…' : 'Check measurements'),
           ),
           if (_aiResult != null) ...[
             const SizedBox(height: 14),
@@ -528,7 +528,12 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
 
     final values = _measurementValuesMap(m);
 
-    final profileHeight = AppState.instance.profile?.heightCm;
+    final draftProfileHeight =
+        await MeasurementDraftService.profileHeightForDraft(draftId);
+    final canUseSignedInProfile = _personId == null || _personId == 'self';
+    final profileHeight =
+        draftProfileHeight ??
+        (canUseSignedInProfile ? AppState.instance.profile?.heightCm : null);
 
     final issues = MeasurementDraftService.validateAiMeasurements(
       values: values,
@@ -542,6 +547,7 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
       measurementValues: values,
       validationIssues: issues,
       confidenceLevel: confidence,
+      calibrationHeightCm: profileHeight,
     );
 
     if (!mounted) return;

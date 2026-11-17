@@ -27,7 +27,7 @@ import '../../services/price_estimation_service.dart';
 import '../../services/dress_customization_estimation_service.dart';
 import '../../models/measurement.dart';
 import '../../models/prd_catalog.dart';
-import '../../services/claude_smart_assistant_service.dart';
+import '../../services/smart_assist_service.dart';
 import '../../services/design_template_service.dart';
 import '../../services/catalogue_design_service.dart';
 import '../../services/customer_wishlist_service.dart';
@@ -122,11 +122,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
   FabricEstimate? _fabricEstimate;
   CustomerFabricPreviewSelection? _pendingCustomerFabricSelection;
   _SavedWishlistFabricSelection? _selectedWishlistFabricSelection;
+  bool _selectedDesignFromWishlist = false;
   PriceEstimate? _priceEstimate;
 
   /// null | 'fit' | 'fabric' | 'polish'
   String? _smartAssistBusy;
   String? _fabricStyleAiText;
+  String? _fabricStyleApprovedContent;
   String? _fabricStyleContextKey;
   String? _fitAssistantContextKey;
   String? _fitAssistantSummary;
@@ -1386,7 +1388,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           .join(', ');
       final sourceOrderId = customerReference.sourceOrderId?.trim();
       parts.add(
-        'Customer measurement reference (for Tailor review; not final or partner-confirmed): ${customerReference.title}'
+        'Historical measurement reference (for comparison only; reconfirm before stitching): ${customerReference.title}'
         '${sourceOrderId?.isNotEmpty == true ? ' · Previous order $sourceOrderId' : ''}'
         '${values.isEmpty ? '' : ' — $values'}',
       );
@@ -1417,24 +1419,31 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return;
     }
     try {
-      final accountId = await AppState.instance.fetchAccountIdForMobile(
-        phone.trim(),
-      );
-      if (accountId == null || accountId.isEmpty) {
+      final accountContext = await _loadAccountAndCustomerProfileForDraft();
+      final accountId = accountContext?['accountId']?.trim() ?? '';
+      final customerProfileId =
+          accountContext?['customerProfileId']?.trim() ?? '';
+      if (accountId.isEmpty || customerProfileId.isEmpty) {
         throw StateError('Customer account was not found');
       }
-      final records = await CustomerMeasurementHistoryService.loadHistory(
+      final loadedRecords = await CustomerMeasurementHistoryService.loadHistory(
         customerUid: uid,
         accountId: accountId,
+        customerProfileId: customerProfileId,
         personId: person.id,
         personName: person.name,
         limit: 10,
       );
+      final records = loadedRecords
+          .where((record) => record.measurementType != 'ai_estimate')
+          .toList(growable: false);
       if (!mounted) return;
       if (records.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('No saved measurement references found.'),
+            content: Text(
+              'No manual or Tailor-confirmed measurement records are available.',
+            ),
           ),
         );
         return;
@@ -1455,7 +1464,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'This will be added to the Tailor instructions as a customer reference. It will not replace order measurements or partner confirmation.',
+                'Past manual and Tailor-confirmed records can be added for comparison. AI camera estimates stay out of Tailor instructions; current measurements and Tailor confirmation remain the fit reference.',
                 style: AppTextStyles.bodySmall,
               ),
               const SizedBox(height: 12),
@@ -2058,6 +2067,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           const SizedBox(height: 24),
           _buildDesignLookSection(),
           const SizedBox(height: 24),
+          _buildCustomizationSection(),
+          const SizedBox(height: 24),
           //SUD
           if (widget.initialMeasurementDraftId?.trim().isNotEmpty == true) ...[
             const SizedBox(height: 4),
@@ -2102,8 +2113,6 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
             listenable: AppState.instance,
             builder: (context, _) => _buildMeasurementSummary(),
           ),
-          const SizedBox(height: 24),
-          _buildCustomizationSection(),
           const SizedBox(height: 24),
           _buildNotesSection(),
           const SizedBox(height: 24),
@@ -2691,7 +2700,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           TextButton.icon(
             onPressed: () => context.push('/fabric-help'),
             icon: const Icon(Icons.video_call_outlined, size: 18),
-            label: const Text('Ask a Tailor about fabric'),
+            label: const Text('Ask SuiSakhi Helpdesk about fabric'),
           ),
 
           if (_fabricChoice == 'Other') ...[
@@ -2751,6 +2760,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
         _pendingCustomerFabricSelection = null;
         _selectedWishlistFabricSelection = null;
       }
+      _selectedDesignFromWishlist = false;
       _selectedTemplate = template;
 
       // Design changes invalidate all previously generated estimates.
@@ -3900,6 +3910,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                             design,
                             option.bundle,
                             wishlistSelection: option.fabricSelection,
+                            selectedFromWishlist: true,
                           );
                           Navigator.pop(sheetContext);
                         },
@@ -4153,6 +4164,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     CatalogueDesign design,
     PublishedCatalogueBundle bundle, {
     _SavedWishlistFabricSelection? wishlistSelection,
+    bool selectedFromWishlist = false,
   }) {
     final primary = bundle.primaryView;
     if (primary == null || primary.bestPreviewUrl?.trim().isEmpty != false) {
@@ -4185,6 +4197,7 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     );
     setState(() {
       _selectedWishlistFabricSelection = wishlistSelection;
+      _selectedDesignFromWishlist = selectedFromWishlist;
       if (wishlistSelection != null) {
         _pendingCustomerFabricSelection = null;
       }
@@ -4257,6 +4270,20 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                   },
                 ),
               ),
+              if (bundle.views.length > 1) ...[
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.swipe_rounded, size: 16),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Swipe to view all ${bundle.views.length} design views',
+                      style: AppTextStyles.bodySmall,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+              ],
               const SizedBox(height: 8),
               Text(
                 bundle.views.any(
@@ -4447,7 +4474,29 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 ),
               ),
             ),
-            if (template.catalogueVersionId?.trim().isNotEmpty == true) ...[
+            if (previewCount > 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(
+                    Icons.swipe_rounded,
+                    size: 16,
+                    color: AppColors.textHint,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Swipe to compare each fabric view with the original design.',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textHint,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+            if (template.catalogueVersionId?.trim().isNotEmpty == true &&
+                !_selectedDesignFromWishlist) ...[
               const SizedBox(height: 12),
               CatalogueFabricPreviewButton(
                 designId: template.id,
@@ -4922,9 +4971,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           icon: const Icon(Icons.straighten_outlined),
           label: Text(
             _customerMeasurementReference == null
-                ? 'Add saved measurement reference'
-                : 'Change saved measurement reference',
+                ? 'Add previous measurements as a note'
+                : 'Change previous measurement note',
           ),
+        ),
+        Text(
+          'Optional: adds a past measurement record to Tailor instructions. It does not change the current estimate.',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
         ),
         if (_customerMeasurementReference != null) ...[
           Container(
@@ -5303,9 +5356,10 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     setState(() {
       _smartAssistBusy = 'fabric';
       _fabricStyleAiText = null;
+      _fabricStyleApprovedContent = null;
     });
     final occ = _occasionLabel();
-    final r = await ClaudeSmartAssistantService.fabricAndStylingTips(
+    final r = await SmartAssistService.fabricAndStylingTips(
       dressType: _selectedDressType,
       occasionLabel: (occ == null || occ.isEmpty) ? 'General' : occ,
       fit: _selectedFit,
@@ -5322,16 +5376,13 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     if (r.success) {
       setState(() {
         _fabricStyleAiText = r.text;
+        _fabricStyleApprovedContent = r.approvedContent;
         _fabricStyleContextKey = contextKey;
       });
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Smart Assist is currently unavailable. Please try again later.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(r.text)));
     }
   }
 
@@ -5339,8 +5390,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       'Customer-approved fabric & styling guidance:\n${suggestionText.trim()}';
 
   void _addFabricSuggestionsToNotes() {
-    final suggestionText = _fabricStyleAiText;
+    final suggestionText = _fabricStyleApprovedContent;
     if (suggestionText == null ||
+        suggestionText.trim().isEmpty ||
         _fabricStyleContextKey != _smartAssistContextKey()) {
       return;
     }
@@ -5375,7 +5427,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       return;
     }
     setState(() => _smartAssistBusy = 'polish');
-    final r = await ClaudeSmartAssistantService.polishCustomerNotes(
+    final sanitizedDraft =
+        SmartAssistInputSanitizer.sanitizeCustomerNotesWithStatus(currentDraft);
+    final r = await SmartAssistService.polishCustomerNotes(
       draft: currentDraft,
       dressType: _selectedDressType,
       fit: _selectedFit,
@@ -5383,13 +5437,9 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     if (!mounted) return;
     setState(() => _smartAssistBusy = null);
     if (!r.success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Smart Assist is currently unavailable. Please try again later.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(r.text)));
 
       return;
     }
@@ -5401,6 +5451,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
           ),
         ),
       );
+      return;
+    }
+    if (r.approvedContent.trim().isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(r.text)));
       return;
     }
     final apply = await showDialog<bool>(
@@ -5425,6 +5481,15 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
                 const SizedBox(height: 6),
                 Text(r.text, style: AppTextStyles.bodyMedium),
                 const SizedBox(height: 12),
+                if (sanitizedDraft.hadRedactions) ...[
+                  Text(
+                    'Sensitive lines were not sent to Smart Assist. If you approve, those original lines will be kept unchanged after the improved wording.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 Text(
                   'Your current text stays unchanged unless you approve the suggested wording. You can edit it afterward.',
                   style: AppTextStyles.bodySmall.copyWith(
@@ -5448,7 +5513,23 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
       ),
     );
     if (apply == true && mounted) {
-      _notesController.text = r.text;
+      if (_notesController.text.trim() != currentDraft) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Your instructions changed while reviewing. Run Improve Tailor Instructions again.',
+            ),
+          ),
+        );
+        return;
+      }
+      final approvedText = approvedTailorNotes(
+        approved: true,
+        suggestedContent: r.approvedContent,
+        original: sanitizedDraft,
+      );
+      if (approvedText == null) return;
+      _notesController.text = approvedText;
       setState(() {});
     }
   }
@@ -5458,7 +5539,8 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
     final hasCurrentFitReview =
         _fitAssistantSummary != null && _fitAssistantContextKey == contextKey;
     final hasCurrentFabricTips =
-        _fabricStyleAiText != null && _fabricStyleContextKey == contextKey;
+        _fabricStyleApprovedContent?.trim().isNotEmpty == true &&
+        _fabricStyleContextKey == contextKey;
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -5793,6 +5875,12 @@ class _DressDesignerScreenState extends State<DressDesignerScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 6),
+          TextButton.icon(
+            onPressed: () => context.push('/fabric-help'),
+            icon: const Icon(Icons.support_agent_outlined),
+            label: const Text('Ask SuiSakhi Helpdesk about this estimate'),
+          ),
         ],
       ),
     );

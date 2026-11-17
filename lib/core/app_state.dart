@@ -1,14 +1,25 @@
 import 'dart:async' show unawaited;
 
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import '../models/measurement.dart';
 import '../models/stitching_rate.dart';
-import '../models/phone_registry_entry.dart';
 import '../models/user_profile.dart';
 import 'measurement_unit.dart';
+
+const bool _loginTimingEnabled =
+    kDebugMode || bool.fromEnvironment('SUISAKHI_LOGIN_TIMING');
+
+void _logAppStateTiming(String phase, Stopwatch timer) {
+  if (!_loginTimingEnabled) return;
+  debugPrint(
+    '[LoginTiming] utc=${DateTime.now().toUtc().toIso8601String()} '
+    'elapsedMs=${timer.elapsedMilliseconds} phase=$phase',
+  );
+}
 
 class AppState extends ChangeNotifier {
   AppState._();
@@ -79,30 +90,18 @@ class AppState extends ChangeNotifier {
     return name[0].toUpperCase();
   }
 
-  /// Looks up a display name by [e164] phone before Firebase signs the user in.
-  /// Requires a `phoneNumber` field on `users` docs (see [saveUserProfile]) and
-  /// Firestore rules that allow this query for unauthenticated clients (or it returns null).
-  Future<String?> lookupDisplayNameByPhoneForSignIn(String e164) async {
-    try {
-      final snap = await _db
-          .collection('users')
-          .where('phoneNumber', isEqualTo: e164)
-          .limit(1)
-          .get();
-      if (snap.docs.isEmpty) return null;
-      final name = snap.docs.first.data()['name'] as String?;
-      final t = name?.trim() ?? '';
-      if (t.length < 2 || t == 'User' || t == 'Guest') return null;
-      return t;
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Load user profile from Firestore after login
   Future<void> loadUserProfile(String uid) async {
+    final timer = Stopwatch()..start();
+    _logAppStateTiming('user_profile_read.start', timer);
     try {
       final doc = await _db.collection('users').doc(uid).get();
+      _logAppStateTiming(
+        doc.exists
+            ? 'user_profile_read.document_found'
+            : 'user_profile_read.document_missing',
+        timer,
+      );
       if (doc.exists) {
         final data = doc.data()!;
         _profile = UserProfile(
@@ -150,7 +149,12 @@ class AppState extends ChangeNotifier {
         );
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (error) {
+      _logAppStateTiming(
+        'user_profile_read.failed type=${error.runtimeType}',
+        timer,
+      );
+    }
   }
 
   static String? _parseUserDeliveryAddress(Object? raw) {
@@ -800,26 +804,6 @@ class AppState extends ChangeNotifier {
   static String phoneRegistryDocId(String e164) =>
       e164.replaceAll(RegExp(r'\D'), '');
 
-  /// Best-effort read before OTP (unauthenticated get allowed by rules).
-  Future<PhoneRegistryEntry?> fetchPhoneRegistry(String e164) async {
-    try {
-      final id = phoneRegistryDocId(e164);
-      if (id.length < 10) return null;
-      final doc = await _db.collection('phoneRegistry').doc(id).get();
-      if (!doc.exists) return null;
-      final d = doc.data()!;
-      return PhoneRegistryEntry(
-        uid: d['uid'] as String? ?? '',
-        roleName: (d['role'] as String?)?.trim().isNotEmpty == true
-            ? (d['role'] as String).trim()
-            : 'customer',
-        displayName: d['name'] as String?,
-      );
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Keeps `phoneRegistry` aligned with the signed-in user's phone + role (last write wins).
   Future<void> syncPhoneRegistryForCurrentUser() async {
     final uid = _auth.currentUser?.uid;
@@ -861,8 +845,12 @@ class AppState extends ChangeNotifier {
     String? email, {
     String? phoneE164,
   }) async {
+    final timer = Stopwatch()..start();
+    _logAppStateTiming('role_lookup.start', timer);
     try {
+      _logAppStateTiming('role_lookup.firestore_config.start', timer);
       final doc = await _db.collection('config').doc('admin').get();
+      _logAppStateTiming('role_lookup.firestore_config.done', timer);
       final data = doc.data() ?? {};
       final ownerEmails = List<String>.from(data['ownerEmails'] ?? []);
       final tailorEmails = List<String>.from(data['tailorEmails'] ?? []);
@@ -875,30 +863,54 @@ class AppState extends ChangeNotifier {
 
       final em = email?.trim().toLowerCase();
       if (em != null && em.isNotEmpty) {
-        if (ownerEmails.contains(em)) return UserRole.owner;
-        if (tailorEmails.contains(em)) return UserRole.tailor;
-        if (deliveryEmails.contains(em)) return UserRole.delivery;
+        if (ownerEmails.contains(em)) {
+          _logAppStateTiming('role_lookup.resolved.owner_from_config', timer);
+          return UserRole.owner;
+        }
+        if (tailorEmails.contains(em)) {
+          _logAppStateTiming('role_lookup.resolved.tailor_from_config', timer);
+          return UserRole.tailor;
+        }
+        if (deliveryEmails.contains(em)) {
+          _logAppStateTiming(
+            'role_lookup.resolved.delivery_from_config',
+            timer,
+          );
+          return UserRole.delivery;
+        }
       }
 
       final p = normalizePhoneE164(phoneE164);
-      if (p != null && tailorPhones.contains(p)) return UserRole.tailor;
+      if (p != null && tailorPhones.contains(p)) {
+        _logAppStateTiming('role_lookup.resolved.tailor_phone_config', timer);
+        return UserRole.tailor;
+      }
+      _logAppStateTiming('role_lookup.helpdesk_function.start', timer);
       final helpdeskAccess = await FirebaseFunctions.instance
           .httpsCallable('getMyHelpdeskAccess')
           .call();
+      _logAppStateTiming('role_lookup.helpdesk_function.done', timer);
       final access = helpdeskAccess.data is Map
           ? Map<String, dynamic>.from(helpdeskAccess.data as Map)
           : const <String, dynamic>{};
-      if (access['isAdmin'] == true) return UserRole.owner;
+      if (access['isAdmin'] == true) {
+        _logAppStateTiming('role_lookup.resolved.owner_from_function', timer);
+        return UserRole.owner;
+      }
       if (access['isSupport'] == true || access['allowed'] == true) {
+        _logAppStateTiming('role_lookup.resolved.support_from_function', timer);
         return UserRole.support;
       }
     } on FirebaseFunctionsException catch (error) {
+      _logAppStateTiming('role_lookup.function_failed', timer);
       debugPrint(
         'Helpdesk role lookup unavailable: ${error.code} ${error.message ?? ''}',
       );
     } catch (error) {
+      _logAppStateTiming('role_lookup.failed', timer);
       debugPrint('Role config lookup failed: $error');
     }
+    _logAppStateTiming('role_lookup.fallback_customer', timer);
     return null;
   }
 
@@ -1148,10 +1160,18 @@ class AppState extends ChangeNotifier {
   static String _rateDocId(String dressType) => dressType.replaceAll('/', '_');
 
   Future<void> loadRates() async {
+    final timer = Stopwatch()..start();
+    _logAppStateTiming('rates_read.start', timer);
     try {
       final snap = await _db.collection('rates').get();
+      _logAppStateTiming(
+        'rates_read.firestore_done count=${snap.docs.length}',
+        timer,
+      );
       if (snap.docs.isEmpty) {
+        _logAppStateTiming('rates_read.seed_defaults.start', timer);
         await _seedDefaultRates();
+        _logAppStateTiming('rates_read.seed_defaults.done', timer);
       } else {
         _rates = snap.docs
             .map(
@@ -1164,7 +1184,11 @@ class AppState extends ChangeNotifier {
             .toList();
         notifyListeners();
       }
-    } catch (_) {
+    } catch (error) {
+      _logAppStateTiming(
+        'rates_read.failed type=${error.runtimeType}',
+        timer,
+      );
       // Fallback to defaults if Firestore unavailable
       _loadDefaultRates();
     }

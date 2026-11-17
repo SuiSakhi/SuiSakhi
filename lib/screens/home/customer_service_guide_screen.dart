@@ -222,9 +222,9 @@ class _CustomerServiceGuideScreenState
       'sew for me',
     ])) {
       return _actionReply(
-        'I’ll open the custom tailoring flow.',
-        'Start custom tailoring',
-        '/designer?entry=order',
+        'I’ll open your stitching dashboard, where you can start an order or track existing ones.',
+        'Open stitching dashboard',
+        '/tailoring-dashboard',
       );
     }
 

@@ -128,6 +128,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
           name: customerName,
           relationship: 'Self',
           isSelf: true,
+          heightCm: profile?.heightCm,
         ),
       ];
 
@@ -195,6 +196,9 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
               name: data['name']?.toString() ?? 'Family Member',
               relationship: data['relationship']?.toString() ?? 'Other',
               isSelf: false,
+              heightCm: data['heightCm'] is num
+                  ? (data['heightCm'] as num).toDouble()
+                  : null,
             ),
           );
         }
@@ -257,6 +261,42 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
 
     switch (_selectedMethod) {
       case 'ai_camera':
+        if (!_isUsableCameraHeight(person.heightCm)) {
+          final choice = await showDialog<String>(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              title: const Text('Optional profile details'),
+              content: const Text(
+                'Profile height helps calibrate the camera scale. Weight is not '
+                'used to infer garment measurements in the current scan. You '
+                'can add either value now or continue without them.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, 'continue'),
+                  child: const Text('Continue without them'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext, 'edit'),
+                  child: const Text('Add profile details'),
+                ),
+              ],
+            ),
+          );
+          if (!mounted) return;
+          if (choice == 'edit') {
+            _initialPersonId = person.id;
+            _initialClientName = person.name;
+            _initialRelationship = person.relationship;
+            await context.push(
+              person.isSelf ? '/customer-edit-profile' : '/family-members',
+            );
+            if (!mounted) return;
+            await _loadPeople();
+            return;
+          }
+          if (choice != 'continue') return;
+        }
         final draftId = await MeasurementDraftService.createDraft(
           accountId: accountId,
           customerProfileId: customerProfileId,
@@ -264,6 +304,9 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
           personName: person.name,
           relationship: person.relationship,
           source: _selectedMethod,
+          profileHeightCm: _isUsableCameraHeight(person.heightCm)
+              ? person.heightCm
+              : null,
         );
 
         if (!mounted) return;
@@ -480,6 +523,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
       final history = await CustomerMeasurementHistoryService.loadHistory(
         customerUid: uid,
         accountId: accountId,
+        customerProfileId: _customerProfileId,
         personId: person.id,
         personName: person.name,
         limit: 10,
@@ -588,6 +632,7 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
     try {
       final ref = _db.collection('measurements').doc();
       await ref.set({
+        'schemaVersion': 1,
         'draftId': ref.id,
         'accountId': accountId,
         'customerProfileId': customerProfileId,
@@ -595,6 +640,8 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         'personName': person.name,
         'relationship': person.relationship,
         'source': source,
+        'measurementType': 'customer_reference',
+        'measurementSchema': 'suisakhi_womens_22_v2',
         'status': 'customer_reference',
         'referenceOnly': true,
         'measurementValues': values,
@@ -637,6 +684,9 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
       ),
     );
   }
+
+  bool _isUsableCameraHeight(double? heightCm) =>
+      heightCm != null && heightCm >= 100 && heightCm <= 220;
 
   @override
   Widget build(BuildContext context) {
@@ -728,12 +778,14 @@ class _MeasurementPerson {
   final String name;
   final String relationship;
   final bool isSelf;
+  final double? heightCm;
 
   const _MeasurementPerson({
     required this.id,
     required this.name,
     required this.relationship,
     required this.isSelf,
+    this.heightCm,
   });
 }
 
@@ -1159,6 +1211,11 @@ String _shortLabel(String key) {
 String _measurementStatusLabel(CustomerMeasurementRecord record) {
   if (record.isCustomerReference) return 'Customer reference';
   if (record.source == 'partner_confirmed') return 'Tailor confirmed';
+  if (record.measurementType == 'professional_capture') {
+    return record.status == 'tailor_confirmed'
+        ? 'Tailor confirmed'
+        : 'Partner captured · awaiting tailor review';
+  }
   if (record.source == 'ai_camera') return 'AI estimate · review needed';
   return 'Needs confirmation';
 }

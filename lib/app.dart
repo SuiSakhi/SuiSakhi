@@ -10,11 +10,13 @@ import 'screens/profile/customer_addresses_screen.dart';
 import 'screens/profile/customer_profile_screen.dart';
 import 'screens/profile/customer_edit_profile_screen.dart';
 import 'screens/profile/customer_help_support_screen.dart';
+import 'screens/profile/privacy_security_screen.dart';
 import 'screens/profile/family_members_screen.dart';
 import 'screens/splash/splash_screen.dart';
 import 'screens/onboarding/onboarding_screen.dart';
 import 'screens/onboarding/profile_setup_screen.dart';
 import 'screens/home/home_screen.dart';
+import 'screens/home/tailoring_dashboard_screen.dart';
 import 'screens/home/customer_service_guide_screen.dart';
 import 'screens/measurements/measurement_dashboard_screen.dart';
 import 'screens/measurements/camera_measurement_screen.dart';
@@ -47,6 +49,7 @@ import 'screens/owner/owner_partner_management_screen.dart';
 import 'screens/owner/helpdesk_order_explorer_screen.dart';
 import 'screens/owner/owner_order_routing_screen.dart';
 import 'screens/owner/owner_design_templates_screen.dart';
+import 'screens/owner/owner_security_templates_screen.dart';
 import 'screens/owner/owner_partner_applications_screen.dart';
 import 'screens/owner/owner_partner_application_review_screen.dart';
 import 'screens/owner/rates_management_screen.dart';
@@ -224,8 +227,21 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerAccountCenterScreen(),
     ),
     GoRoute(
+      path: '/privacy-security',
+      builder: (ctx, state) => PrivacySecurityScreen(
+        audience: state.uri.queryParameters['audience'] == 'partner'
+            ? 'partner'
+            : 'customer',
+      ),
+    ),
+    GoRoute(
       path: '/customer-orders',
-      builder: (ctx, state) => const CustomerOrdersHubScreen(),
+      builder: (ctx, state) =>
+          CustomerOrdersHubScreen(initialTab: state.uri.queryParameters['tab']),
+    ),
+    GoRoute(
+      path: '/tailoring-dashboard',
+      builder: (ctx, state) => const TailoringDashboardScreen(),
     ),
     GoRoute(
       path: '/service-guide',
@@ -501,6 +517,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const OwnerDesignTemplatesScreen(),
     ),
     GoRoute(
+      path: '/owner/security-templates',
+      builder: (ctx, state) => const OwnerSecurityTemplatesScreen(),
+    ),
+    GoRoute(
       path: '/owner/payouts',
       builder: (ctx, state) => const OwnerPayoutSettingsScreen(),
     ),
@@ -737,6 +757,7 @@ final _router = GoRouter(
       builder: (ctx, state) => OrdersScreen(
         initialFilter: state.uri.queryParameters['filter'],
         initialModuleType: state.uri.queryParameters['module'],
+        initialOrderId: state.uri.queryParameters['orderId'],
       ),
     ),
     GoRoute(

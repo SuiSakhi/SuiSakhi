@@ -40,7 +40,7 @@ class CustomerSupportService {
         .snapshots();
   }
 
-  static Future<void> createTicket({
+  static Future<String> createTicket({
     required String customerName,
     required String category,
     required String subject,
@@ -78,7 +78,7 @@ class CustomerSupportService {
         'Choose a supported order type.',
       );
     }
-    await FirebaseFunctions.instance
+    final result = await FirebaseFunctions.instance
         .httpsCallable('createCustomerSupportTicket')
         .call({
           'customerName': customerName.trim().isEmpty
@@ -94,6 +94,11 @@ class CustomerSupportService {
               ? null
               : orderType,
         });
+    final ticketId = (result.data as Map?)?['ticketId']?.toString().trim();
+    if (ticketId == null || ticketId.isEmpty) {
+      throw StateError('The Helpdesk did not return a ticket number.');
+    }
+    return ticketId;
   }
 
   /// Opens an offline quotation request as a Helpdesk ticket. This deliberately

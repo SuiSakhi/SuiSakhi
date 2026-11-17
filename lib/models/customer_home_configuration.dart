@@ -27,7 +27,7 @@ class CustomerHomeItemRegistry {
     'custom_tailoring': CustomerHomeItemDefinition(
       id: 'custom_tailoring',
       label: 'Custom Tailoring',
-      route: '/designer?entry=order',
+      route: '/tailoring-dashboard',
       iconCodePoint: 0xe3b0,
     ),
     'design_daily': CustomerHomeItemDefinition(
@@ -135,7 +135,7 @@ class CustomerHomeItemRegistry {
     'orders': CustomerHomeItemDefinition(
       id: 'orders',
       label: 'My orders',
-      route: '/orders',
+      route: '/customer-orders',
       iconCodePoint: 0xe8f6,
     ),
     'addresses': CustomerHomeItemDefinition(

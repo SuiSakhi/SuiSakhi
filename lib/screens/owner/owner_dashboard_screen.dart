@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,6 +11,17 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/user_profile.dart';
 
+const bool _loginTimingEnabled =
+    kDebugMode || bool.fromEnvironment('SUISAKHI_LOGIN_TIMING');
+
+void _logOwnerDashboardTiming(String phase, Stopwatch timer) {
+  if (!_loginTimingEnabled) return;
+  debugPrint(
+    '[LoginTiming] utc=${DateTime.now().toUtc().toIso8601String()} '
+    'elapsedMs=${timer.elapsedMilliseconds} phase=$phase',
+  );
+}
+
 class OwnerDashboardScreen extends StatefulWidget {
   const OwnerDashboardScreen({super.key});
 
@@ -18,8 +30,6 @@ class OwnerDashboardScreen extends StatefulWidget {
 }
 
 class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
-  List<DressOrder> _recentOrders = [];
-  bool _loadingOrders = true;
   int _totalOrders = 0;
   int _pendingOrders = 0;
   Map<String, int> _helpdeskStatusCounts = const {};
@@ -45,12 +55,16 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   @override
   void initState() {
     super.initState();
+    final timer = Stopwatch()..start();
+    _logOwnerDashboardTiming('owner_dashboard.init', timer);
     _loadOrders();
     _loadTailors();
     _loadHelpdeskOverview();
   }
 
   Future<void> _loadHelpdeskOverview() async {
+    final timer = Stopwatch()..start();
+    _logOwnerDashboardTiming('owner_dashboard.helpdesk_overview.start', timer);
     if (mounted) {
       setState(() {
         _loadingHelpdeskOverview = true;
@@ -61,6 +75,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       final response = await FirebaseFunctions.instance
           .httpsCallable('listHelpdeskOrders')
           .call(<String, dynamic>{'limit': 1, 'includeAdminOverview': true});
+      _logOwnerDashboardTiming(
+        'owner_dashboard.helpdesk_overview.function_done',
+        timer,
+      );
       final payload = Map<String, dynamic>.from(response.data as Map);
       final overview = Map<String, dynamic>.from(
         payload['adminOverview'] as Map? ?? const {},
@@ -79,7 +97,15 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             (overview['closedByAdminThisMonth'] as num?)?.toInt() ?? 0;
         _loadingHelpdeskOverview = false;
       });
+      _logOwnerDashboardTiming(
+        'owner_dashboard.helpdesk_overview.ready',
+        timer,
+      );
     } on FirebaseFunctionsException catch (error) {
+      _logOwnerDashboardTiming(
+        'owner_dashboard.helpdesk_overview.failed code=${error.code}',
+        timer,
+      );
       if (!mounted) return;
       setState(() {
         _loadingHelpdeskOverview = false;
@@ -95,6 +121,10 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
         };
       });
     } catch (_) {
+      _logOwnerDashboardTiming(
+        'owner_dashboard.helpdesk_overview.failed',
+        timer,
+      );
       if (!mounted) return;
       setState(() {
         _loadingHelpdeskOverview = false;
@@ -105,11 +135,14 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   }
 
   Future<void> _loadTailors() async {
+    final timer = Stopwatch()..start();
+    _logOwnerDashboardTiming('owner_dashboard.tailors.start', timer);
     try {
       final doc = await FirebaseFirestore.instance
           .collection('config')
           .doc('admin')
           .get();
+      _logOwnerDashboardTiming('owner_dashboard.tailors.firestore_done', timer);
       final data = doc.data() ?? {};
       final profiles = <Map<String, dynamic>>[];
       for (final e in List<dynamic>.from(data['tailorProfiles'] ?? [])) {
@@ -149,19 +182,27 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           _tailorOrphanPhones = orphanPhones;
         });
       }
-    } catch (_) {}
+      _logOwnerDashboardTiming('owner_dashboard.tailors.ready', timer);
+    } catch (error) {
+      _logOwnerDashboardTiming(
+        'owner_dashboard.tailors.failed type=${error.runtimeType}',
+        timer,
+      );
+    }
   }
 
   Future<void> _loadOrders() async {
+    final timer = Stopwatch()..start();
+    _logOwnerDashboardTiming('owner_dashboard.orders.start', timer);
     try {
       final snap = await FirebaseFirestore.instance.collection('orders').get();
+      _logOwnerDashboardTiming(
+        'owner_dashboard.orders.firestore_done count=${snap.docs.length}',
+        timer,
+      );
       if (mounted) {
-        final all =
-            snap.docs
-                .map((d) => DressOrder.fromFirestore(d.id, d.data()))
-                .toList()
-              ..sort((a, b) => b.orderDate.compareTo(a.orderDate));
-        final productionOrders = all
+        final productionOrders = snap.docs
+            .map((d) => DressOrder.fromFirestore(d.id, d.data()))
             .where((order) => order.usesProductionAssignment)
             .toList();
 
@@ -177,14 +218,15 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 ].contains(order.assignmentStatus),
               )
               .length;
-          _recentOrders = (productionOrders.isNotEmpty ? productionOrders : all)
-              .take(3)
-              .toList();
-          _loadingOrders = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingOrders = false);
+      _logOwnerDashboardTiming('owner_dashboard.orders.ready', timer);
+    } catch (error) {
+      _logOwnerDashboardTiming(
+        'owner_dashboard.orders.failed type=${error.runtimeType}',
+        timer,
+      );
+      // Keep the dashboard available if order totals cannot be loaded.
     }
   }
 
@@ -216,10 +258,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               Text('Admin workspace', style: AppTextStyles.headlineMedium),
               const SizedBox(height: 16),
               _buildActionGroups(context),
-              const SizedBox(height: 28),
-              Text('Recent Orders', style: AppTextStyles.headlineMedium),
-              const SizedBox(height: 16),
-              _buildRecentOrders(),
             ],
           ),
         ),
@@ -1047,6 +1085,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 const Color(0xFF009688),
                 () => context.push('/owner/customer-home'),
               ),
+              (
+                'Privacy & Legal Templates',
+                Icons.policy_outlined,
+                const Color(0xFFB20B68),
+                () => context.push('/owner/security-templates'),
+              ),
             ],
           ),
         ];
@@ -1126,90 +1170,6 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
           ),
         ),
       );
-
-  Widget _buildRecentOrders() {
-    if (_loadingOrders) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_recentOrders.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Center(
-          child: Text('No orders yet', style: AppTextStyles.bodyMedium),
-        ),
-      );
-    }
-
-    return Column(
-      children: _recentOrders.map((o) {
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.cardShadow,
-                blurRadius: 6,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 40,
-                height: 40,
-                decoration: BoxDecoration(
-                  color: o.status.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.checkroom_rounded,
-                  color: o.status.color,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(o.dressType, style: AppTextStyles.titleMedium),
-                    if (o.tailorName.isNotEmpty)
-                      Text(o.tailorName, style: AppTextStyles.bodySmall),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 4,
-                ),
-                decoration: BoxDecoration(
-                  color: o.status.color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  o.status.label,
-                  style: AppTextStyles.bodySmall.copyWith(
-                    color: o.status.color,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
 
   void _showEnrollTailorDialog(BuildContext context) {
     final firstCtrl = TextEditingController();

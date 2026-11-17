@@ -207,6 +207,9 @@ class _PartnerWorkspaceScreenState extends State<PartnerWorkspaceScreen> {
       case 'change-profile':
         await _changeProfile();
         return;
+      case 'privacy-security':
+        await context.push('/privacy-security?audience=partner');
+        return;
       case 'logout':
         await _logout();
         return;

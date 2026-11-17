@@ -22,7 +22,7 @@ class GarmentMeasurementEstimate {
 class GarmentMeasurementEngine {
   GarmentMeasurementEngine._();
 
-  static const String formulaVersion = 'v1';
+  static const String formulaVersion = 'v2';
 
   static GarmentMeasurementEstimate estimate({
     required BodyMeasurements body,
@@ -203,7 +203,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -266,7 +266,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -330,7 +330,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -392,7 +392,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -457,7 +457,7 @@ class GarmentMeasurementEngine {
 
     // Blouse usually needs closer fit than kurti/gown.
     final ease =
-        (_easeCm(fitPreference) * 0.55) *
+        (_easePercent(fitPreference) * 0.55) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -509,7 +509,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -573,7 +573,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -643,7 +643,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -707,7 +707,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -769,7 +769,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -834,7 +834,7 @@ class GarmentMeasurementEngine {
     final fabricEaseMultiplier = fabricMetadata?.easeMultiplier ?? 1.0;
 
     final ease =
-        _easeCm(fitPreference) *
+        _easePercent(fitPreference) *
         contextEaseMultiplier *
         occasionEaseMultiplier *
         fabricEaseMultiplier;
@@ -1074,21 +1074,27 @@ class GarmentMeasurementEngine {
     return notes;
   }
 
-  static double _easeCm(String fitPreference) {
+  static double _easePercent(String fitPreference) {
     switch (fitPreference.trim().toLowerCase()) {
       case 'slim':
-        return 4;
+      case 'slim fit':
+        return 0;
+      case 'comfort':
+      case 'comfort fit':
+        return 0.085;
       case 'loose':
-        return 8;
+      case 'loose fit':
+        return 0.11;
       case 'regular':
+      case 'regular fit':
       default:
-        return 6;
+        return 0.055;
     }
   }
 
-  static double? _addEase(double? value, double ease) {
+  static double? _addEase(double? value, double easePercent) {
     if (value == null || value <= 0) return null;
-    return value + ease;
+    return value * (1 + easePercent);
   }
 
   static double? _ratioValue(double? value, double ratio) {

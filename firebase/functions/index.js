@@ -9,6 +9,7 @@
  * Optional override: whatsapp.template_default for template name (default hello_world).
  */
 const functions = require("firebase-functions");
+const { onCall: onCallV2, HttpsError: HttpsErrorV2 } = require("firebase-functions/v2/https");
 const admin = require("firebase-admin");
 
 if (!admin.apps.length) {
@@ -19,6 +20,60 @@ const {
   createCatalogueStorageTrigger,
 } = require("./catalogue_processor/catalogue_trigger");
 const catalogueAi = require("./catalogue_ai");
+const { defineSecret } = require("firebase-functions/params");
+const {
+  createFirestoreRateLimiter,
+  createSmartAssistHandler,
+} = require("./smart_assist");
+
+const anthropicApiKey = defineSecret("ANTHROPIC_API_KEY");
+const smartAssistRateLimiter = createFirestoreRateLimiter({
+  db: admin.firestore(),
+  Timestamp: admin.firestore.Timestamp,
+  FieldValue: admin.firestore.FieldValue,
+});
+const smartAssistHandler = createSmartAssistHandler({
+  HttpsError: functions.https.HttpsError,
+  getApiKey: () => anthropicApiKey.value(),
+  rateLimiter: smartAssistRateLimiter,
+  logger: functions.logger,
+});
+const smartAssistV2Handler = createSmartAssistHandler({
+  HttpsError: HttpsErrorV2,
+  getApiKey: () => anthropicApiKey.value(),
+  rateLimiter: smartAssistRateLimiter,
+  logger: functions.logger,
+});
+
+exports.smartAssist = functions
+  .runWith({
+    timeoutSeconds: 30,
+    memory: "256MB",
+    enforceAppCheck: true,
+    secrets: [anthropicApiKey],
+  })
+  .https.onCall(smartAssistHandler);
+
+// Staging migration path: keep the Gen 1 callable above until the Gen 2
+// endpoint is deployed, configured, and verified from the app.
+exports.smartAssistV2 = onCallV2(
+  {
+    region: "us-central1",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    enforceAppCheck: true,
+    secrets: [anthropicApiKey],
+    invoker: "private",
+    // The Cloud Run invoker IAM check is disabled manually to comply with
+    // the organization's domain-restricted-sharing policy.
+    preserveExternalChanges: true,
+  },
+  (request) =>
+    smartAssistV2Handler(request.data, {
+      auth: request.auth,
+      app: request.app,
+    }),
+);
 
 const catalogueAiFunctions = catalogueAi.createCatalogueAiFunctions({
   functions,

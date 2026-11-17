@@ -151,7 +151,7 @@ class _CustomerAccountCenterScreenState
             icon: Icons.privacy_tip_outlined,
             title: 'Privacy & Security',
             subtitle: 'Privacy, terms and account security',
-            onTap: () => _comingSoon(context, 'Privacy & Security'),
+            onTap: () => context.push('/privacy-security?audience=customer'),
           ),
           _MenuItem(
             icon: Icons.support_agent,

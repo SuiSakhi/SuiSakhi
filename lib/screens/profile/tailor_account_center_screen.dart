@@ -31,10 +31,7 @@ class TailorAccountCenterScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _TailorHeader(
-            displayName: displayName,
-            phone: phone,
-          ),
+          _TailorHeader(displayName: displayName, phone: phone),
           const SizedBox(height: 20),
 
           const _SectionTitle(title: 'Profile'),
@@ -140,6 +137,12 @@ class TailorAccountCenterScreen extends StatelessWidget {
             subtitle: 'Contact SuiSakhi support',
             onTap: () => _comingSoon(context, 'Help & Support'),
           ),
+          _MenuItem(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Privacy & Security',
+            subtitle: 'Partner privacy, legal terms and account security',
+            onTap: () => context.push('/privacy-security?audience=partner'),
+          ),
 
           const SizedBox(height: 16),
           _MenuItem(
@@ -174,10 +177,7 @@ class _TailorHeader extends StatelessWidget {
   final String displayName;
   final String phone;
 
-  const _TailorHeader({
-    required this.displayName,
-    required this.phone,
-  });
+  const _TailorHeader({required this.displayName, required this.phone});
 
   @override
   Widget build(BuildContext context) {
@@ -260,9 +260,7 @@ class _TailorHeader extends StatelessWidget {
 class _SectionTitle extends StatelessWidget {
   final String title;
 
-  const _SectionTitle({
-    required this.title,
-  });
+  const _SectionTitle({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -296,13 +294,9 @@ class _MenuItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor = isDestructive
-        ? AppColors.error
-        : const Color(0xFF4CAF50);
+    final iconColor = isDestructive ? AppColors.error : const Color(0xFF4CAF50);
 
-    final titleColor = isDestructive
-        ? AppColors.error
-        : AppColors.textPrimary;
+    final titleColor = isDestructive ? AppColors.error : AppColors.textPrimary;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),

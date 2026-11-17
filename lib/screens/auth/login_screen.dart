@@ -15,6 +15,17 @@ import '../../core/router_keys.dart';
 import '../../models/user_profile.dart';
 import '../profile/profile_selection_screen.dart';
 
+const bool _loginTimingEnabled =
+    kDebugMode || bool.fromEnvironment('SUISAKHI_LOGIN_TIMING');
+
+void _logLoginTiming(String phase, Stopwatch timer) {
+  if (!_loginTimingEnabled) return;
+  debugPrint(
+    '[LoginTiming] utc=${DateTime.now().toUtc().toIso8601String()} '
+    'elapsedMs=${timer.elapsedMilliseconds} phase=$phase',
+  );
+}
+
 String _formatPhoneVerifyError(FirebaseAuthException e) {
   final message = e.message?.toLowerCase() ?? '';
   final isConnectionFailure =
@@ -326,10 +337,13 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _restorePersistedSession() async {
+    final timer = Stopwatch()..start();
+    _logLoginTiming('session_restore.start', timer);
     try {
       // Wait for Firebase to finish restoring native auth state before deciding
       // whether this device needs a new OTP.
       final user = await FirebaseAuth.instance.authStateChanges().first;
+      _logLoginTiming('session_restore.auth_state_ready', timer);
       if (!mounted) return;
       if (user == null) {
         _phoneAuthModel.setLoading(false);
@@ -339,20 +353,26 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       final destination = await AppPinStore.readDestination(user.uid);
+      _logLoginTiming('session_restore.destination_read', timer);
       if (destination != null) {
         await AppState.instance.loadUserProfile(user.uid);
+        _logLoginTiming('session_restore.user_profile_loaded', timer);
         await AppState.instance.loadRates();
+        _logLoginTiming('session_restore.rates_loaded', timer);
         if (!mounted) return;
         _phoneAuthModel.setLoading(false);
         GoRouter.of(context).go(destination);
+        _logLoginTiming('session_restore.route_changed', timer);
         return;
       }
 
       // Older sessions may not have a remembered destination. Reuse the
       // existing post-login profile resolver once, without requesting OTP.
       await _handleSignedInUser(user);
+      _logLoginTiming('session_restore.post_login_handler_done', timer);
       if (mounted) setState(() => _restoringSession = false);
     } catch (e) {
+      _logLoginTiming('session_restore.failed', timer);
       if (!mounted) return;
       _phoneAuthModel.setLoading(false);
       setState(() {
@@ -381,9 +401,10 @@ class _LoginScreenState extends State<LoginScreen> {
     _phoneVerifyWatchdog = null;
   }
 
-  void _armPhoneWatchdog() {
+  void _armPhoneWatchdog(Stopwatch timer) {
     _cancelPhoneWatchdog();
     _phoneVerifyWatchdog = Timer(const Duration(seconds: 130), () {
+      _logLoginTiming('otp_request.watchdog_timeout', timer);
       if (!_phoneAuthModel.alive) return;
       if (_phoneAuthModel.otpStep || !_phoneAuthModel.loading) return;
       _phoneAuthModel.setFailed(
@@ -541,12 +562,19 @@ class _LoginScreenState extends State<LoginScreen> {
     User user,
     String destination,
   ) async {
+    final timer = Stopwatch()..start();
+    _logLoginTiming('destination_store.start', timer);
     try {
       await AppPinStore.saveDestination(user.uid, destination);
+      _logLoginTiming('destination_store.done', timer);
     } catch (e) {
+      _logLoginTiming('destination_store.failed', timer);
       debugPrint('Could not save PIN unlock destination: $e');
     }
-    if (navCtx.mounted) GoRouter.of(navCtx).go(destination);
+    if (navCtx.mounted) {
+      GoRouter.of(navCtx).go(destination);
+      _logLoginTiming('destination_route_changed', timer);
+    }
   }
 
   // ── Shared post-auth handler ─────────────────────────────────────────────
@@ -556,6 +584,8 @@ class _LoginScreenState extends State<LoginScreen> {
     bool partnerEntry = false,
     String? displayNameOverride,
   }) async {
+    final timer = Stopwatch()..start();
+    _logLoginTiming('post_login.start', timer);
     // Step 1: Temporary profile
     AppState.instance.setProfile(
       UserProfile(
@@ -572,14 +602,18 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     // Step 2: Check config role (admin: owner/tailor/delivery emails + tailorPhones for OTP).
+    _logLoginTiming('post_login.config_role.start', timer);
     final configRole = await AppState.instance.getRoleFromConfig(
       email ?? user.email,
       phoneE164: user.phoneNumber,
     );
+    _logLoginTiming('post_login.config_role.done', timer);
 
     // Step 3: Load existing Firestore profile
     await AppState.instance.loadUserProfile(user.uid);
+    _logLoginTiming('post_login.user_profile_loaded', timer);
     await AppState.instance.loadRates();
+    _logLoginTiming('post_login.rates_loaded', timer);
 
     UserRole finalRole;
     bool returning = AppState.instance.hasCompletedSetup;
@@ -637,9 +671,12 @@ class _LoginScreenState extends State<LoginScreen> {
         deliveryAddress: existing?.deliveryAddress,
       ),
     );
+    _logLoginTiming('post_login.profile_saved.start', timer);
     try {
       await AppState.instance.saveUserProfile();
+      _logLoginTiming('post_login.profile_saved.done', timer);
     } on FirebaseException catch (e) {
+      _logLoginTiming('post_login.profile_saved.failed', timer);
       // Most common: Firestore rules block writes to users/{uid}. Auth still succeeded.
       final navCtx0 = (mounted && context.mounted)
           ? context
@@ -678,6 +715,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
     }
     try {
+      _logLoginTiming('post_login.account_foundation.start', timer);
       final signedInUser = FirebaseAuth.instance.currentUser;
       final signedInPhone = signedInUser?.phoneNumber;
 
@@ -690,11 +728,14 @@ class _LoginScreenState extends State<LoginScreen> {
           displayName: signedInUser.displayName,
         );
       }
+      _logLoginTiming('post_login.account_foundation.done', timer);
     } on FirebaseException catch (e) {
+      _logLoginTiming('post_login.account_foundation.failed', timer);
       debugPrint(
         'SuiSakhi account/profile foundation skipped: ${e.code} ${e.message}',
       );
     } catch (e) {
+      _logLoginTiming('post_login.account_foundation.failed', timer);
       debugPrint('SuiSakhi account/profile foundation skipped: $e');
     }
 
@@ -710,6 +751,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (partnerEntry &&
           configRole == null &&
           (existing == null || existing.role == UserRole.customer)) {
+        _logLoginTiming('post_login.partner_entry_route', timer);
         _phoneAuthModel.setLoading(false);
         await _goToPostLoginRoute(navCtx, user, '/partner/opportunities');
         return;
@@ -722,13 +764,20 @@ class _LoginScreenState extends State<LoginScreen> {
         if (signedInUser != null &&
             signedInPhone != null &&
             signedInPhone.trim().isNotEmpty) {
+          _logLoginTiming('post_login.account_id_lookup.start', timer);
           final accountId = await AppState.instance.fetchAccountIdForMobile(
             signedInPhone.trim(),
           );
+          _logLoginTiming('post_login.account_id_lookup.done', timer);
 
+          _logLoginTiming('post_login.active_profiles_lookup.start', timer);
           final profiles = accountId != null && accountId.isNotEmpty
               ? await AppState.instance.fetchActiveProfilesForAccount(accountId)
               : <Map<String, dynamic>>[];
+          _logLoginTiming(
+            'post_login.active_profiles_lookup.done count=${profiles.length}',
+            timer,
+          );
 
           if (configRole == UserRole.support) {
             if (!profiles.any(
@@ -780,6 +829,7 @@ class _LoginScreenState extends State<LoginScreen> {
         }
 */
           if (profiles.length > 1 && navCtx.mounted) {
+            _logLoginTiming('post_login.profile_selection.wait.start', timer);
             final selectedProfile =
                 await Navigator.of(
                   navCtx,
@@ -789,6 +839,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     builder: (_) => ProfileSelectionScreen(profiles: profiles),
                   ),
                 );
+            _logLoginTiming('post_login.profile_selection.wait.done', timer);
 
             if (selectedProfile != null) {
               if (selectedProfile['isSyntheticHelpdeskProfile'] == true) {
@@ -814,10 +865,12 @@ class _LoginScreenState extends State<LoginScreen> {
                   accountId.isNotEmpty &&
                   selectedProfileId != null &&
                   selectedProfileId.trim().isNotEmpty) {
+                _logLoginTiming('post_login.active_profile_save.start', timer);
                 await AppState.instance.setActiveProfileForAccount(
                   accountId: accountId,
                   profileId: selectedProfileId,
                 );
+                _logLoginTiming('post_login.active_profile_save.done', timer);
 
                 _phoneAuthModel.setLoading(false);
 
@@ -858,10 +911,12 @@ class _LoginScreenState extends State<LoginScreen> {
                 accountId.isNotEmpty &&
                 onlyProfileId != null &&
                 onlyProfileId.trim().isNotEmpty) {
+              _logLoginTiming('post_login.active_profile_save.start', timer);
               await AppState.instance.setActiveProfileForAccount(
                 accountId: accountId,
                 profileId: onlyProfileId,
               );
+              _logLoginTiming('post_login.active_profile_save.done', timer);
 
               _phoneAuthModel.setLoading(false);
 
@@ -881,12 +936,14 @@ class _LoginScreenState extends State<LoginScreen> {
           }
         }
       } catch (e) {
+        _logLoginTiming('post_login.profile_resolution.failed', timer);
         debugPrint('Profile selection skipped: $e');
       }
 
       _phoneAuthModel.setLoading(false);
 
       if (navCtx.mounted) {
+        _logLoginTiming('post_login.fallback_route', timer);
         await _goToPostLoginRoute(
           navCtx,
           user,
@@ -919,6 +976,8 @@ class _LoginScreenState extends State<LoginScreen> {
     // tap/keyboard submit from starting a second Firebase SMS request.
     if (_phoneAuthModel.loading) return;
     _phoneAuthModel.setLoading(true);
+    final timer = Stopwatch()..start();
+    _logLoginTiming('otp_request.start', timer);
 
     // Wait for Firebase's initial auth event before deciding whether this
     // device needs OTP. currentUser can still be null while native credentials
@@ -931,6 +990,7 @@ class _LoginScreenState extends State<LoginScreen> {
             const Duration(seconds: 10),
           );
     } catch (e) {
+      _logLoginTiming('otp_request.auth_state_check.failed', timer);
       if (mounted && _phoneAuthModel.loading) {
         _phoneAuthModel.setFailed(
           'Could not check your existing sign-in. Check your connection and try again.',
@@ -939,6 +999,7 @@ class _LoginScreenState extends State<LoginScreen> {
       debugPrint('Firebase auth state check failed before OTP: $e');
       return;
     }
+    _logLoginTiming('otp_request.auth_state_ready', timer);
 
     // The user may have closed the login page while Firebase initialized.
     if (!mounted || !_phoneAuthModel.loading) return;
@@ -946,6 +1007,7 @@ class _LoginScreenState extends State<LoginScreen> {
     // A restored Firebase session must never trigger another OTP just because
     // the login screen was opened directly.
     if (existingUser != null) {
+      _logLoginTiming('otp_request.existing_session_found', timer);
       _scheduleSessionRestore();
       return;
     }
@@ -961,55 +1023,24 @@ class _LoginScreenState extends State<LoginScreen> {
 
     _phoneAuthModel.clearError();
     _phoneAuthModel.flowActive = true;
-    _armPhoneWatchdog();
+    _armPhoneWatchdog(timer);
 
-    try {
-      final reg = await AppState.instance.fetchPhoneRegistry(e164);
-      if (reg != null && reg.uid.isNotEmpty) {
-        debugPrint(
-          'Legacy phoneRegistry role found: ${reg.roleName}. '
-          'Skipping old account-type popup because SuiSakhi now supports multiple profiles.',
-        );
-      }
-    } catch (e) {
-      // Registry lookup is advisory; a temporary Firestore issue must not send
-      // a second SMS or prevent Firebase phone verification.
-      debugPrint('Phone registry lookup skipped: $e');
-    }
-
-    var name = nameCtrl.text.trim();
-    try {
-      if (!_isMeaningfulDisplayName(name)) {
-        final fromDb = await AppState.instance
-            .lookupDisplayNameByPhoneForSignIn(e164);
-        if (_isMeaningfulDisplayName(fromDb)) {
-          name = fromDb!;
-          nameCtrl.text = name;
-        }
-      }
-    } catch (_) {
-      // Lookup is best-effort (rules / network); continue with typed or empty name.
-    }
+    final name = nameCtrl.text.trim();
 
     // Name may stay empty: after OTP, [loadUserProfile] + [_resolvedProfileDisplayName]
     // prefer the saved Firestore name for returning users.
     _phoneAuthModel.collectedDisplayName = name;
     _phoneAuthModel.phoneDisplay = display;
 
-    // If the user closed the page while the Firestore preflight was waiting,
-    // don't send an SMS after the flow has already been cancelled.
-    if (!_phoneAuthModel.flowActive) {
-      _cancelPhoneWatchdog();
-      return;
-    }
-
     try {
+      _logLoginTiming('otp_request.firebase_verify.start', timer);
       await FirebaseAuth.instance.verifyPhoneNumber(
         phoneNumber: e164,
         timeout: const Duration(seconds: 120),
         // Android instant verification — auto sign-in. On iOS always show OTP (avoids
         // rare plugin/callback ordering that completes before the OTP UI paints).
         verificationCompleted: (credential) async {
+          _logLoginTiming('otp_request.auto_verification_completed', timer);
           _cancelPhoneWatchdog();
           if (!_phoneAuthModel.alive) return;
           _phoneAuthModel.cancelVerificationFailDebounce();
@@ -1018,12 +1049,11 @@ class _LoginScreenState extends State<LoginScreen> {
           await _completePhoneSignIn(credential);
         },
         verificationFailed: (e) {
-          /*  print('====================================');
-  print('PHONE AUTH FAILED');
-  print('CODE: ${e.code}');
-  print('MESSAGE: ${e.message}');
-  print('====================================');
-*/
+          _logLoginTiming('otp_request.verification_failed', timer);
+          debugPrint(
+            '[PhoneAuth] verificationFailed code=${e.code}; '
+            'message=${e.message}',
+          );
           _cancelPhoneWatchdog();
 
           _phoneAuthModel.debouncedVerificationFailed(
@@ -1032,6 +1062,7 @@ class _LoginScreenState extends State<LoginScreen> {
         },
         // Do NOT gate on LoginScreen mounted — it can be false during GoRouter URL returns.
         codeSent: (verificationId, _) {
+          _logLoginTiming('otp_request.code_sent', timer);
           _cancelPhoneWatchdog();
           if (kDebugMode) {
             debugPrint('[PhoneAuth] codeSent verificationId received');
@@ -1039,15 +1070,19 @@ class _LoginScreenState extends State<LoginScreen> {
           _phoneAuthModel.setCodeSent(verificationId);
         },
         codeAutoRetrievalTimeout: (verificationId) {
+          _logLoginTiming('otp_request.auto_retrieval_timeout', timer);
           if (kDebugMode) {
             debugPrint('[PhoneAuth] codeAutoRetrievalTimeout');
           }
           _phoneAuthModel.mergeTimeoutVerificationId(verificationId);
         },
       );
+      _logLoginTiming('otp_request.firebase_verify.returned', timer);
     } catch (e) {
+      _logLoginTiming('otp_request.firebase_verify.threw', timer);
       _cancelPhoneWatchdog();
       _phoneAuthModel.cancelVerificationFailDebounce();
+      debugPrint('[PhoneAuth] verifyPhoneNumber threw: $e');
       _phoneAuthModel.setFailed(
         'Could not start phone verification. Try again.',
       );
@@ -1057,6 +1092,8 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _verifyPhoneFlowOtp() async {
     // Pinput can fire both onCompleted and onSubmitted for the same code.
     if (_phoneAuthModel.loading) return;
+    final timer = Stopwatch()..start();
+    _logLoginTiming('otp_submit.start', timer);
     final vid = _phoneAuthModel.verificationId;
     final otpCtrl = _phoneAuthModel.otpController;
     if (vid == null) {
@@ -1075,10 +1112,14 @@ class _LoginScreenState extends State<LoginScreen> {
         verificationId: vid,
         smsCode: code,
       );
+      _logLoginTiming('otp_submit.credential_created', timer);
       await _completePhoneSignIn(credential);
+      _logLoginTiming('otp_submit.sign_in_flow_returned', timer);
     } on FirebaseAuthException catch (e) {
+      _logLoginTiming('otp_submit.firebase_failed', timer);
       _phoneAuthModel.setFailed(_formatPhoneVerifyError(e));
     } catch (_) {
+      _logLoginTiming('otp_submit.failed', timer);
       _phoneAuthModel.setFailed('Invalid OTP. Please try again.');
     }
   }
@@ -1463,10 +1504,13 @@ class _LoginScreenState extends State<LoginScreen> {
   Future<void> _signInWithPhoneCredential(
     PhoneAuthCredential credential,
   ) async {
+    final timer = Stopwatch()..start();
+    _logLoginTiming('credential_sign_in.start', timer);
     try {
       final userCred = await FirebaseAuth.instance.signInWithCredential(
         credential,
       );
+      _logLoginTiming('credential_sign_in.firebase_done', timer);
       final user = userCred.user;
       if (user == null) {
         _phoneAuthModel.setLoading(false);
@@ -1474,7 +1518,9 @@ class _LoginScreenState extends State<LoginScreen> {
       }
       if (kAppPinEnabled) {
         final resetPin = _kPhoneAuthFlowModel.resetPinAfterOtp;
+        _logLoginTiming('credential_sign_in.local_pin_check.start', timer);
         final hasPin = await AppPinStore.hasPin(user.uid);
+        _logLoginTiming('credential_sign_in.local_pin_check.done', timer);
         if (resetPin || !hasPin) {
           final saved = await suiSakhiRootNavigatorKey.currentState?.push<bool>(
             MaterialPageRoute<bool>(
@@ -1490,9 +1536,12 @@ class _LoginScreenState extends State<LoginScreen> {
             return;
           }
         }
+      } else {
+        _logLoginTiming('credential_sign_in.local_pin_check.skipped', timer);
       }
       _kPhoneAuthFlowModel.resetPinAfterOtp = false;
       final partnerEntry = _kPhoneAuthFlowModel.partnerEntry;
+      _logLoginTiming('credential_sign_in.post_login.start', timer);
       await _handleSignedInUser(
         user,
         partnerEntry: partnerEntry,
@@ -1504,9 +1553,12 @@ class _LoginScreenState extends State<LoginScreen> {
       _kPhoneAuthFlowModel.partnerEntry = false;
       _kPhoneAuthFlowModel.flowActive = false;
       _kPhoneAuthFlowModel.setLoading(false);
+      _logLoginTiming('credential_sign_in.complete', timer);
     } on FirebaseAuthException catch (e) {
+      _logLoginTiming('credential_sign_in.firebase_failed', timer);
       _phoneAuthModel.setFailed(_formatPhoneVerifyError(e));
     } catch (e) {
+      _logLoginTiming('credential_sign_in.failed', timer);
       _phoneAuthModel.setFailed('Sign-in failed: $e');
     }
   }

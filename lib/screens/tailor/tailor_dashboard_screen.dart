@@ -14,7 +14,7 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/payment_models.dart';
 import '../../models/user_profile.dart';
-import '../../services/claude_smart_assistant_service.dart';
+import '../../services/smart_assist_service.dart';
 import '../../services/order_lifecycle_service.dart';
 import '../../services/customer_fabric_asset_service.dart';
 import '../../widgets/orders/delivery_pin_dialog.dart';
@@ -1048,40 +1048,58 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
       final review = order.fabricRequirementReview ?? const <String, dynamic>{};
       final reviewStatus = review['status']?.toString();
       if (reviewStatus == 'shortfall_pending_customer') {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Waiting for the Customer to confirm the extra fabric before cutting.'),
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Waiting for the Customer to confirm the extra fabric before cutting.',
+            ),
+          ),
+        );
         return;
       }
-      if (!['verified_no_shortfall', 'customer_confirmed'].contains(reviewStatus)) {
+      if (![
+        'verified_no_shortfall',
+        'customer_confirmed',
+      ].contains(reviewStatus)) {
         final result = await showDialog<Map<String, String>>(
           context: context,
           builder: (_) => _FabricRequirementDialog(
-            estimateMeters: (order.fabricPurchaseEstimate!['estimatedMeters'] as num).toDouble(),
+            estimateMeters:
+                (order.fabricPurchaseEstimate!['estimatedMeters'] as num)
+                    .toDouble(),
           ),
         );
         if (result == null || !mounted) return;
         try {
-          final response = await OrderLifecycleService.saveTailorFabricRequirementReview(
-            orderId: order.id,
-            accountId: widget.accountId!.trim(),
-            profileId: widget.tailorProfileId!.trim(),
-            actualRequiredMeters: double.parse(result['actualMeters']!),
-            note: result['note'] ?? '',
-          );
+          final response =
+              await OrderLifecycleService.saveTailorFabricRequirementReview(
+                orderId: order.id,
+                accountId: widget.accountId!.trim(),
+                profileId: widget.tailorProfileId!.trim(),
+                actualRequiredMeters: double.parse(result['actualMeters']!),
+                note: result['note'] ?? '',
+              );
           await _loadOrders();
           if (!mounted) return;
           if (response['status'] == 'shortfall_pending_customer') {
-            ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text('Fabric shortfall sent to the Customer. Cutting is held until they confirm.'),
-            ));
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Fabric shortfall sent to the Customer. Cutting is held until they confirm.',
+                ),
+              ),
+            );
             return;
           }
         } on FirebaseFunctionsException catch (error) {
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-              content: Text(error.message ?? 'Could not save the fabric check.'),
-            ));
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  error.message ?? 'Could not save the fabric check.',
+                ),
+              ),
+            );
           }
           return;
         }
@@ -1730,7 +1748,7 @@ class _TailorChecklistDialogState extends State<_TailorChecklistDialog> {
   @override
   void initState() {
     super.initState();
-    _future = ClaudeSmartAssistantService.tailorStitchingChecklist(
+    _future = SmartAssistService.tailorStitchingChecklist(
       widget.order,
       language: _lang,
     );
@@ -1740,7 +1758,7 @@ class _TailorChecklistDialogState extends State<_TailorChecklistDialog> {
     if (lang == _lang) return;
     setState(() {
       _lang = lang;
-      _future = ClaudeSmartAssistantService.tailorStitchingChecklist(
+      _future = SmartAssistService.tailorStitchingChecklist(
         widget.order,
         language: lang,
       );
@@ -2551,7 +2569,10 @@ class _OrderCard extends StatelessWidget {
                                 ),
                               ),
                               const SizedBox(height: 4),
-                              Text(order.notes!, style: AppTextStyles.bodySmall),
+                              Text(
+                                order.notes!,
+                                style: AppTextStyles.bodySmall,
+                              ),
                             ],
                           ),
                         ),
@@ -3296,7 +3317,9 @@ class _FabricRequirementDialogState extends State<_FabricRequirementDialog> {
   @override
   void initState() {
     super.initState();
-    _actual = TextEditingController(text: widget.estimateMeters.toStringAsFixed(1));
+    _actual = TextEditingController(
+      text: widget.estimateMeters.toStringAsFixed(1),
+    );
   }
 
   @override
@@ -3308,7 +3331,9 @@ class _FabricRequirementDialogState extends State<_FabricRequirementDialog> {
 
   void _submit() {
     final amount = double.tryParse(_actual.text.trim());
-    if (amount == null || !amount.isFinite || amount <= 0 || amount > 100) return;
+    if (amount == null || !amount.isFinite || amount <= 0 || amount > 100) {
+      return;
+    }
     Navigator.pop(context, <String, String>{
       'actualMeters': amount.toStringAsFixed(1),
       'note': _note.text.trim(),
@@ -3323,7 +3348,9 @@ class _FabricRequirementDialogState extends State<_FabricRequirementDialog> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Customer estimate · ${widget.estimateMeters.toStringAsFixed(1)} m'),
+          Text(
+            'Customer estimate · ${widget.estimateMeters.toStringAsFixed(1)} m',
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: _actual,
@@ -3343,12 +3370,17 @@ class _FabricRequirementDialogState extends State<_FabricRequirementDialog> {
               border: OutlineInputBorder(),
             ),
           ),
-          const Text('If the actual requirement is higher, cutting waits for Customer confirmation.'),
+          const Text(
+            'If the actual requirement is higher, cutting waits for Customer confirmation.',
+          ),
         ],
       ),
     ),
     actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+      TextButton(
+        onPressed: () => Navigator.pop(context),
+        child: const Text('Cancel'),
+      ),
       FilledButton(onPressed: _submit, child: const Text('Send fabric check')),
     ],
   );
@@ -3366,28 +3398,27 @@ class _CustomerFabricAssetButton extends StatelessWidget {
     builder: (context, snapshot) => TextButton.icon(
       onPressed: snapshot.hasData
           ? () => showDialog<void>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: Text(label),
-                  content: SizedBox(
-                    width: 360,
-                    height: 420,
-                    child: Image.network(
-                      snapshot.data!,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, _, _) => const Center(
-                        child: Text('This image is unavailable.'),
-                      ),
-                    ),
+              context: context,
+              builder: (dialogContext) => AlertDialog(
+                title: Text(label),
+                content: SizedBox(
+                  width: 360,
+                  height: 420,
+                  child: Image.network(
+                    snapshot.data!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, _, _) =>
+                        const Center(child: Text('This image is unavailable.')),
                   ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('Close'),
-                    ),
-                  ],
                 ),
-              )
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    child: const Text('Close'),
+                  ),
+                ],
+              ),
+            )
           : null,
       icon: const Icon(Icons.image_outlined, size: 18),
       label: Text(snapshot.hasError ? '$label unavailable' : label),

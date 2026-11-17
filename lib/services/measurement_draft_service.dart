@@ -10,6 +10,7 @@ class MeasurementDraftService {
     required String personName,
     required String relationship,
     required String source,
+    double? profileHeightCm,
   }) async {
     final activeSnap = await _db
         .collection('measurements')
@@ -21,28 +22,29 @@ class MeasurementDraftService {
 
     for (final doc in activeSnap.docs) {
       final data = doc.data();
+      if ((data['customerProfileId'] ?? '').toString() != customerProfileId) {
+        continue;
+      }
       final status = (data['status'] ?? '').toString();
 
-      final isActive = status == 'draft' ||
+      final isActive =
+          status == 'draft' ||
           status == 'ai_estimated' ||
           status == 'customer_review_required';
 
       if (isActive) {
-        batch.set(
-          doc.reference,
-          {
-            'status': 'superseded',
-            'supersededAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+        batch.set(doc.reference, {
+          'status': 'superseded',
+          'supersededAt': FieldValue.serverTimestamp(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
       }
     }
 
     final ref = _db.collection('measurements').doc();
 
     batch.set(ref, {
+      'schemaVersion': 1,
       'draftId': ref.id,
       'accountId': accountId,
       'customerProfileId': customerProfileId,
@@ -50,6 +52,13 @@ class MeasurementDraftService {
       'personName': personName,
       'relationship': relationship,
       'source': source,
+      'measurementType': 'ai_estimate',
+      'measurementSchema': 'suisakhi_body_estimate_v1',
+      'measurementUnit': 'cm',
+      if (profileHeightCm != null &&
+          profileHeightCm >= 100 &&
+          profileHeightCm <= 220)
+        'profileHeightCm': profileHeightCm,
       'status': 'draft',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -59,14 +68,40 @@ class MeasurementDraftService {
 
     return ref.id;
   }
-    static Future<void> saveAiEstimate({
+
+  static Future<double?> profileHeightForDraft(String draftId) async {
+    try {
+      final snapshot = await _db.collection('measurements').doc(draftId).get();
+      final value = snapshot.data()?['profileHeightCm'];
+      final height = value is num
+          ? value.toDouble()
+          : double.tryParse('$value');
+      if (height == null || height < 100 || height > 220) return null;
+      return height;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> saveAiEstimate({
     required String draftId,
     required Map<String, double> measurementValues,
     required List<String> validationIssues,
     required String confidenceLevel,
+    double? calibrationHeightCm,
   }) async {
     await _db.collection('measurements').doc(draftId).set({
+      'schemaVersion': 1,
+      'measurementType': 'ai_estimate',
+      'measurementSchema': 'suisakhi_body_estimate_v1',
       'measurementValues': measurementValues,
+      'measurementUnit': 'cm',
+      if (calibrationHeightCm != null)
+        'calibration': {
+          'heightSource': 'customer_profile',
+          'heightCm': calibrationHeightCm,
+          'weightUsed': false,
+        },
       'validationIssues': validationIssues,
       'confidenceLevel': confidenceLevel,
       'requiresReview': true,
@@ -135,7 +170,7 @@ class MeasurementDraftService {
     if (waist != null && hips != null && waist > hips + 30) {
       issues.add('Waist and hip values appear inconsistent');
     }
-    
+
     if (waist != null && hips != null && waist > hips) {
       issues.add('Waist is greater than hip. Please review these values.');
     }
@@ -154,7 +189,7 @@ class MeasurementDraftService {
 
     return issues;
   }
-  
+
   static String confidenceFromIssues(List<String> issues) {
     if (issues.length >= 3) {
       return 'low';
@@ -164,6 +199,9 @@ class MeasurementDraftService {
       return 'medium';
     }
 
-    return 'high';
+    // Passing plausibility checks is not evidence of accuracy. Until this
+    // heuristic is validated against tailor tape measurements, keep its best
+    // displayed confidence at medium.
+    return 'medium';
   }
 }

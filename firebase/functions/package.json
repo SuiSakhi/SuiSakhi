@@ -13,6 +13,7 @@
   },
   "private": true,
   "scripts": {
+    "test": "node --test test/*.test.js",
     "catalogue:sample": "node tools/catalogue_processor/generate_sample.js",
     "catalogue:process": "node tools/catalogue_processor/process_local.js",
     "catalogue:verify": "node tools/catalogue_processor/verify_outputs.js"

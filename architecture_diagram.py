@@ -395,7 +395,7 @@ def build():
         ("orders/{orderId}", ["dressType", "tailorName", "customerId", "status", "paymentStatus", "orderDate", "deliveryDate", "price", "deliveryAddress", "deliveryPartnerId", "deliveryFee"]),
         ("config/admin", ["ownerEmails: []", "tailorEmails: []", "deliveryEmails: []"]),
         ("config/delivery", ["feePerOrder: double", "subscriptionFee: double"]),
-        ("config/api", ["claudeKey: String"]),
+        ("config/api", ["legacy Anthropic key retained; client reads denied"]),
         ("rates/{dressType}", ["dressType", "basePrice", "notes"]),
         ("subscriptions/{email}", ["email", "active: bool", "subscribedAt", "subscribedUntil", "totalDeliveries"]),
     ]

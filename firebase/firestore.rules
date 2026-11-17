@@ -11,6 +11,7 @@
 //
 // FN-*   = Helper Functions
 // COLL-* = Collection Entry Points
+// COLL-TEMPLATE-SECURITY = Admin-managed published legal/privacy content
 // PA-*   = Partner Application Lifecycle
 //
 // PA-APPLICANT-* = Applicant Actions
@@ -1621,18 +1622,84 @@ service cloud.firestore {
       allow write: if isConfiguredAdmin();
     }
 
-    // Public-to-authenticated configuration documents are readable for app
-    // routing and pricing. Use a single-segment wildcard so the support
-    // document exclusion is evaluated as a string comparison.
+    // Client-readable configuration excludes both support credentials and the
+    // legacy Anthropic API document. Provider secrets are now server-side only.
     match /config/{document} {
-      allow read: if signedIn() && document != 'support';
+      allow read: if signedIn() && document != 'support' && document != 'api';
       allow write: if isConfiguredAdmin();
     }
 
     // Preserve access to nested configuration such as versioned agreements.
     match /config/{document}/{nested=**} {
-      allow read: if signedIn() && document != 'support';
+      allow read: if signedIn() && document != 'support' && document != 'api';
       allow write: if isConfiguredAdmin();
+    }
+
+    // Smart Assist request counters are maintained by Admin SDK transactions.
+    match /smart_assist_rate_limits/{userKey} {
+      allow read, write: if false;
+    }
+
+    // =====================================================
+    // RULE-ID: COLL-TEMPLATE-SECURITY
+    // ACTOR: Authenticated customer/partner reader; configured Admin writer
+    // RESOURCE: Privacy, security, IP and legal templates
+    // OPERATION: Read published content or manage Admin drafts
+    // PURPOSE: Keeps drafts private and prevents publication without legal review.
+    // =====================================================
+    match /template_security/{templateId} {
+      allow get, list: if signedIn()
+          && (resource.data.isPublished == true || isConfiguredAdmin());
+
+      allow create, update: if isConfiguredAdmin()
+          && request.resource.data.keys().hasAll([
+            'title', 'category', 'summary', 'body', 'links', 'audiences',
+            'displayOrder', 'isPublished', 'legalReviewComplete',
+            'legalReviewedAt', 'legalReviewedByUid', 'updatedAt', 'updatedByUid'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'title', 'category', 'summary', 'body', 'links', 'audiences',
+            'displayOrder', 'isPublished', 'legalReviewComplete',
+            'legalReviewedAt', 'legalReviewedByUid', 'updatedAt', 'updatedByUid'
+          ])
+          && request.resource.data.title is string
+          && request.resource.data.title.size() > 0
+          && request.resource.data.title.size() <= 120
+          && request.resource.data.category is string
+          && request.resource.data.category.size() > 0
+          && request.resource.data.category.size() <= 80
+          && request.resource.data.summary is string
+          && request.resource.data.summary.size() <= 300
+          && request.resource.data.body is string
+          && request.resource.data.body.size() <= 15000
+          && request.resource.data.links is list
+          && request.resource.data.links.size() <= 20
+          && request.resource.data.audiences is list
+          && request.resource.data.audiences.size() > 0
+          && request.resource.data.audiences.hasOnly(['customer', 'partner'])
+          && request.resource.data.displayOrder is int
+          && request.resource.data.displayOrder >= 0
+          && request.resource.data.displayOrder <= 100000
+          && request.resource.data.isPublished is bool
+          && request.resource.data.legalReviewComplete is bool
+          && request.resource.data.updatedAt == request.time
+          && request.resource.data.updatedByUid == request.auth.uid
+          && (
+            (
+              request.resource.data.legalReviewComplete == true
+              && request.resource.data.legalReviewedAt == request.time
+              && request.resource.data.legalReviewedByUid == request.auth.uid
+            )
+            || (
+              request.resource.data.legalReviewComplete == false
+              && request.resource.data.legalReviewedAt == null
+              && request.resource.data.legalReviewedByUid == null
+            )
+          )
+          && (!request.resource.data.isPublished
+            || request.resource.data.legalReviewComplete);
+
+      allow delete: if isConfiguredAdmin();
     }
 
     // Rate card — customers need read; owner dashboard writes.

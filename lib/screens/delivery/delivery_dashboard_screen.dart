@@ -9,7 +9,7 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/payment_models.dart';
-import '../../services/claude_smart_assistant_service.dart';
+import '../../services/smart_assist_service.dart';
 import '../../services/order_lifecycle_service.dart';
 import '../../widgets/orders/delivery_pin_dialog.dart';
 import '../../widgets/orders/optional_pickup_photo_dialog.dart';
@@ -185,7 +185,7 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         content: SizedBox(
           width: double.maxFinite,
           child: FutureBuilder<SmartAssistantResult>(
-            future: ClaudeSmartAssistantService.deliveryHandoffBrief(order),
+            future: SmartAssistService.deliveryHandoffBrief(order),
             builder: (context, snap) {
               if (snap.connectionState != ConnectionState.done) {
                 return const Padding(

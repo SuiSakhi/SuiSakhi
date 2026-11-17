@@ -1,1 +1,45 @@
-{"firestore":{"rules":"firebase/firestore.rules","indexes":"firestore.indexes.json"},"storage":{"rules":"firebase/storage.rules"},"functions":[{"source":"firebase/functions","codebase":"default","ignore":["node_modules",".git","firebase-debug.log","firebase-debug.*.log"]}],"flutter":{"platforms":{"android":{"default":{"projectId":"suisakhitest","appId":"1:867714366330:android:241d322c0d6617b54ef4c3","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"suisakhitest","configurations":{"android":"1:867714366330:android:241d322c0d6617b54ef4c3","web":"1:867714366330:web:83c68346ec56bb214ef4c3"}}}}}}
+{
+  "firestore": {
+    "rules": "firebase/firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "storage": { "rules": "firebase/storage.rules" },
+  "functions": [
+    {
+      "source": "firebase/functions",
+      "codebase": "default",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log"
+      ]
+    }
+  ],
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "suisakhitest",
+          "appId": "1:867714366330:android:95c9011715a3b2244ef4c3",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "suisakhitest",
+          "configurations": {
+            "android": "1:867714366330:android:95c9011715a3b2244ef4c3",
+            "web": "1:867714366330:web:83c68346ec56bb214ef4c3"
+          }
+        }
+      }
+    }
+  },
+  "emulators": {
+    "auth": { "port": 9099 },
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "singleProjectMode": true
+  }
+}

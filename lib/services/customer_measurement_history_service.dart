@@ -14,6 +14,7 @@ class CustomerMeasurementHistoryService {
   static Future<List<CustomerMeasurementRecord>> loadHistory({
     required String customerUid,
     required String accountId,
+    String? customerProfileId,
     required String personId,
     required String personName,
     int limit = 10,
@@ -28,11 +29,17 @@ class CustomerMeasurementHistoryService {
 
     for (final doc in measurementSnapshot.docs) {
       final data = doc.data();
+      final storedProfileId = (data['customerProfileId'] ?? '').toString();
+      if (customerProfileId?.trim().isNotEmpty == true &&
+          storedProfileId.isNotEmpty &&
+          storedProfileId != customerProfileId!.trim()) {
+        continue;
+      }
       final values = _stringMap(data['measurementValues']);
       final status = (data['status'] ?? '').toString();
       if (status == 'draft' || status == 'superseded') continue;
-      final isCustomerReference = data['referenceOnly'] == true ||
-          status == 'customer_reference';
+      final isCustomerReference =
+          data['referenceOnly'] == true || status == 'customer_reference';
       if (values.isEmpty &&
           !(isCustomerReference &&
               ((data['referenceImageUrl']?.toString().isNotEmpty ?? false) ||
@@ -46,8 +53,10 @@ class CustomerMeasurementHistoryService {
               ? data['referenceTitle'].toString().trim()
               : _sourceTitle(data['source']?.toString(), status),
           source: (data['source'] ?? 'measurement').toString(),
+          measurementType: _measurementType(data),
           status: status,
-          capturedAt: _date(data['updatedAt']) ??
+          capturedAt:
+              _date(data['updatedAt']) ??
               _date(data['createdAt']) ??
               DateTime.fromMillisecondsSinceEpoch(0),
           values: values,
@@ -59,6 +68,15 @@ class CustomerMeasurementHistoryService {
         ),
       );
     }
+
+    final sharedPartnerOrderIds = records
+        .where(
+          (record) =>
+              record.measurementType == 'professional_capture' &&
+              record.sourceOrderId?.isNotEmpty == true,
+        )
+        .map((record) => record.sourceOrderId!)
+        .toSet();
 
     QuerySnapshot<Map<String, dynamic>>? orderSnapshot;
     try {
@@ -74,6 +92,15 @@ class CustomerMeasurementHistoryService {
     for (final doc in orderSnapshot?.docs ?? const []) {
       final order = doc.data();
       if (!_orderMatchesPerson(order, personId, personName)) continue;
+      final orderProfileId = (order['customerProfileId'] ?? '').toString();
+      if (customerProfileId?.trim().isNotEmpty == true &&
+          orderProfileId.isNotEmpty &&
+          orderProfileId != customerProfileId!.trim()) {
+        continue;
+      }
+      // The shared measurement record is the canonical history item for this
+      // order. Keep the order fallback for legacy orders without one.
+      if (sharedPartnerOrderIds.contains(doc.id)) continue;
 
       final orderTitle = _orderTitle(order);
       final imageUrl = await _orderImage(order);
@@ -86,6 +113,7 @@ class CustomerMeasurementHistoryService {
               id: '${doc.id}_confirmed_${confirmedAt.millisecondsSinceEpoch}',
               title: '$orderTitle · Tailor confirmed',
               source: 'partner_confirmed',
+              measurementType: 'professional_capture',
               status: 'confirmed',
               capturedAt: confirmedAt,
               values: values,
@@ -114,13 +142,15 @@ class CustomerMeasurementHistoryService {
             id: '${doc.id}_history_${index}_${timestamp.millisecondsSinceEpoch}',
             title: '$orderTitle · Tailor confirmed',
             source: 'partner_confirmed',
+            measurementType: 'professional_capture',
             status: 'confirmed',
             capturedAt: timestamp,
             values: values,
-            unit: (entry['submittedUnit'] ??
-                    entry['measurementSubmittedUnit'] ??
-                    'in')
-                .toString(),
+            unit:
+                (entry['submittedUnit'] ??
+                        entry['measurementSubmittedUnit'] ??
+                        'in')
+                    .toString(),
             note: entry['note']?.toString(),
             referenceImageUrl: imageUrl,
             sourceOrderId: doc.id,
@@ -133,9 +163,11 @@ class CustomerMeasurementHistoryService {
     records.sort((left, right) => right.capturedAt.compareTo(left.capturedAt));
     final seen = <String>{};
     return records
-        .where((record) => seen.add(
-              '${record.sourceOrderId ?? record.id}|${record.capturedAt.millisecondsSinceEpoch}|${record.source}',
-            ))
+        .where(
+          (record) => seen.add(
+            '${record.sourceOrderId ?? record.id}|${record.capturedAt.millisecondsSinceEpoch}|${record.source}',
+          ),
+        )
         .take(limit)
         .toList(growable: false);
   }
@@ -180,7 +212,57 @@ class CustomerMeasurementHistoryService {
     required String customerUid,
     required String personId,
     required String personName,
+    String? accountId,
+    String? customerProfileId,
   }) async {
+    if (accountId?.trim().isNotEmpty == true) {
+      try {
+        final sharedSnapshot = await _db
+            .collection('measurements')
+            .where('accountId', isEqualTo: accountId)
+            .where('personId', isEqualTo: personId)
+            .get();
+        final sharedConfirmed =
+            sharedSnapshot.docs
+                .map((doc) => doc.data())
+                .where((data) {
+                  final storedProfileId = (data['customerProfileId'] ?? '')
+                      .toString();
+                  final requestedProfileId = customerProfileId?.trim() ?? '';
+                  return data['measurementType'] == 'professional_capture' &&
+                      data['status'] == 'tailor_confirmed' &&
+                      (requestedProfileId.isEmpty ||
+                          storedProfileId.isEmpty ||
+                          storedProfileId == requestedProfileId);
+                })
+                .toList(growable: false)
+              ..sort((left, right) {
+                final leftDate =
+                    _date(left['tailorConfirmedAt']) ??
+                    _date(left['capturedAt']) ??
+                    DateTime.fromMillisecondsSinceEpoch(0);
+                final rightDate =
+                    _date(right['tailorConfirmedAt']) ??
+                    _date(right['capturedAt']) ??
+                    DateTime.fromMillisecondsSinceEpoch(0);
+                return rightDate.compareTo(leftDate);
+              });
+        for (final data in sharedConfirmed) {
+          final measurements = _bodyMeasurementsFromPartnerSubmission(
+            rawValues: data['measurementValues'],
+            rawUnit: data['measurementUnit'],
+            capturedAt:
+                _date(data['tailorConfirmedAt']) ??
+                _date(data['capturedAt']) ??
+                DateTime.fromMillisecondsSinceEpoch(0),
+          );
+          if (measurements != null) return measurements;
+        }
+      } catch (_) {
+        // Keep the legacy order records as a fallback during migration.
+      }
+    }
+
     final snapshot = await _db
         .collection('orders')
         .where('customerId', isEqualTo: customerUid)
@@ -190,6 +272,12 @@ class CustomerMeasurementHistoryService {
     for (final doc in snapshot.docs) {
       final order = doc.data();
       if (!_orderMatchesPerson(order, personId, personName)) continue;
+      final orderProfileId = (order['customerProfileId'] ?? '').toString();
+      if (customerProfileId?.trim().isNotEmpty == true &&
+          orderProfileId.isNotEmpty &&
+          orderProfileId != customerProfileId!.trim()) {
+        continue;
+      }
 
       final confirmedAt = _date(order['measurementConfirmedAt']);
       if (order['measurementStatus'] == 'completed' && confirmedAt != null) {
@@ -312,14 +400,38 @@ class CustomerMeasurementHistoryService {
   }
 
   static String _sourceTitle(String? source, String status) {
+    if (status == 'tailor_confirmed') return 'Tailor-confirmed measurements';
+    if (status == 'partner_review_required') {
+      return source == 'tailor_home_visit'
+          ? 'Tailor home-visit capture'
+          : 'Measurement Partner capture';
+    }
     if (status == 'customer_reference') return 'Customer reference';
     return switch (source) {
       'ai_camera' => 'AI Camera measurement',
+      'measurement_partner' => 'Measurement Partner capture',
+      'tailor_home_visit' => 'Tailor home-visit capture',
       'manual_customer_reference' => 'Manual customer reference',
       'old_dress_reference' => 'Old dress reference',
       'previous_measurement_reference' => 'Saved measurement reference',
       _ => 'Measurement',
     };
+  }
+
+  static String _measurementType(Map<String, dynamic> data) {
+    final explicit = data['measurementType']?.toString().trim() ?? '';
+    if (explicit.isNotEmpty) return explicit;
+    final source = data['source']?.toString();
+    final status = data['status']?.toString();
+    if (source == 'ai_camera') return 'ai_estimate';
+    if (source == 'measurement_partner' ||
+        source == 'tailor_home_visit' ||
+        source == 'partner_confirmed' ||
+        status == 'partner_review_required' ||
+        status == 'tailor_confirmed') {
+      return 'professional_capture';
+    }
+    return 'customer_reference';
   }
 
   static BodyMeasurements? _bodyMeasurementsFromPartnerSubmission({
@@ -376,11 +488,18 @@ class CustomerMeasurementHistoryService {
       ]),
     );
     final chest =
-        readEntry(findExact(const ['bust full bust', 'full bust', 'bust', 'chest'])) ??
+        readEntry(
+          findExact(const ['bust full bust', 'full bust', 'bust', 'chest']),
+        ) ??
         readEntry(findStartsWith('over bust'));
     final waist = readEntry(findExact(const ['waist', 'waist circumference']));
     final hips = readEntry(
-      findExact(const ['hips', 'hip', 'hips circumference', 'hip circumference']),
+      findExact(const [
+        'hips',
+        'hip',
+        'hips circumference',
+        'hip circumference',
+      ]),
     );
     final shoulder =
         readEntry(findStartsWith('shoulder width')) ??
@@ -390,8 +509,17 @@ class CustomerMeasurementHistoryService {
     final thigh = readEntry(findExact(const ['thigh', 'thigh circumference']));
     final inseam = readEntry(findStartsWith('inseam'));
 
-    if ([height, chest, waist, hips, shoulder, armLength, neck, thigh, inseam]
-        .every((value) => value == null)) {
+    if ([
+      height,
+      chest,
+      waist,
+      hips,
+      shoulder,
+      armLength,
+      neck,
+      thigh,
+      inseam,
+    ].every((value) => value == null)) {
       return null;
     }
     return BodyMeasurements(
@@ -414,6 +542,7 @@ class CustomerMeasurementRecord {
     required this.id,
     required this.title,
     required this.source,
+    required this.measurementType,
     required this.status,
     required this.capturedAt,
     required this.values,
@@ -427,6 +556,7 @@ class CustomerMeasurementRecord {
   final String id;
   final String title;
   final String source;
+  final String measurementType;
   final String status;
   final DateTime capturedAt;
   final Map<String, String> values;

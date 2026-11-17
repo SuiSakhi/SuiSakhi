@@ -198,6 +198,16 @@ class PartnerWorkspaceRegistry {
         order: 10,
       ),
       const PartnerWorkspaceModule(
+        code: 'account.privacySecurity',
+        label: 'Privacy & Security',
+        subtitle: 'Privacy, legal terms and account security',
+        icon: Icons.privacy_tip_outlined,
+        section: accountSection,
+        route: 'privacy-security',
+        state: PartnerWorkspaceModuleState.available,
+        order: 15,
+      ),
+      const PartnerWorkspaceModule(
         code: 'account.logout',
         label: 'Logout',
         subtitle: 'Sign out from SuiSakhi',

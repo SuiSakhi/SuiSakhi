@@ -2809,6 +2809,12 @@ async function confirmTailorProductionTask(data, context) {
       throw new functions.https.HttpsError("permission-denied", "This order is not assigned to this Tailor profile.");
     }
     const order = orderSnapshot.data() || {};
+    let sharedMeasurementSnapshot = null;
+    let sharedMeasurementRef = null;
+    if (action === "confirmMeasurement" && text(order.measurementRecordId)) {
+      sharedMeasurementRef = db.collection("measurements").doc(text(order.measurementRecordId));
+      sharedMeasurementSnapshot = await transaction.get(sharedMeasurementRef);
+    }
     if (order.orderTrackingId !== trackingCode || !/^\d{12}$/.test(trackingCode)) {
       throw new functions.https.HttpsError("invalid-argument", "The 12-digit order ID does not match this order.");
     }
@@ -2863,6 +2869,7 @@ async function confirmTailorProductionTask(data, context) {
       updates.measurementSubmissionStatus = admin.firestore.FieldValue.delete();
       updates.measurementSubmittedValues = admin.firestore.FieldValue.delete();
       updates.measurementSubmittedUnit = admin.firestore.FieldValue.delete();
+      updates.measurementRecordId = admin.firestore.FieldValue.delete();
       updates.measurementPartnerCompletionNote = admin.firestore.FieldValue.delete();
       updates.measurementPartnerCompletedAt = admin.firestore.FieldValue.delete();
       updates.measurementPartnerCompletedByAccountId = admin.firestore.FieldValue.delete();
@@ -2898,6 +2905,18 @@ async function confirmTailorProductionTask(data, context) {
       updates.atTailorAt = SERVER_TIMESTAMP;
     }
     transaction.update(orderRef, updates);
+    if (action === "confirmMeasurement" &&
+        sharedMeasurementSnapshot && sharedMeasurementSnapshot.exists &&
+        text(sharedMeasurementSnapshot.get("sourceOrderId")) === orderId) {
+      transaction.update(sharedMeasurementRef, {
+        status: "tailor_confirmed",
+        requiresReview: false,
+        tailorConfirmedAt: SERVER_TIMESTAMP,
+        tailorConfirmedByAccountId: accountId,
+        tailorConfirmedByProfileId: profileId,
+        updatedAt: SERVER_TIMESTAMP,
+      });
+    }
     transaction.set(eventRefFor(orderId), eventData(eventType, "tailor", {
       accountId, profileId, orderTrackingId: trackingCode,
     }));
@@ -3839,6 +3858,8 @@ async function submitMeasurementPartnerMeasurements(data, context) {
   const measurementCompletedAt = admin.firestore.Timestamp.now();
   const measurementHistoryRef = accountRef.collection("measurement_history")
       .doc(`measurement_${orderId}_${measurementCompletedAt.toMillis()}`);
+  const sharedMeasurementRef = db.collection("measurements").doc();
+  let sharedMeasurementCreated = false;
   await db.runTransaction(async (transaction) => {
     const [accountSnapshot, profileSnapshot, orderSnapshot] = await Promise.all([
       transaction.get(accountRef), transaction.get(profileRef), transaction.get(orderRef),
@@ -3876,6 +3897,24 @@ async function submitMeasurementPartnerMeasurements(data, context) {
       throw new functions.https.HttpsError("failed-precondition", "Schedule the measurement appointment before submitting collected measurements.");
     }
 
+    // New orders carry account/profile/person IDs. Resolve older orders through
+    // the customer UID where possible; never attach a capture to an unknown
+    // person or partner account.
+    let customerAccountId = text(order.customerAccountId);
+    let customerProfileId = text(order.customerProfileId);
+    const customerUid = text(order.customerUid || order.customerId);
+    if ((!customerAccountId || !customerProfileId) && customerUid) {
+      const customerUserSnapshot = await transaction.get(db.collection("users").doc(customerUid));
+      const customerUser = customerUserSnapshot.data() || {};
+      customerAccountId = customerAccountId || text(customerUser.accountId);
+      customerProfileId = customerProfileId || text(customerUser.defaultProfileId);
+    }
+    const personId = text(order.personId);
+    const personName = text(order.personName || order.clientName || order.customerName);
+    const canWriteSharedMeasurement = Boolean(
+        customerAccountId && customerProfileId && personId,
+    );
+
     const criteria = measurementCriteriaForOrder(order);
     const values = {};
     for (const criterion of criteria) {
@@ -3889,6 +3928,8 @@ async function submitMeasurementPartnerMeasurements(data, context) {
       }
       values[criterion] = Math.round(value * 10) / 10;
     }
+    const shouldWriteSharedMeasurement = canWriteSharedMeasurement &&
+      Object.keys(values).length > 0;
     if (Object.keys(submitted).some((key) => !criteria.includes(key))) {
       throw new functions.https.HttpsError("invalid-argument", "Only the measurement criteria shown for this garment can be submitted.");
     }
@@ -3902,8 +3943,47 @@ async function submitMeasurementPartnerMeasurements(data, context) {
       measurementPartnerCompletedAt: measurementCompletedAt,
       measurementPartnerCompletedByAccountId: accountId,
       measurementPartnerCompletedByProfileId: profileId,
+      ...(shouldWriteSharedMeasurement ? {measurementRecordId: sharedMeasurementRef.id} : {}),
       updatedAt: SERVER_TIMESTAMP,
     });
+    if (shouldWriteSharedMeasurement) {
+      const captureSource = selfAssignedTailorVisit ? "tailor_home_visit" : "measurement_partner";
+      transaction.set(sharedMeasurementRef, {
+        schemaVersion: 1,
+        measurementId: sharedMeasurementRef.id,
+        accountId: customerAccountId,
+        customerProfileId,
+        personId,
+        personName,
+        relationship: text(order.relationship),
+        measurementType: "professional_capture",
+        measurementSchema: "suisakhi_womens_22_v2",
+        source: captureSource,
+        status: "partner_review_required",
+        requiresReview: true,
+        measurementValues: values,
+        measurementUnit,
+        measurementCriteria: criteria,
+        sourceOrderId: orderId,
+        orderId,
+        orderTrackingId: text(order.orderTrackingId),
+        dressType: text(order.dressType || "Tailoring order"),
+        capturedAt: measurementCompletedAt,
+        measurementMethod: text(order.measurementMethod),
+        capturedByRole: selfAssignedTailorVisit ? "tailor" : "measurement_partner",
+        capturedByAccountId: accountId,
+        capturedByProfileId: profileId,
+        ...(!selfAssignedTailorVisit ? {
+          partnerAccountId: accountId,
+          partnerProfileId: profileId,
+        } : {}),
+        tailorConfirmedAt: null,
+        customerNote: note || null,
+        createdAt: measurementCompletedAt,
+        updatedAt: measurementCompletedAt,
+      });
+      sharedMeasurementCreated = true;
+    }
     const deliveryLocation = asMap(order.deliveryLocation);
     transaction.set(measurementHistoryRef, {
       orderId,
@@ -3934,10 +4014,14 @@ async function submitMeasurementPartnerMeasurements(data, context) {
       profileId,
       measurementCount: Object.keys(values).length,
       hasNote: Boolean(note),
+      measurementRecordId: shouldWriteSharedMeasurement ? sharedMeasurementRef.id : null,
     }));
   });
   await assignInboundFulfillment(orderId);
-  return {status: "measurementSubmitted"};
+  return {
+    status: "measurementSubmitted",
+    ...(sharedMeasurementCreated ? {measurementRecordId: sharedMeasurementRef.id} : {}),
+  };
 }
 
 async function getCustomerOrderPartnerContacts(data, context) {

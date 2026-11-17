@@ -27,6 +27,7 @@ class _MeasurementDashboardScreenState
 
   final List<_MeasurementDashboardPerson> _people = [];
   _MeasurementDashboardPerson? _selectedPerson;
+  String? _customerProfileId;
 
   bool _loadingPeople = true;
   bool _loadingDraft = false;
@@ -47,6 +48,7 @@ class _MeasurementDashboardScreenState
       _loadingPeople = true;
     });
 
+    String? customerProfileId;
     try {
       final profile = AppState.instance.profile;
       final customerName = profile?.name.trim().isNotEmpty == true
@@ -82,7 +84,7 @@ class _MeasurementDashboardScreenState
             }
           }
 
-          final customerProfileId =
+          customerProfileId =
               customerProfile?['profileId']?.toString() ??
               customerProfile?['docId']?.toString();
 
@@ -118,6 +120,7 @@ class _MeasurementDashboardScreenState
         _people
           ..clear()
           ..addAll(people);
+        _customerProfileId = customerProfileId;
         _selectedPerson = people.first;
         _loadingPeople = false;
       });
@@ -225,6 +228,13 @@ class _MeasurementDashboardScreenState
       final activeDrafts = snap.docs
           .map((doc) => {'id': doc.id, ...doc.data()})
           .where((data) {
+            final storedProfileId = (data['customerProfileId'] ?? '')
+                .toString();
+            if (_customerProfileId?.isNotEmpty == true &&
+                storedProfileId.isNotEmpty &&
+                storedProfileId != _customerProfileId) {
+              return false;
+            }
             final status = (data['status'] ?? '').toString();
             final source = (data['source'] ?? '').toString();
 
@@ -296,6 +306,7 @@ class _MeasurementDashboardScreenState
           history = await CustomerMeasurementHistoryService.loadHistory(
             customerUid: uid,
             accountId: accountId,
+            customerProfileId: _customerProfileId,
             personId: person.id,
             personName: person.name,
             limit: 10,
@@ -305,8 +316,10 @@ class _MeasurementDashboardScreenState
           confirmedMeasurements =
               await CustomerMeasurementHistoryService.loadLatestTailorConfirmed(
                 customerUid: uid,
+                accountId: accountId,
                 personId: person.id,
                 personName: person.name,
+                customerProfileId: _customerProfileId,
               );
         } catch (_) {}
       }
@@ -320,11 +333,19 @@ class _MeasurementDashboardScreenState
       final usableDocs = snap.docs
           .map((doc) => {'id': doc.id, ...doc.data()})
           .where((data) {
+            final storedProfileId = (data['customerProfileId'] ?? '')
+                .toString();
+            if (_customerProfileId?.isNotEmpty == true &&
+                storedProfileId.isNotEmpty &&
+                storedProfileId != _customerProfileId) {
+              return false;
+            }
             final status = (data['status'] ?? '').toString();
 
             return status == 'ai_estimated' ||
                 status == 'customer_review_required' ||
                 status == 'partner_review_required' ||
+                status == 'tailor_confirmed' ||
                 status == 'verified' ||
                 status == 'accepted' ||
                 status == 'order_created';
@@ -1062,6 +1083,11 @@ String _measurementLabel(String key) =>
 String _measurementStatusLabel(CustomerMeasurementRecord record) {
   if (record.isCustomerReference) return 'Your reference';
   if (record.source == 'partner_confirmed') return 'Tailor confirmed';
+  if (record.measurementType == 'professional_capture') {
+    return record.status == 'tailor_confirmed'
+        ? 'Tailor confirmed'
+        : 'Partner captured · awaiting tailor review';
+  }
   if (record.source == 'ai_camera') return 'AI estimate · review needed';
   return 'Needs confirmation';
 }
