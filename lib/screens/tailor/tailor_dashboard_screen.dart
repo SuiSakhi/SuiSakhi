@@ -20,8 +20,11 @@ import '../../services/customer_fabric_asset_service.dart';
 import '../../widgets/orders/delivery_pin_dialog.dart';
 import '../../widgets/orders/order_tracking_tag.dart';
 import '../../widgets/orders/order_design_references.dart';
+import '../../widgets/orders/order_instruction_media_links.dart';
 import '../../widgets/orders/optional_pickup_photo_dialog.dart';
 import '../../widgets/orders/pickup_photo_attachment_button.dart';
+import '../../widgets/orders/order_stage_progress.dart';
+import '../../widgets/partner/partner_availability_card.dart';
 
 class TailorDashboardScreen extends StatefulWidget {
   const TailorDashboardScreen({
@@ -51,6 +54,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
   bool _availableForOrders = false;
   bool _availabilitySaving = false;
   String? _availabilityError;
+  List<AvailabilitySlot> _availabilitySlots = const [];
   String? _respondingOfferId;
 
   @override
@@ -74,6 +78,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
           .doc(widget.tailorProfileId!.trim())
           .get();
       final data = profile.data() ?? const <String, dynamic>{};
+      final slots = readPartnerAvailabilitySlots(data, extensionKey: 'tailor');
       final activeAndApproved =
           data['role'] == 'partner' &&
           data['partnerType'] == 'tailor' &&
@@ -87,6 +92,7 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
         _availabilityReady = activeAndApproved;
         _availableForOrders =
             activeAndApproved && data['availabilityStatus'] == 'available';
+        _availabilitySlots = slots;
         _availabilityLoaded = true;
         _availabilityError = null;
       });
@@ -101,6 +107,24 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
 
   Future<void> _setAvailability(bool available) async {
     if (_availabilitySaving || (available && !_availabilityReady)) return;
+    await _saveAvailability(available, _availabilitySlots);
+  }
+
+  Future<void> _editAvailabilityHours() async {
+    final slots = await showPartnerAvailabilityHoursDialog(
+      context,
+      title: 'Tailor working hours',
+      initialSlots: _availabilitySlots,
+    );
+    if (slots == null) return;
+    await _saveAvailability(_availableForOrders, slots);
+  }
+
+  Future<void> _saveAvailability(
+    bool available,
+    List<AvailabilitySlot> slots,
+  ) async {
+    if (_availabilitySaving || (available && !_availabilityReady)) return;
     setState(() {
       _availabilitySaving = true;
       _availabilityError = null;
@@ -112,10 +136,12 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
             'accountId': widget.accountId!.trim(),
             'profileId': widget.tailorProfileId!.trim(),
             'available': available,
+            'availabilitySlots': slots,
           });
       if (!mounted) return;
       setState(() {
         _availableForOrders = available;
+        _availabilitySlots = slots;
         _availabilitySaving = false;
       });
     } on FirebaseFunctionsException catch (error) {
@@ -208,80 +234,21 @@ class _TailorDashboardScreenState extends State<TailorDashboardScreen> {
 
   Widget _buildAvailabilityControl() {
     if (!widget.hasApprovedPartnerContext) return const SizedBox.shrink();
-
-    final title = !_availabilityLoaded && _availabilityError == null
-        ? 'Checking availability'
-        : _availabilityError != null
-        ? 'Availability unavailable'
-        : !_availabilityReady
-        ? 'Partner profile not active'
-        : _availableForOrders
-        ? 'Available for orders'
-        : 'Not taking new orders';
-    final subtitle = !_availabilityLoaded && _availabilityError == null
-        ? 'One moment…'
-        : _availabilityError ??
-              (!_availabilityReady
-                  ? 'An approved, active Tailor profile is required.'
-                  : _availableForOrders
-                  ? 'Eligible order offers can be sent to you.'
-                  : 'Turn this on when you are ready to receive work.');
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              _availableForOrders
-                  ? Icons.check_circle_outline_rounded
-                  : Icons.pause_circle_outline_rounded,
-              color: _availableForOrders
-                  ? AppColors.success
-                  : AppColors.textHint,
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: AppTextStyles.labelMedium),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: AppTextStyles.bodySmall.copyWith(
-                      color: AppColors.textHint,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (_availabilityError != null)
-              IconButton(
-                tooltip: 'Retry',
-                onPressed: _loadAvailability,
-                icon: const Icon(Icons.refresh_rounded),
-              )
-            else if (!_availabilityLoaded || _availabilitySaving)
-              const SizedBox(
-                width: 28,
-                height: 28,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              )
-            else
-              Switch.adaptive(
-                value: _availableForOrders,
-                onChanged: _availabilityReady ? _setAvailability : null,
-              ),
-          ],
-        ),
-      ),
+    return PartnerAvailabilityCard(
+      title: 'Order availability',
+      available: _availableForOrders,
+      loaded: _availabilityLoaded,
+      saving: _availabilitySaving,
+      enabled: _availabilityReady,
+      slots: _availabilitySlots,
+      error:
+          _availabilityError ??
+          (_availabilityLoaded && !_availabilityReady
+              ? 'An approved, active Tailor profile is required.'
+              : null),
+      onRetry: _loadAvailability,
+      onAvailabilityChanged: _setAvailability,
+      onEditHours: _editAvailabilityHours,
     );
   }
 
@@ -2527,6 +2494,26 @@ class _OrderCard extends StatelessWidget {
               ),
             ],
           ),
+          OrderStageProgress(
+            stages: const [
+              'Placed',
+              'Collected',
+              'At tailor',
+              'Stitching',
+              'Quality',
+              'Delivered',
+            ],
+            currentStep: switch (order.status) {
+              OrderStatus.pending => 0,
+              OrderStatus.pickedUp => 1,
+              OrderStatus.atTailor => 2,
+              OrderStatus.inStitching => 3,
+              OrderStatus.qcPending || OrderStatus.qcPassed => 4,
+              OrderStatus.readyForPickup || OrderStatus.outForDelivery => 5,
+              OrderStatus.delivered => 5,
+              OrderStatus.cancelled => 0,
+            },
+          ),
           if (order.usesProductionAssignment) ...[
             const SizedBox(height: 10),
             Row(
@@ -2585,6 +2572,15 @@ class _OrderCard extends StatelessWidget {
                             style: AppTextStyles.bodySmall,
                           ),
                         ),
+                      if (order.fabricPurchasedMeters != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            'Customer purchased ${order.fabricPurchasedMeters!.toStringAsFixed(2)} m of fabric',
+                            style: AppTextStyles.bodySmall,
+                          ),
+                        ),
+                      OrderInstructionMediaLinks(media: order.instructionMedia),
                       if ((order.customerFabricPhotoPath ?? '').isNotEmpty)
                         _CustomerFabricAssetButton(
                           path: order.customerFabricPhotoPath!,

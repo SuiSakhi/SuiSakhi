@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
+import 'helpdesk_order_explorer_screen.dart' show showHelpdeskOrderDetails;
 
 class OwnerPartnerManagementScreen extends StatefulWidget {
   const OwnerPartnerManagementScreen({super.key});
@@ -128,6 +129,16 @@ class _OwnerPartnerManagementScreenState
               partner['needsAttention'] != true) {
             return false;
           }
+          final availabilityTracked = partner['availabilityTracked'] == true;
+          final isAvailable = partner['isAvailable'] == true;
+          if (_selectedStatus == 'Online' &&
+              (!availabilityTracked || !isAvailable)) {
+            return false;
+          }
+          if (_selectedStatus == 'Offline' &&
+              (!availabilityTracked || isAvailable)) {
+            return false;
+          }
           if (query.isEmpty) return true;
           final haystack = <String>[
             partner['name']?.toString() ?? '',
@@ -135,6 +146,12 @@ class _OwnerPartnerManagementScreenState
             partner['phone']?.toString() ?? '',
             partner['partnerType']?.toString() ?? '',
             partner['sourceApplicationId']?.toString() ?? '',
+            partner['servicePincode']?.toString() ?? '',
+            partner['serviceAreaPincodes']?.toString() ?? '',
+            partner['serviceArea']?.toString() ?? '',
+            partner['locality']?.toString() ?? '',
+            partner['city']?.toString() ?? '',
+            partner['serviceAddress']?.toString() ?? '',
           ].join(' ').toLowerCase();
           return haystack.contains(query);
         })
@@ -211,7 +228,7 @@ class _OwnerPartnerManagementScreenState
             _SummaryStrip(counts: _groupCounts('All groups')),
             const SizedBox(height: 14),
             SizedBox(
-              height: 116,
+              height: 104,
               child: ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: _groups.length,
@@ -234,7 +251,8 @@ class _OwnerPartnerManagementScreenState
               onChanged: (_) => setState(() {}),
               decoration: InputDecoration(
                 prefixIcon: const Icon(Icons.search_rounded),
-                hintText: 'Search partner, contact, phone or application ID',
+                hintText:
+                    'Search partner, PIN, area, contact or application ID',
                 filled: true,
                 fillColor: Colors.white,
                 border: OutlineInputBorder(
@@ -253,6 +271,8 @@ class _OwnerPartnerManagementScreenState
                   'Active',
                   'Inactive',
                   'Needs follow-up',
+                  'Online',
+                  'Offline',
                 ])
                   ChoiceChip(
                     label: Text(status),
@@ -314,10 +334,10 @@ class _SummaryStrip extends StatelessWidget {
     return Row(
       children: [
         for (var index = 0; index < metrics.length; index++) ...[
-          if (index > 0) const SizedBox(width: 8),
+          if (index > 0) const SizedBox(width: 7),
           Expanded(
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(15),
@@ -330,16 +350,18 @@ class _SummaryStrip extends StatelessWidget {
                     style: TextStyle(
                       color: metrics[index].$3,
                       fontWeight: FontWeight.w800,
-                      fontSize: 20,
+                      fontSize: 19,
                     ),
                   ),
+                  const SizedBox(height: 2),
                   Text(
                     metrics[index].$1,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 11,
+                      height: 1.1,
                     ),
                   ),
                 ],
@@ -371,7 +393,7 @@ class _GroupSummaryCard extends StatelessWidget {
     borderRadius: BorderRadius.circular(15),
     child: Container(
       width: 192,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
         color: selected ? AppColors.surfaceVariant : Colors.white,
         borderRadius: BorderRadius.circular(15),
@@ -425,62 +447,130 @@ class _PartnerCard extends StatelessWidget {
     final active = partner['isActive'] == true;
     final followUp = partner['needsAttention'] == true;
     final lastSeen = _dateLabel(partner['lastSeenAt']);
+    final availabilityTracked = partner['availabilityTracked'] == true;
+    final isAvailable = partner['isAvailable'] == true;
+    final availabilityLabel = !availabilityTracked
+        ? 'Not tracked'
+        : isAvailable
+        ? 'Online'
+        : 'Offline';
+    final availabilityColor = !availabilityTracked
+        ? AppColors.textSecondary
+        : isAvailable
+        ? AppColors.success
+        : AppColors.error;
+    final area = _text(partner['serviceAreaLabel']);
     return Card(
       color: Colors.white,
       elevation: 0,
-      margin: const EdgeInsets.only(top: 9),
+      margin: const EdgeInsets.only(top: 8),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-      child: ListTile(
+      child: InkWell(
         onTap: onTap,
-        contentPadding: const EdgeInsets.fromLTRB(14, 8, 10, 8),
-        leading: CircleAvatar(
-          backgroundColor: followUp
-              ? const Color(0xFFFFE8E7)
-              : active
-              ? AppColors.surfaceVariant
-              : const Color(0xFFF0EEF4),
-          child: Icon(
-            _groupIcon(_text(partner['groupLabel'])),
-            color: followUp
-                ? AppColors.error
-                : active
-                ? AppColors.primary
-                : AppColors.textSecondary,
+        borderRadius: BorderRadius.circular(17),
+        child: Padding(
+          padding: const EdgeInsets.all(11),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              CircleAvatar(
+                radius: 21,
+                backgroundColor: followUp
+                    ? const Color(0xFFFFE8E7)
+                    : active
+                    ? AppColors.surfaceVariant
+                    : const Color(0xFFF0EEF4),
+                child: Icon(
+                  _groupIcon(_text(partner['groupLabel'])),
+                  size: 21,
+                  color: followUp
+                      ? AppColors.error
+                      : active
+                      ? AppColors.primary
+                      : AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            _text(partner['name'], 'Partner'),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AppColors.textSecondary,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      '${_text(partner['groupLabel'], 'Other')} · ${partner['openWorkCount'] ?? 0} open work items',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                    if (area.isNotEmpty)
+                      Text(
+                        area,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    Text(
+                      'Last active: $lastSeen',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 5),
+                    Wrap(
+                      spacing: 5,
+                      runSpacing: 3,
+                      children: [
+                        _StatusBadge(
+                          label: followUp
+                              ? 'Review'
+                              : active
+                              ? 'Active'
+                              : 'Inactive',
+                          color: followUp
+                              ? AppColors.error
+                              : active
+                              ? AppColors.success
+                              : AppColors.textSecondary,
+                        ),
+                        _StatusBadge(
+                          label: availabilityLabel,
+                          color: availabilityColor,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ),
-        title: Text(
-          _text(partner['name'], 'Partner'),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(fontWeight: FontWeight.w700),
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 4),
-          child: Text(
-            '${_text(partner['groupLabel'], 'Other')} · ${partner['openWorkCount'] ?? 0} open work items\nLast active: $lastSeen',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        trailing: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: [
-            _StatusBadge(
-              label: followUp
-                  ? 'Review'
-                  : active
-                  ? 'Active'
-                  : 'Inactive',
-              color: followUp
-                  ? AppColors.error
-                  : active
-                  ? AppColors.success
-                  : AppColors.textSecondary,
-            ),
-            const SizedBox(height: 5),
-            const Icon(Icons.chevron_right_rounded),
-          ],
         ),
       ),
     );
@@ -500,6 +590,8 @@ class _PartnerDetailsSheet extends StatelessWidget {
         .toList(growable: false);
     final active = partner['isActive'] == true;
     final needsAttention = partner['needsAttention'] == true;
+    final availabilityTracked = partner['availabilityTracked'] == true;
+    final isAvailable = partner['isAvailable'] == true;
     final schedule =
         (partner['operatingSchedule'] as List<dynamic>? ?? const [])
             .whereType<Map>()
@@ -616,12 +708,16 @@ class _PartnerDetailsSheet extends StatelessWidget {
           children: [
             _DetailRow(
               'Order availability',
-              partner['availabilityTracked'] == true
-                  ? (partner['isAvailable'] == true
-                        ? 'Available for work'
-                        : 'Not available')
+              availabilityTracked
+                  ? (isAvailable ? 'Available for work' : 'Not available')
                   : 'Not tracked for this partner type',
             ),
+            _DetailRow(
+              'Service area',
+              _text(partner['serviceAreaLabel'], 'Not provided'),
+            ),
+            if (_text(partner['serviceAddress']).isNotEmpty)
+              _DetailRow('Work address', _text(partner['serviceAddress'])),
             _DetailRow(
               'Operating days',
               days.isEmpty ? 'Not configured' : days,
@@ -735,6 +831,30 @@ class _WorkTile extends StatelessWidget {
           '${_text(work['workType'])} · Order ${_text(work['orderNumber'], _text(work['orderId']))}',
           style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
         ),
+        if (_text(work['customerName']).isNotEmpty)
+          Text('Customer: ${_text(work['customerName'])}'),
+        if (_text(work['customerPhone']).isNotEmpty)
+          Text('Contact: ${_text(work['customerPhone'])}'),
+        if (_text(work['customerAddress']).isNotEmpty ||
+            _text(work['servicePincode']).isNotEmpty)
+          Text(
+            'Service area: ${[_text(work['customerAddress']), _text(work['servicePincode'])].where((value) => value.isNotEmpty).toSet().join(' · ')}',
+          ),
+        Text(
+          'Delivery / completion: ${_dateLabel(work['expectedCompletionAt'])}',
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        if (_text(work['orderId']).isNotEmpty &&
+            _text(work['orderType']).isNotEmpty)
+          TextButton.icon(
+            onPressed: () => showHelpdeskOrderDetails(
+              context,
+              orderId: _text(work['orderId']),
+              orderType: _text(work['orderType']),
+            ),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: const Text('Open full order & customer details'),
+          ),
         const SizedBox(height: 7),
         Row(
           children: [
@@ -771,7 +891,7 @@ class _StatusBadge extends StatelessWidget {
       borderRadius: BorderRadius.circular(20),
     ),
     child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
       child: Text(
         label,
         style: TextStyle(

@@ -106,7 +106,8 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
       _contact,
       _business,
       _mobile,
-      _email, _additionalContactNumbers,
+      _email,
+      _additionalContactNumbers,
       _serviceArea,
       _specialization,
       _experience,
@@ -183,7 +184,8 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
           application.email ??
           (customer?['email'] ?? user.email)?.toString() ??
           '';
-    _additionalContactNumbers.text = application.additionalContactNumbers.join(', ');
+      _additionalContactNumbers.text = application.additionalContactNumbers
+          .join(', ');
 
       _hydrateCommonBusiness(application);
       _hydrate(
@@ -195,7 +197,8 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
       setState(() {
         _accountId = accountId;
         _customerProfileId = customerProfileId;
-        _application = application; _loading = false;
+        _application = application;
+        _loading = false;
         _error = null;
       });
     } catch (error) {
@@ -354,7 +357,10 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
   // ---------------------------------------------------------------------------
   // SAVE / SUBMIT
   // ---------------------------------------------------------------------------
-  Future<void> _save({required bool submit}) async {
+  Future<void> _save({
+    required bool submit,
+    Map<String, dynamic>? legalAcceptance,
+  }) async {
     if (_saving || !_formKey.currentState!.validate()) return;
 
     final application = _application;
@@ -401,10 +407,14 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
 
       if (submit) {
         saveStage = 'application submission';
+        if (legalAcceptance == null) {
+          throw StateError('Review and accept the Partner agreements first.');
+        }
         await PartnerService.submitApplication(
           applicationId: application.id,
           accountId: accountId,
           customerProfileId: customerProfileId,
+          legalAcceptance: legalAcceptance,
         );
       }
 
@@ -425,11 +435,14 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application; _contact.text = application.contactName ?? '';
+    _application = application;
+    _contact.text = application.contactName ?? '';
     _business.text = application.businessName ?? '';
     _mobile.text = application.mobileE164 ?? '';
     _email.text = application.email ?? '';
-    _additionalContactNumbers.text = application.additionalContactNumbers.join(', ');
+    _additionalContactNumbers.text = application.additionalContactNumbers.join(
+      ', ',
+    );
     _hydrateCommonBusiness(application);
     _hydrate(
       BoutiquePartnerDetails.fromOnboardingData(application.onboardingData),
@@ -487,7 +500,8 @@ class _BoutiqueApplicationScreenState extends State<BoutiqueApplicationScreen> {
       canSaveDraft: _editable && !_saving,
       canSubmit: _canSubmit,
       onSaveDraft: () => _save(submit: false),
-      onSubmitForReview: () => _save(submit: true),
+      onSubmitForReview: (acceptance) =>
+          _save(submit: true, legalAcceptance: acceptance),
       onApplyAgain: _applyAgain,
       onContinueLater: _continueLater,
     );

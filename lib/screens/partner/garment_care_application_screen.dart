@@ -156,13 +156,16 @@ class _GarmentCareApplicationScreenState
 
       _accountId = accountId;
       _customerProfileId = customerProfileId;
-      _application = application; _contactNameController.text =
+      _application = application;
+      _contactNameController.text =
           application.contactName ?? (profileName.isEmpty ? '' : profileName);
       _businessNameController.text = application.businessName ?? '';
       _mobileController.text = application.mobileE164 ?? phone;
       _emailController.text =
           application.email ?? (profileEmail.isEmpty ? '' : profileEmail);
-      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
+      _additionalContactNumbersController.text = application
+          .additionalContactNumbers
+          .join(', ');
 
       _hydrateCommonBusiness(application);
       _hydrateGarmentCareDetails(
@@ -309,7 +312,10 @@ class _GarmentCareApplicationScreenState
         .toList(growable: false);
   }
 
-  Future<void> _save({required bool submit}) async {
+  Future<void> _save({
+    required bool submit,
+    Map<String, dynamic>? legalAcceptance,
+  }) async {
     if (_saving || !_formKey.currentState!.validate()) {
       return;
     }
@@ -363,11 +369,15 @@ class _GarmentCareApplicationScreenState
 
       if (submit) {
         saveStage = 'application submission';
+        if (legalAcceptance == null) {
+          throw StateError('Review and accept the Partner agreements first.');
+        }
 
         await PartnerService.submitApplication(
           applicationId: application.id,
           accountId: accountId,
           customerProfileId: customerProfileId,
+          legalAcceptance: legalAcceptance,
         );
       }
 
@@ -402,11 +412,14 @@ class _GarmentCareApplicationScreenState
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application; _contactNameController.text = application.contactName ?? '';
+    _application = application;
+    _contactNameController.text = application.contactName ?? '';
     _businessNameController.text = application.businessName ?? '';
     _mobileController.text = application.mobileE164 ?? '';
     _emailController.text = application.email ?? '';
-    _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
+    _additionalContactNumbersController.text = application
+        .additionalContactNumbers
+        .join(', ');
     _hydrateCommonBusiness(application);
     _hydrateGarmentCareDetails(
       GarmentCarePartnerDetails.fromOnboardingData(application.onboardingData),
@@ -464,7 +477,8 @@ class _GarmentCareApplicationScreenState
       canSaveDraft: _isEditable && !_saving,
       canSubmit: _canSubmit,
       onSaveDraft: () => _save(submit: false),
-      onSubmitForReview: () => _save(submit: true),
+      onSubmitForReview: (acceptance) =>
+          _save(submit: true, legalAcceptance: acceptance),
       onApplyAgain: _applyAgain,
       onContinueLater: _continueLater,
     );
@@ -593,7 +607,8 @@ class _GarmentCareApplicationScreenState
                   businessNameController: _businessNameController,
                   mobileController: _mobileController,
                   emailController: _emailController,
-                  additionalContactNumbersController: _additionalContactNumbersController,
+                  additionalContactNumbersController:
+                      _additionalContactNumbersController,
                   editable: _isEditable,
                   description:
                       'Common Partner identity and contact information.',

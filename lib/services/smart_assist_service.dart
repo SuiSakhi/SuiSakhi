@@ -15,6 +15,26 @@ enum TailorChecklistLanguage { english, hindi, marathi }
 class SmartAssistService {
   SmartAssistService._();
 
+  static Future<SmartAssistantResult> answerCustomerHelpQuestion({
+    required String question,
+    String topic = 'fabric_guidance',
+  }) {
+    final sanitized = SmartAssistInputSanitizer.sanitizeCustomerNotesWithStatus(
+      question,
+    );
+    if (sanitized.value.isEmpty) {
+      return Future.value(
+        const SmartAssistantResult.error(
+          'Please ask a SuiSakhi help question without personal details or body measurements.',
+        ),
+      );
+    }
+    return SmartAssistClient.instance.request(
+      feature: 'answerCustomerHelpQuestion',
+      input: {'question': sanitized.value, 'topic': topic},
+    );
+  }
+
   static Future<SmartAssistantResult> fabricAndStylingTips({
     required String dressType,
     required String occasionLabel,

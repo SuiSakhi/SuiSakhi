@@ -122,7 +122,8 @@ class _QuickCareApplicationScreenState
       _contact,
       _business,
       _mobile,
-      _email, _additionalContactNumbers,
+      _email,
+      _additionalContactNumbers,
       _serviceArea,
       _experience,
       _experienceSummary,
@@ -200,11 +201,14 @@ class _QuickCareApplicationScreenState
   }
 
   void _hydrateApplication(PartnerApplication application) {
-    _application = application; _contact.text = application.contactName ?? '';
+    _application = application;
+    _contact.text = application.contactName ?? '';
     _business.text = application.businessName ?? '';
     _mobile.text = application.mobileE164 ?? '';
     _email.text = application.email ?? '';
-    _additionalContactNumbers.text = application.additionalContactNumbers.join(', ');
+    _additionalContactNumbers.text = application.additionalContactNumbers.join(
+      ', ',
+    );
     _hydrateCommonBusiness(application);
     _hydrate(
       QuickCarePartnerDetails.fromOnboardingData(application.onboardingData),
@@ -314,7 +318,10 @@ class _QuickCareApplicationScreenState
     additionalNotes: _notes.text.trim(),
   );
 
-  Future<void> _save({required bool submit}) async {
+  Future<void> _save({
+    required bool submit,
+    Map<String, dynamic>? legalAcceptance,
+  }) async {
     if (_saving || !_formKey.currentState!.validate()) return;
     final app = _application;
     final accountId = _accountId;
@@ -358,10 +365,14 @@ class _QuickCareApplicationScreenState
 
       if (submit) {
         stage = 'application submission';
+        if (legalAcceptance == null) {
+          throw StateError('Review and accept the Partner agreements first.');
+        }
         await PartnerService.submitApplication(
           applicationId: app.id,
           accountId: accountId,
           customerProfileId: customerProfileId,
+          legalAcceptance: legalAcceptance,
         );
       }
 
@@ -507,7 +518,8 @@ class _QuickCareApplicationScreenState
       canSaveDraft: _editable && !_saving,
       canSubmit: _canSubmit,
       onSaveDraft: () => _save(submit: false),
-      onSubmitForReview: () => _save(submit: true),
+      onSubmitForReview: (acceptance) =>
+          _save(submit: true, legalAcceptance: acceptance),
       onApplyAgain: _applyAgain,
       onContinueLater: _continueLater,
     );

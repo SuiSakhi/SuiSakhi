@@ -18,12 +18,15 @@ class PayoutConfigService {
   }
 
   static Future<void> save(ShopPayoutConfig config) async {
-    await _db.doc(_docPath).set(
-          {
-            ...config.toFirestore(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+    await _db.doc(_docPath).set({
+      ...config.toFirestore(),
+      // Retire the former advance-split settings so the current payout
+      // policy is unambiguous in Firestore as well as in the UI.
+      'ownerPercent': FieldValue.delete(),
+      'tailorPercent': FieldValue.delete(),
+      'deliveryPercent': FieldValue.delete(),
+      'platformPercent': FieldValue.delete(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
   }
 }

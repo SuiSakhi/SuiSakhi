@@ -7,6 +7,8 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/app_state.dart';
 import '../../services/customer_support_service.dart';
 import '../../services/order_lifecycle_service.dart';
+import '../../services/smart_assist_service.dart';
+import '../../widgets/smart_assist/speech_playback_button.dart';
 
 const _supportPurple = Color(0xFF5B35D5);
 const _supportInk = Color(0xFF211D32);
@@ -117,7 +119,9 @@ class CustomerHelpSupportScreen extends StatelessWidget {
         _showMeasurementHelp(context, customerName: customerName);
         break;
       case 'design_fabric':
-        context.push('/fabric-help');
+        context.push(
+          '/fabric-help?topic=fabric_guidance&question=I%20need%20help%20with%20fabric%20or%20design.',
+        );
         break;
       case 'garment_care':
         _showGarmentCareHelp(context, customerName: customerName);
@@ -258,6 +262,24 @@ class CustomerHelpSupportScreen extends StatelessWidget {
                 child: Text(secondaryLabel),
               ),
             ),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: () {
+                  Navigator.pop(sheetContext);
+                  final uri = Uri(
+                    path: '/fabric-help',
+                    queryParameters: {
+                      'topic': 'helpdesk',
+                      'question': 'I need help with ${title.toLowerCase()}.',
+                    },
+                  );
+                  context.push(uri.toString());
+                },
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Ask SuiSakhi'),
+              ),
+            ),
           ],
         ),
       ),
@@ -376,6 +398,17 @@ class CustomerHelpSupportScreen extends StatelessWidget {
                 icon: const Icon(Icons.support_agent_outlined),
                 label: const Text('Contact Garment Care support'),
               ),
+              const SizedBox(height: 8),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.of(sheetContext).pop();
+                  context.push(
+                    '/fabric-help?topic=helpdesk&question=I%20need%20help%20with%20my%20Garment%20Care%20service.',
+                  );
+                },
+                icon: const Icon(Icons.auto_awesome_outlined),
+                label: const Text('Ask SuiSakhi'),
+              ),
             ],
           ),
         ),
@@ -432,6 +465,17 @@ class CustomerHelpSupportScreen extends StatelessWidget {
               onTap: () {
                 Navigator.pop(sheetContext);
                 context.push('/measurement-context');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.support_agent_outlined),
+              title: const Text('Ask SuiSakhi for measurement help'),
+              subtitle: const Text('Get guidance or contact Helpdesk.'),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                context.push(
+                  '/fabric-help?topic=measurement_help&question=I%20need%20help%20with%20my%20measurements%20and%20fit.',
+                );
               },
             ),
             ListTile(
@@ -1492,31 +1536,56 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
               DropdownButtonFormField<String>(
                 key: ValueKey('topic_${_topic ?? 'none'}'),
                 initialValue: _topic,
+                isExpanded: true,
                 decoration: const InputDecoration(
                   labelText: 'What is your request about?',
                   border: OutlineInputBorder(),
                 ),
-                hint: const Text('Choose a related topic'),
+                hint: const Text(
+                  'Choose a related topic',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
                 items: const [
                   DropdownMenuItem(
                     value: 'tailoring',
-                    child: Text('Tailoring order'),
+                    child: Text(
+                      'Tailoring order',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'garment_care',
-                    child: Text('Garment Care order'),
+                    child: Text(
+                      'Garment Care order',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'quick_care',
-                    child: Text('Quick Care order'),
+                    child: Text(
+                      'Quick Care order',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'fabric_design',
-                    child: Text('Fabric / Design on a tailoring order'),
+                    child: Text(
+                      'Fabric / Design on a tailoring order',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   DropdownMenuItem(
                     value: 'other',
-                    child: Text('Other / no order'),
+                    child: Text(
+                      'Other / no order',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ],
                 validator: (value) =>
@@ -1542,11 +1611,18 @@ class _CreateSupportTicketSheetState extends State<_CreateSupportTicketSheet> {
               DropdownButtonFormField<String>(
                 key: ValueKey(_category),
                 initialValue: _category,
+                isExpanded: true,
                 decoration: const InputDecoration(labelText: 'Issue type'),
                 items: CustomerSupportService.categories
                     .map(
-                      (value) =>
-                          DropdownMenuItem(value: value, child: Text(value)),
+                      (value) => DropdownMenuItem(
+                        value: value,
+                        child: Text(
+                          value,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
                     )
                     .toList(),
                 onChanged: _saving
@@ -1884,38 +1960,57 @@ class _AssistantSheetState extends State<_AssistantSheet> {
               top: false,
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: TextField(
-                        controller: _controller,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _send(_controller.text),
-                        decoration: InputDecoration(
-                          hintText: 'Ask SuiSakhi…',
-                          filled: true,
-                          fillColor: Colors.white,
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(24),
-                            borderSide: BorderSide.none,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _sending ? null : _contactHelpdesk,
+                        icon: const Icon(Icons.support_agent_outlined),
+                        label: const Text('Contact Helpdesk'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _supportPurple,
+                          side: const BorderSide(color: _supportPurple),
+                          padding: const EdgeInsets.symmetric(vertical: 11),
                         ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    IconButton.filled(
-                      onPressed: _sending
-                          ? null
-                          : () => _send(_controller.text),
-                      style: IconButton.styleFrom(
-                        backgroundColor: _supportPurple,
-                        foregroundColor: Colors.white,
-                      ),
-                      icon: const Icon(Icons.send_rounded),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _controller,
+                            textInputAction: TextInputAction.send,
+                            onSubmitted: (_) => _send(_controller.text),
+                            decoration: InputDecoration(
+                              hintText: 'Ask SuiSakhi…',
+                              filled: true,
+                              fillColor: Colors.white,
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(24),
+                                borderSide: BorderSide.none,
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton.filled(
+                          onPressed: _sending
+                              ? null
+                              : () => _send(_controller.text),
+                          style: IconButton.styleFrom(
+                            backgroundColor: _supportPurple,
+                            foregroundColor: Colors.white,
+                          ),
+                          icon: const Icon(Icons.send_rounded),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -1954,29 +2049,8 @@ class _AssistantSheetState extends State<_AssistantSheet> {
       reply = await _orderReply();
     } else if (lower.contains('rental')) {
       reply = await _moduleOrderReply('rental');
-    } else if (lower.contains('fabric')) {
-      reply =
-          'For a daily-wear kurti, breathable cotton and cotton blends are common choices. Rayon or viscose can give a softer drape. The best choice depends on climate, care preference and the selected design; your tailor can confirm suitability before cutting.';
-    } else if (lower.contains('sleeve') || lower.contains('style')) {
-      reply =
-          'For everyday wear, a 3/4 sleeve is a versatile option and works with many kurti designs. Sleeve length and ease can be noted for your tailor to review.';
-    } else if (lower.contains('measurement') ||
-        lower.contains('tight') ||
-        lower.contains('fit')) {
-      reply =
-          'You can review saved measurement references in My Account → Measurements. If a stitched garment feels tight, tell us which area and link the order; support can route a fitting or alteration request.';
-    } else if (lower.contains('payment') || lower.contains('refund')) {
-      reply =
-          'I can’t confirm a refund or payment outcome in chat. Please share the order and payment details in a Payment Issue request so the team can verify the records.';
-    } else if (lower.contains('address') || lower.contains('tailor')) {
-      reply =
-          'I can pass along an address-change or tailor-contact request for review. It will not change the order until the team confirms it. Open Order Awareness and choose More help to link a specific order.';
-    } else if (lower.contains('wedding') || lower.contains('bulk')) {
-      reply =
-          'For multiple outfits or an event package, open Bulk Orders from the home screen. The team can help with quantities, timing and coordination.';
     } else {
-      reply =
-          'I can help with order tracking, measurement guidance, fabric and style suggestions, garment care, payments, rentals and bulk orders. For a personal case, use Report an Issue so it reaches the support team.';
+      reply = await _smartHelpReply(text, lower);
     }
 
     if (!mounted) return;
@@ -1993,6 +2067,37 @@ class _AssistantSheetState extends State<_AssistantSheet> {
         );
       }
     });
+  }
+
+  Future<String> _smartHelpReply(String question, String lower) async {
+    final topic =
+        lower.contains('measurement') ||
+            lower.contains('fit') ||
+            lower.contains('tight')
+        ? 'measurement_help'
+        : lower.contains('fabric')
+        ? 'fabric_guidance'
+        : lower.contains('design') ||
+              lower.contains('sleeve') ||
+              lower.contains('style')
+        ? 'design_question'
+        : 'helpdesk';
+    final result = await SmartAssistService.answerCustomerHelpQuestion(
+      question: question,
+      topic: topic,
+    );
+    if (result.success && result.text.trim().isNotEmpty) return result.text;
+    return '${result.text}\n\nYou can contact the support team using the Contact Helpdesk button below.';
+  }
+
+  void _contactHelpdesk() {
+    final latestQuestion = _messages.lastWhere(
+      (line) => !line.fromAssistant,
+      orElse: () => const _ChatLine(text: '', fromAssistant: false),
+    );
+    widget.onRaiseIssue(
+      _inferTicketCategory(latestQuestion.text.toLowerCase()),
+    );
   }
 
   bool _asksAboutOrder(String text) =>
@@ -2187,9 +2292,20 @@ class _ChatBubble extends StatelessWidget {
         color: line.fromAssistant ? Colors.white : const Color(0xFFEAE4FF),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Text(
-        line.text,
-        style: const TextStyle(color: _supportInk, height: 1.35),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            line.text,
+            style: const TextStyle(color: _supportInk, height: 1.35),
+          ),
+          if (line.fromAssistant)
+            Align(
+              alignment: Alignment.centerRight,
+              child: SpeechPlaybackButton(text: line.text, compact: true),
+            ),
+        ],
       ),
     ),
   );

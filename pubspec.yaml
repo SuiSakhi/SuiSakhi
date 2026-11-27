@@ -29,10 +29,12 @@ dependencies:
   firebase_storage: ^12.3.4
   image_picker: ^1.1.2
   record: ^6.2.1
+  flutter_tts: ^4.2.5
   flutter_markdown: ^0.7.7+1
   pinput: ^5.0.1
   flutter_secure_storage: ^11.2.0
   qr_flutter: ^4.1.0
+  video_player: ^2.11.1
 
 dev_dependencies:
   flutter_test:
@@ -51,6 +53,7 @@ flutter:
   assets:
     - assets/images/
     - assets/images/quick_care/
+    - assets/legal/suisakhi_legal_template_drafts.json
 
 flutter_launcher_icons:
   android: true

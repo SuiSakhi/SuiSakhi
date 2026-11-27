@@ -260,6 +260,7 @@ class PartnerApplication {
     this.kycFailureReason,
     this.onboardingSections = const {},
     this.onboardingData = const {},
+    this.legalAcceptance = const {},
     this.onboardingUpdatedByUid,
     this.onboardingUpdatedAt,
     this.approvedPartnerProfileId,
@@ -341,6 +342,9 @@ class PartnerApplication {
   /// Large files and photographs are not stored in this map.
   /// Only structured information and Storage references belong here.
   final Map<String, dynamic> onboardingData;
+
+  /// Immutable snapshot of the agreements affirmatively accepted at submission.
+  final Map<String, dynamic> legalAcceptance;
 
   /// Admin UID that last updated an onboarding-section status.
   final String? onboardingUpdatedByUid;
@@ -595,6 +599,7 @@ class PartnerApplication {
         data['onboardingSections'],
       ),
       onboardingData: _stringMapFromValue(data['onboardingData']),
+      legalAcceptance: _stringMapFromValue(data['legalAcceptance']),
       onboardingUpdatedByUid: data['onboardingUpdatedByUid']?.toString(),
       onboardingUpdatedAt: _dateFromValue(data['onboardingUpdatedAt']),
       approvedPartnerProfileId: data['approvedPartnerProfileId']?.toString(),

@@ -6,9 +6,9 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/payment_models.dart';
 import '../../services/payout_config_service.dart';
 import '../../widgets/common/custom_button.dart';
+import 'owner_partner_payouts_section.dart';
 
-/// Owner: split percents (of customer **advance**), UPI ids for ledger display,
-/// sandbox toggle, optional Razorpay publishable key for future live checkout.
+/// Owner payment settings and Partner payout tracking.
 class OwnerPayoutSettingsScreen extends StatefulWidget {
   const OwnerPayoutSettingsScreen({super.key});
 
@@ -18,14 +18,11 @@ class OwnerPayoutSettingsScreen extends StatefulWidget {
 }
 
 class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
-  final _ownerPct = TextEditingController();
-  final _tailorPct = TextEditingController();
-  final _deliveryPct = TextEditingController();
-  final _platformPct = TextEditingController();
   final _ownerUpi = TextEditingController();
   final _tailorUpi = TextEditingController();
   final _deliveryUpi = TextEditingController();
   final _rzpKey = TextEditingController();
+  final _joiningDeposit = TextEditingController();
   bool _sandbox = true;
   bool _loading = true;
   bool _saving = false;
@@ -38,28 +35,22 @@ class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
 
   @override
   void dispose() {
-    _ownerPct.dispose();
-    _tailorPct.dispose();
-    _deliveryPct.dispose();
-    _platformPct.dispose();
     _ownerUpi.dispose();
     _tailorUpi.dispose();
     _deliveryUpi.dispose();
     _rzpKey.dispose();
+    _joiningDeposit.dispose();
     super.dispose();
   }
 
   Future<void> _load() async {
     final c = await PayoutConfigService.fetch();
     if (!mounted) return;
-    _ownerPct.text = c.ownerPercent.toStringAsFixed(0);
-    _tailorPct.text = c.tailorPercent.toStringAsFixed(0);
-    _deliveryPct.text = c.deliveryPercent.toStringAsFixed(0);
-    _platformPct.text = c.platformPercent.toStringAsFixed(0);
     _ownerUpi.text = c.ownerUpiId;
     _tailorUpi.text = c.tailorUpiId;
     _deliveryUpi.text = c.deliveryUpiId;
     _rzpKey.text = c.razorpayKeyId ?? '';
+    _joiningDeposit.text = c.partnerJoiningSecurityDeposit.toStringAsFixed(2);
     setState(() {
       _sandbox = c.sandboxMode;
       _loading = false;
@@ -67,35 +58,26 @@ class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
   }
 
   Future<void> _save() async {
-    double p(TextEditingController t) =>
-        double.tryParse(t.text.trim().replaceAll(',', '.')) ?? 0;
-    final o = p(_ownerPct);
-    final t = p(_tailorPct);
-    final d = p(_deliveryPct);
-    final pl = p(_platformPct);
-    final sum = o + t + d + pl;
-    if ((sum - 100).abs() > 0.5) {
+    final joiningDeposit = double.tryParse(_joiningDeposit.text.trim());
+    if (joiningDeposit == null ||
+        !joiningDeposit.isFinite ||
+        joiningDeposit < 0 ||
+        joiningDeposit > 100000) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Percents should add up to 100 (currently ${sum.toStringAsFixed(1)}).',
-          ),
+        const SnackBar(
+          content: Text('Enter a joining deposit from ₹0 to ₹1,00,000.'),
         ),
       );
       return;
     }
-
     setState(() => _saving = true);
     final cfg = ShopPayoutConfig(
-      ownerPercent: o,
-      tailorPercent: t,
-      deliveryPercent: d,
-      platformPercent: pl,
       sandboxMode: _sandbox,
       razorpayKeyId: _rzpKey.text.trim().isEmpty ? null : _rzpKey.text.trim(),
       ownerUpiId: _ownerUpi.text.trim(),
       tailorUpiId: _tailorUpi.text.trim(),
       deliveryUpiId: _deliveryUpi.text.trim(),
+      partnerJoiningSecurityDeposit: joiningDeposit,
     );
     try {
       await PayoutConfigService.save(cfg);
@@ -106,9 +88,9 @@ class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Save failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Save failed: $e')));
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -134,9 +116,9 @@ class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'When a customer pays the order advance online, shares below '
-                    'are recorded on the order (test mode settles instantly in-app). '
-                    'Real bank/UPI settlement needs your payment provider dashboard.',
+                    'Partner payouts use the Partner rate from the applicable '
+                    'price list. Record the full payable after work is complete; '
+                    'any deductions must include a reason and are shown in the payout record.',
                     style: AppTextStyles.bodySmall.copyWith(
                       color: AppColors.textHint,
                       height: 1.45,
@@ -154,36 +136,62 @@ class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
                     activeThumbColor: AppColors.primary,
                     onChanged: (v) => setState(() => _sandbox = v),
                   ),
-                  const SizedBox(height: 16),
-                  Text('Split of advance %', style: AppTextStyles.titleMedium),
-                  const SizedBox(height: 8),
-                  _pctRow('Owner', _ownerPct),
-                  _pctRow('Tailor', _tailorPct),
-                  _pctRow('Delivery', _deliveryPct),
-                  _pctRow('Platform', _platformPct),
                   const SizedBox(height: 20),
-                  Text('UPI ids (for payout records)',
-                      style: AppTextStyles.titleMedium),
+                  Text(
+                    'UPI ids (for payout records)',
+                    style: AppTextStyles.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(
-                    'Shown on each order’s ledger. Tailors/delivery can also save '
-                    'UPI under Profile for their own reference.',
+                    'Reference UPI details for external settlements. Partner '
+                    'payouts are recorded from the Partner rate, with any approved deductions itemized.',
                     style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textHint),
+                      color: AppColors.textHint,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _upiField('Owner UPI', _ownerUpi),
                   _upiField('Tailor UPI', _tailorUpi),
                   _upiField('Delivery UPI', _deliveryUpi),
+                  const SizedBox(height: 12),
+                  Text('Partner onboarding', style: AppTextStyles.titleMedium),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Optional one-time refundable joining security deposit. '
+                    'Applicants see the amount and accept the terms before '
+                    'submitting. Set 0 to keep onboarding free. This setting '
+                    'does not collect or refund the amount; those payments '
+                    'are not automated in the current build.',
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.textHint,
+                      height: 1.4,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: _joiningDeposit,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
+                    ),
+                    decoration: const InputDecoration(
+                      labelText: 'Refundable joining deposit (₹)',
+                      hintText: '0',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
                   const SizedBox(height: 20),
-                  Text('Live gateway (optional)',
-                      style: AppTextStyles.titleMedium),
+                  Text(
+                    'Live gateway (optional)',
+                    style: AppTextStyles.titleMedium,
+                  ),
                   const SizedBox(height: 8),
                   Text(
                     'Razorpay Key Id (publishable) for a future native checkout. '
                     'The secret key must live only in Cloud Functions, not in the app.',
                     style: AppTextStyles.bodySmall.copyWith(
-                        color: AppColors.textHint, height: 1.4),
+                      color: AppColors.textHint,
+                      height: 1.4,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -200,24 +208,10 @@ class _OwnerPayoutSettingsScreenState extends State<OwnerPayoutSettingsScreen> {
                     label: _saving ? 'Saving…' : 'Save',
                     onTap: _saving ? () {} : _save,
                   ),
+                  const OwnerPartnerPayoutsSection(),
                 ],
               ),
             ),
-    );
-  }
-
-  Widget _pctRow(String label, TextEditingController c) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: TextField(
-        controller: c,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(
-          labelText: label,
-          suffixText: '%',
-          border: const OutlineInputBorder(),
-        ),
-      ),
     );
   }
 

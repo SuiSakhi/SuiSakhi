@@ -16,6 +16,8 @@ import '../../core/garment_care_guidance.dart';
 import '../../models/garment_care_completion_template.dart';
 import '../../models/garment_care_domain.dart';
 import '../../services/garment_care_service.dart';
+import '../../widgets/audio_note_player.dart';
+import '../../widgets/orders/order_stage_progress.dart';
 
 class GarmentCareJobsScreen extends StatefulWidget {
   const GarmentCareJobsScreen({
@@ -40,7 +42,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
 
   final Set<String> _busyJobIds = <String>{};
   final GlobalKey _workContentKey = GlobalKey();
-  String _selectedWorkTab = 'today';
+  String _selectedWorkTab = 'active';
   String _orderSearchQuery = '';
   int _selectedBottomDestination = 0;
 
@@ -162,9 +164,9 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
               profileId: profileId,
             ),
             builder: (context, outgoingSnapshot) {
-              // A service job can be care-complete while its order is still
-              // awaiting payment or final delivery. Only a delivered return
-              // shipment closes the order in the Partner work tabs.
+              // Care completion is distinct from customer payment and return
+              // delivery. Those handover steps remain in the summary cards;
+              // Completed Orders counts only orders whose return was delivered.
               final outgoingShipments =
                   outgoingSnapshot.data?.docs ??
                   const <QueryDocumentSnapshot<Map<String, dynamic>>>[];
@@ -195,13 +197,16 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
                       'care' => status == 'inProgress',
                       'quality' => status == 'qualityCheck',
                       'completed' => status == 'completed' && orderDelivered,
-                      _ =>
-                        ![
-                              'offered',
-                              'cancelled',
-                              'rejected',
-                            ].contains(status) &&
-                            !(status == 'completed' && orderDelivered),
+                      'active' => [
+                        'accepted',
+                        'inspectionPending',
+                        'awaitingConsent',
+                        'awaitingCustomerEdit',
+                        'readyToStart',
+                        'inProgress',
+                        'qualityCheck',
+                      ].contains(status),
+                      _ => false,
                     };
                   })
                   .toList(growable: false);
@@ -289,7 +294,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
         .length;
     final tabs = <(String, String, int?)>[
       ('all', 'All Orders', orderCount),
-      ('today', "Today's Work", null),
+      ('active', 'Active Work', null),
       ('new', 'Care Steps to Accept', newCount),
       ('check', 'Check Clothes', checkCount),
       ('waiting', 'Waiting for Customer', waitingCount),
@@ -316,7 +321,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
               selected: _selectedWorkTab == tab.$1,
               onSelected: (_) => setState(() {
                 _selectedWorkTab = tab.$1;
-                _selectedBottomDestination = tab.$1 == 'today' ? 0 : 1;
+                _selectedBottomDestination = tab.$1 == 'active' ? 0 : 1;
               }),
               selectedColor: GarmentCareColors.primary,
               backgroundColor: Colors.white,
@@ -827,6 +832,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
         Text(
           switch (tab) {
             'all' => 'Orders will appear here',
+            'active' => 'No active care work needs attention',
             'new' => 'No care steps are waiting for you to accept',
             'check' => 'No garments need inspection',
             'waiting' => 'No customer response is pending',
@@ -841,8 +847,8 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
         ),
         const SizedBox(height: 5),
         Text(
-          tab == 'today'
-              ? 'New service requests and handover tasks will appear when they are ready.'
+          tab == 'active'
+              ? 'New care steps are under Care Steps to Accept. Completed care awaiting payment or delivery is shown in the summary above.'
               : 'Your work updates automatically as the order moves forward.',
           textAlign: TextAlign.center,
           style: const TextStyle(color: GarmentCareColors.textSecondary),
@@ -916,6 +922,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
     final pickupDetailsRelevant =
         !isNextService && (status == 'offered' || status == 'accepted');
     final hasMaterial = (data['material']?.toString().trim() ?? '').isNotEmpty;
+    final careAudioPath = data['careAudioStoragePath']?.toString().trim() ?? '';
     final timestampKeys = switch (status) {
       'completed' => ['completedAt', 'updatedAt', 'createdAt'],
       'inspectionPending' => ['inspectionStartedAt', 'updatedAt', 'createdAt'],
@@ -1117,6 +1124,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
               if ((data['conditionNotes']?.toString().trim() ?? '')
                       .isNotEmpty ||
                   (data['careNotes']?.toString().trim() ?? '').isNotEmpty ||
+                  careAudioPath.isNotEmpty ||
                   data['hygieneWashRequested'] == true) ...[
                 const SizedBox(height: 2),
                 ExpansionTile(
@@ -1150,6 +1158,18 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
                         dense: true,
                         title: const Text('Care instructions'),
                         subtitle: Text(data['careNotes'].toString()),
+                      ),
+                    if (careAudioPath.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: _PartnerCareAudioNote(
+                            jobId: job.id,
+                            accountId: accountId,
+                            profileId: profileId,
+                          ),
+                        ),
                       ),
                   ],
                 ),
@@ -1575,9 +1595,12 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
                         crossAxisCount: 2,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        childAspectRatio: 1.62,
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
+                        // Several workflow labels need two lines. Keep enough
+                        // vertical room for the icon, count and wrapped label
+                        // so smaller devices do not report a RenderFlex overflow.
+                        childAspectRatio: 1.45,
+                        crossAxisSpacing: 8,
+                        mainAxisSpacing: 8,
                         children: [
                           _summaryCard(
                             'Care Steps to Accept',
@@ -1758,31 +1781,31 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
     VoidCallback? onTap,
   }) => Material(
     color: Colors.white,
-    borderRadius: BorderRadius.circular(17),
+    borderRadius: BorderRadius.circular(16),
     child: InkWell(
-      borderRadius: BorderRadius.circular(17),
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(13, 10, 11, 9),
+        padding: const EdgeInsets.fromLTRB(11, 9, 11, 9),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(17),
+          borderRadius: BorderRadius.circular(16),
           border: Border.all(color: GarmentCareColors.divider),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: GarmentCareColors.primary, size: 20),
-            const SizedBox(height: 3),
+            Icon(icon, color: GarmentCareColors.primary, size: 19),
+            const SizedBox(height: 2),
             Text(
               value,
-              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.w700),
+              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700),
             ),
             Text(
               label,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 12, height: 1.1),
+              style: const TextStyle(fontSize: 13, height: 1.08),
             ),
           ],
         ),
@@ -1851,7 +1874,7 @@ class _GarmentCareJobsScreenState extends State<GarmentCareJobsScreen> {
     if (index < 2) {
       setState(() {
         _selectedBottomDestination = index;
-        _selectedWorkTab = index == 0 ? 'today' : 'all';
+        _selectedWorkTab = index == 0 ? 'active' : 'all';
       });
       return;
     }
@@ -2314,6 +2337,32 @@ class _PartnerGarmentCarePhoto extends StatelessWidget {
           ),
         ),
       );
+    },
+  );
+}
+
+class _PartnerCareAudioNote extends StatelessWidget {
+  const _PartnerCareAudioNote({
+    required this.jobId,
+    required this.accountId,
+    required this.profileId,
+  });
+
+  final String jobId;
+  final String accountId;
+  final String profileId;
+
+  @override
+  Widget build(BuildContext context) => AudioNotePlayer(
+    compact: true,
+    label: 'Listen to customer voice note',
+    resolveUrl: () async {
+      final details = await GarmentCareService.partnerServiceJobDetails(
+        jobId: jobId,
+        accountId: accountId,
+        profileId: profileId,
+      );
+      return details['instructionAudioUrl']?.toString();
     },
   );
 }
@@ -4648,6 +4697,32 @@ class GarmentCareCustodyScreen extends StatelessWidget {
   );
 }
 
+/// Embeds the existing Customer return workflow inside the single Delivery
+/// Portal without nesting another page or changing its shipment actions.
+class GarmentCareDeliveryWorkSection extends StatelessWidget {
+  const GarmentCareDeliveryWorkSection({
+    super.key,
+    required this.accountId,
+    required this.profileId,
+  });
+
+  final String accountId;
+  final String profileId;
+
+  @override
+  Widget build(BuildContext context) => _ShipmentStreamSection(
+    title: 'Garment Care deliveries',
+    stream: GarmentCareService.deliveryPartnerShipments(
+      accountId: accountId,
+      profileId: profileId,
+    ),
+    accountId: accountId,
+    profileId: profileId,
+    incoming: false,
+    deliveryPartnerOnly: true,
+  );
+}
+
 class _ShipmentStreamSection extends StatelessWidget {
   const _ShipmentStreamSection({
     required this.title,
@@ -5230,6 +5305,25 @@ class _CustodyShipmentCardState extends State<_CustodyShipmentCard> {
             Text(
               '${_shortOrderLabel(data['orderNumber'], data['orderId'])}${subOrderNumber.isEmpty ? '' : ' · Sub-order $subOrderNumber'} · ${ids.length} garment${ids.length == 1 ? '' : 's'}',
               style: const TextStyle(color: GarmentCareColors.textSecondary),
+            ),
+            OrderStageProgress(
+              stages: const [
+                'Assigned',
+                'Accepted',
+                'Handover',
+                'On route',
+                'Delivered',
+              ],
+              currentStep: status == 'delivered'
+                  ? 4
+                  : status == 'inTransit'
+                  ? 3
+                  : data['receivedByAccountId'] == widget.accountId &&
+                        data['receivedByProfileId'] == widget.profileId
+                  ? 2
+                  : deliveryPartnerAcceptanceStatus == 'accepted'
+                  ? 1
+                  : 0,
             ),
             ExpansionTile(
               tilePadding: EdgeInsets.zero,

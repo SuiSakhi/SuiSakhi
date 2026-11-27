@@ -9,7 +9,7 @@ import 'payout_config_service.dart';
 import 'order_lifecycle_service.dart';
 import 'whatsapp_notify_service.dart';
 
-/// Marks advance as paid, writes payout ledger, optional WhatsApp ping.
+/// Marks the customer advance as paid and sends an optional WhatsApp ping.
 ///
 /// **Sandbox**: completes immediately from the app (for QA). **Live** Razorpay
 /// still needs a server to create orders, verify signatures, and run payouts —
@@ -23,8 +23,6 @@ class PaymentCompletionService {
   static Future<String?> completeAdvancePayment({
     required String orderId,
     required OnlinePaymentMethod method,
-    String? tailorUpiOverride,
-    String? deliveryUpiOverride,
   }) async {
     final uid = _auth.currentUser?.uid;
     if (uid == null) return 'Sign in to pay.';
@@ -83,25 +81,12 @@ class PaymentCompletionService {
     final advance = (data['advanceAmount'] as num?)?.toDouble() ?? 0;
     if (advance <= 0) return 'Invalid advance amount.';
 
-    var ledger = config.buildLedger(advance);
-    if (tailorUpiOverride != null && tailorUpiOverride.trim().isNotEmpty) {
-      ledger = _applyUpiOverride(ledger, 'tailor', tailorUpiOverride.trim());
-    }
-    if (deliveryUpiOverride != null && deliveryUpiOverride.trim().isNotEmpty) {
-      ledger = _applyUpiOverride(
-        ledger,
-        'delivery',
-        deliveryUpiOverride.trim(),
-      );
-    }
-
     await orderRef.update({
       'paymentStatus': 'advancePaid',
       'paidAt': FieldValue.serverTimestamp(),
       'paymentMethod': method.name,
       'paymentProvider': 'sandbox',
       'amountPaid': advance,
-      'payoutLedger': ledger.map((e) => e.toMap()).toList(),
     });
 
     final dressType = data['dressType'] as String? ?? 'Order';
@@ -214,24 +199,5 @@ class PaymentCompletionService {
           'razorpayPaymentId': razorpayPaymentId,
           'razorpaySignature': razorpaySignature,
         });
-  }
-
-  static List<OrderPayoutLine> _applyUpiOverride(
-    List<OrderPayoutLine> lines,
-    String role,
-    String upi,
-  ) {
-    return lines
-        .map(
-          (l) => l.role == role
-              ? OrderPayoutLine(
-                  role: l.role,
-                  amount: l.amount,
-                  percent: l.percent,
-                  creditToUpi: upi,
-                )
-              : l,
-        )
-        .toList();
   }
 }

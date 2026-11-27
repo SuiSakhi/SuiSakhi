@@ -70,7 +70,11 @@ String _formatPhoneVerifyError(FirebaseAuthException e) {
     case 'missing-client-identifier':
       return 'iOS setup issue: enable Phone in Firebase Console and check bundle ID.';
     case 'app-not-authorized':
-      return 'Phone sign-in is not enabled for this app in Firebase.';
+      return 'Firebase could not authorize this app for phone verification. Check the app registration, '
+          'signing certificate fingerprints, and Firebase API key restrictions.';
+    case 'operation-not-allowed':
+      return 'Phone sign-in is disabled for this Firebase project. Enable the Phone provider in '
+          'Firebase Console → Authentication → Sign-in method.';
     case 'invalid-verification-code':
       return 'Wrong verification code. Use the 6-digit code from the SMS Firebase sent — '
           'not a made-up code like 123456 unless you added this exact number as a '
@@ -296,6 +300,7 @@ class _PhoneAuthRouteHostState extends State<_PhoneAuthRouteHost> {
 class _LoginScreenState extends State<LoginScreen> {
   _PhoneAuthFlowModel get _phoneAuthModel => _kPhoneAuthFlowModel;
   Timer? _phoneVerifyWatchdog;
+  StreamSubscription<User?>? _authSubscription;
   bool _resumeStarted = false;
   bool _restoringSession = false;
   String? _sessionRestoreError;
@@ -304,6 +309,26 @@ class _LoginScreenState extends State<LoginScreen> {
   void initState() {
     super.initState();
     _applyEntryIntent(widget.partnerEntry, widget.resetPinAfterOtp);
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) {
+      // The login route can be opened before native Firebase persistence has
+      // finished restoring. Resume as soon as the saved user becomes available,
+      // unless the customer is actively completing a new OTP sign-in.
+      if (user == null ||
+          _phoneAuthModel.flowActive ||
+          _phoneAuthModel.loading ||
+          widget.resetPinAfterOtp) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted ||
+            _phoneAuthModel.flowActive ||
+            _phoneAuthModel.loading ||
+            widget.resetPinAfterOtp) {
+          return;
+        }
+        _scheduleSessionRestore();
+      });
+    });
     if (widget.resumeSession) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scheduleSessionRestore();
@@ -344,6 +369,12 @@ class _LoginScreenState extends State<LoginScreen> {
       // whether this device needs a new OTP.
       final user = await FirebaseAuth.instance.authStateChanges().first;
       _logLoginTiming('session_restore.auth_state_ready', timer);
+      _logLoginTiming(
+        user == null
+            ? 'session_restore.no_persisted_user'
+            : 'session_restore.persisted_user_found',
+        timer,
+      );
       if (!mounted) return;
       if (user == null) {
         _phoneAuthModel.setLoading(false);
@@ -418,6 +449,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   void dispose() {
     _cancelPhoneWatchdog();
+    unawaited(_authSubscription?.cancel());
     super.dispose();
   }
 

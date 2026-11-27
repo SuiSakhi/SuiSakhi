@@ -41,6 +41,7 @@ import 'screens/partner/garment_care_completion_templates_screen.dart';
 import 'screens/prd/fashion_store_screen.dart';
 import 'screens/prd/offers_membership_screen.dart';
 import 'screens/prd/customer_fabric_help_screen.dart';
+import 'screens/prd/customer_rates_screen.dart';
 import 'screens/owner/owner_dashboard_screen.dart';
 import 'screens/owner/owner_support_inbox_screen.dart';
 import 'screens/owner/owner_support_access_screen.dart';
@@ -53,6 +54,7 @@ import 'screens/owner/owner_security_templates_screen.dart';
 import 'screens/owner/owner_partner_applications_screen.dart';
 import 'screens/owner/owner_partner_application_review_screen.dart';
 import 'screens/owner/rates_management_screen.dart';
+import 'screens/owner/quick_care_pricing_screen.dart';
 import 'screens/owner/owner_payout_settings_screen.dart';
 import 'screens/owner/garment_care_pricing_screen.dart';
 import 'screens/owner/garment_care_inspection_templates_screen.dart';
@@ -74,7 +76,6 @@ import 'screens/partner/delivery_partner_application_screen.dart';
 import 'screens/partner/measurement_partner_application_screen.dart';
 import 'screens/partner/quickcare_application_screen.dart';
 import 'screens/delivery/delivery_dashboard_screen.dart';
-import 'screens/delivery/delivery_services_screen.dart';
 import 'screens/partner/partner_profile_landing_screen.dart';
 import 'screens/partner/partner_workspace_screen.dart';
 import 'screens/partner/partner_profile_view_screen.dart';
@@ -248,6 +249,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const CustomerServiceGuideScreen(),
     ),
     GoRoute(
+      path: '/customer-rates',
+      builder: (ctx, state) => const CustomerRatesScreen(),
+    ),
+    GoRoute(
       path: '/partner/landing',
       builder: (context, state) => PartnerProfileLandingScreen(
         accountId: state.uri.queryParameters['accountId'],
@@ -337,10 +342,13 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/delivery/garment-care-returns',
-      builder: (ctx, state) => GarmentCareCustodyScreen(
-        accountId: state.uri.queryParameters['accountId'] ?? '',
-        profileId: state.uri.queryParameters['profileId'] ?? '',
-        deliveryPartnerOnly: true,
+      builder: (ctx, state) => _withPartnerPresence(
+        state,
+        DeliveryDashboardScreen(
+          accountId: state.uri.queryParameters['accountId'] ?? '',
+          profileId: state.uri.queryParameters['profileId'] ?? '',
+          initialServiceGroup: 1,
+        ),
       ),
     ),
     GoRoute(
@@ -460,6 +468,10 @@ final _router = GoRouter(
       builder: (ctx, state) => const GarmentCarePricingScreen(),
     ),
     GoRoute(
+      path: '/owner/quick-care/pricing',
+      builder: (ctx, state) => const QuickCarePricingScreen(),
+    ),
+    GoRoute(
       path: '/owner/garment-care/inspection-templates',
       builder: (ctx, state) => const GarmentCareInspectionTemplatesScreen(),
     ),
@@ -498,7 +510,10 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/support/orders',
-      builder: (ctx, state) => const HelpdeskOrderExplorerScreen(),
+      builder: (ctx, state) => HelpdeskOrderExplorerScreen(
+        initialOrderType: state.uri.queryParameters['type'] ?? 'all',
+        initialStatusCategory: state.uri.queryParameters['status'] ?? 'all',
+      ),
     ),
     GoRoute(
       path: '/owner/order-routing',
@@ -563,7 +578,7 @@ final _router = GoRouter(
       path: '/delivery/services',
       builder: (ctx, state) => _withPartnerPresence(
         state,
-        DeliveryServicesScreen(
+        DeliveryDashboardScreen(
           accountId: state.uri.queryParameters['accountId'] ?? '',
           profileId: state.uri.queryParameters['profileId'] ?? '',
         ),
@@ -571,12 +586,31 @@ final _router = GoRouter(
     ),
     GoRoute(
       path: '/delivery',
-      builder: (ctx, state) => const DeliveryDashboardScreen(),
+      builder: (ctx, state) => DeliveryDashboardScreen(
+        accountId: state.uri.queryParameters['accountId'] ?? '',
+        profileId: state.uri.queryParameters['profileId'] ?? '',
+      ),
     ),
     // ── Customer routes ───────────────────────────────────────────────────
     GoRoute(
       path: '/measurements',
       builder: (ctx, state) => const MeasurementDashboardScreen(),
+    ),
+    GoRoute(
+      path: '/fabric-estimation',
+      builder: (ctx, state) => DressDesignerScreen(
+        estimateOnly: true,
+        initialOccasionId: state.uri.queryParameters['occasion'],
+        initialDressType: state.uri.queryParameters['dressType'],
+        initialFit: state.uri.queryParameters['fit'],
+        initialCatalogueDesignId: state.uri.queryParameters['designId'],
+        initialFabricChoice: state.uri.queryParameters['fabric'],
+        initialCustomFabric: state.uri.queryParameters['customFabric'],
+        initialClientName: state.uri.queryParameters['clientName'],
+        initialPersonId: state.uri.queryParameters['personId'],
+        initialRelationship: state.uri.queryParameters['relationship'],
+        returnToOrder: state.uri.queryParameters['returnToOrder'] == '1',
+      ),
     ),
     GoRoute(
       path: '/measurement-context',
@@ -678,6 +712,13 @@ final _router = GoRouter(
         return DressDesignerScreen(
           initialOccasionId: occasion,
           isKidsFlow: kids,
+          estimateOnly: state.uri.queryParameters['entry'] == 'fabric-estimate',
+          initialDressType: state.uri.queryParameters['dressType'],
+          initialFit: state.uri.queryParameters['fit'],
+          initialCatalogueDesignId: state.uri.queryParameters['designId'],
+          initialFabricChoice: state.uri.queryParameters['fabric'],
+          initialCustomFabric: state.uri.queryParameters['customFabric'],
+          returnToOrder: state.uri.queryParameters['returnToOrder'] == '1',
           startInBrowseMode: state.uri.queryParameters['entry'] == 'ideas',
           initialClientName: clientName,
           initialPersonId: personId,
@@ -750,6 +791,8 @@ final _router = GoRouter(
       path: '/fabric-help',
       builder: (ctx, state) => CustomerFabricHelpScreen(
         orderId: state.uri.queryParameters['orderId'],
+        initialTopic: state.uri.queryParameters['topic'],
+        initialQuestion: state.uri.queryParameters['question'],
       ),
     ),
     GoRoute(

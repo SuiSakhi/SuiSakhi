@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -5,6 +7,8 @@ import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/stitching_rate.dart';
+import '../../services/stitching_pricing_service.dart';
+import '../../widgets/common/pricing_input_decoration.dart';
 
 class RatesManagementScreen extends StatefulWidget {
   const RatesManagementScreen({super.key});
@@ -14,344 +18,562 @@ class RatesManagementScreen extends StatefulWidget {
 }
 
 class _RatesManagementScreenState extends State<RatesManagementScreen> {
+  final _platform = TextEditingController(text: '15');
+  final _delivery = TextEditingController(text: '0');
+  final _measurement = TextEditingController(text: '0');
+  final _other = TextEditingController(text: '0');
+  final _tax = TextEditingController(text: '6');
+  final Map<String, TextEditingController> _partner = {};
+  final Map<String, TextEditingController> _customer = {};
+  final Set<String> _manualCustomerPrices = {};
+  bool _loading = true;
+  bool _saving = false;
+  bool _hydrating = false;
+  String? _loadError;
+  String? _version;
+
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Stitching Rates'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_rounded),
-          onPressed: () => context.pop(),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_rounded),
-            onPressed: () => _showRateDialog(context),
-          ),
-        ],
-      ),
-      body: ListenableBuilder(
-        listenable: AppState.instance,
-        builder: (context, _) {
-          final rates = AppState.instance.rates;
-          return Column(
-            children: [
-              // Info banner
-              Container(
-                margin: const EdgeInsets.all(16),
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withValues(alpha: 0.07),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.primary.withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline_rounded,
-                      color: AppColors.primary,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'Rates set here are visible to all tailors. Tap any rate to edit.',
-                        style: AppTextStyles.bodySmall,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView.separated(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: rates.length,
-                  separatorBuilder: (context2, i2) => const SizedBox(height: 8),
-                  itemBuilder: (ctx, i) => _RateTile(
-                    rate: rates[i],
-                    onEdit: () => _showRateDialog(context, rate: rates[i]),
-                    onDelete: () => _confirmDelete(context, rates[i].dressType),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
-      ),
-    );
+  void initState() {
+    super.initState();
+    _platform.addListener(_recalculateAll);
+    _delivery.addListener(_recalculateAll);
+    _measurement.addListener(_recalculateAll);
+    _other.addListener(_recalculateAll);
+    _tax.addListener(_recalculateAll);
+    unawaited(_load());
   }
 
-  Future<void> _showRateDialog(
-    BuildContext context, {
-    StitchingRate? rate,
-  }) async {
-    final nameCtrl = TextEditingController(text: rate?.dressType ?? '');
-    final priceCtrl = TextEditingController(
-      text: rate?.basePrice.toStringAsFixed(0) ?? '',
-    );
-    final notesCtrl = TextEditingController(text: rate?.notes ?? '');
-    final isEdit = rate != null;
+  @override
+  void dispose() {
+    _platform.dispose();
+    _delivery.dispose();
+    _measurement.dispose();
+    _other.dispose();
+    _tax.dispose();
+    for (final controller in _partner.values) {
+      controller.dispose();
+    }
+    for (final controller in _customer.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
 
-    final result = await showModalBottomSheet<_RateUpdate>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, _) => Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.of(ctx).viewInsets.bottom,
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: const BoxDecoration(
-              color: AppColors.surface,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  isEdit ? 'Edit Rate' : 'Add New Rate',
-                  style: AppTextStyles.headlineLarge,
-                ),
-                const SizedBox(height: 20),
-                if (!isEdit)
-                  TextFormField(
-                    controller: nameCtrl,
-                    textCapitalization: TextCapitalization.words,
-                    decoration: const InputDecoration(
-                      labelText: 'Dress Type',
-                      hintText: 'e.g. Kurti, Blouse…',
-                      prefixIcon: Icon(Icons.checkroom_rounded),
-                    ),
-                  ),
-                if (!isEdit) const SizedBox(height: 14),
-                TextFormField(
-                  controller: priceCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: isEdit
-                        ? 'Price for ${rate.dressType}'
-                        : 'Base Price (₹)',
-                    prefixIcon: const Icon(Icons.currency_rupee_rounded),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: notesCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Notes (optional)',
-                    hintText: 'e.g. Includes lining, Extra for embroidery',
-                    prefixIcon: Icon(Icons.notes_rounded),
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () => Navigator.pop(ctx),
-                        child: const Text('Cancel'),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.primary,
-                          foregroundColor: Colors.white,
-                        ),
-                        onPressed: () {
-                          final price = double.tryParse(priceCtrl.text);
-                          if (price == null || price <= 0) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Enter a valid price greater than zero.',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
-                          final name = isEdit
-                              ? rate.dressType
-                              : nameCtrl.text.trim();
-                          if (name.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Enter a dress type.'),
-                              ),
-                            );
-                            return;
-                          }
-                          Navigator.pop(
-                            ctx,
-                            _RateUpdate(
-                              name,
-                              price,
-                              notesCtrl.text.trim().isEmpty
-                                  ? null
-                                  : notesCtrl.text.trim(),
-                            ),
-                          );
-                        },
-                        child: Text(isEdit ? 'Save' : 'Add Rate'),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-
-    nameCtrl.dispose();
-    priceCtrl.dispose();
-    notesCtrl.dispose();
-
-    if (result == null) return;
+  Future<void> _load() async {
     try {
-      // Update the shared rate list only after the modal route is gone. The
-      // resulting ListenableBuilder rebuild then cannot race the sheet teardown.
-      await AppState.instance.updateRate(
-        result.dressType,
-        result.price,
-        notes: result.notes,
+      await AppState.instance.loadRates();
+      final policy = await StitchingPricingService.loadPolicy();
+      _hydrating = true;
+      _platform.text = _format(
+        (policy['platformPercent'] as num?)?.toDouble() ?? 15,
       );
-    } catch (_) {
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not save this rate. Please retry.'),
-          ),
-        );
+      _delivery.text = _format(
+        (policy['deliveryFee'] as num?)?.toDouble() ?? 0,
+      );
+      _measurement.text = _format(
+        (policy['measurementFee'] as num?)?.toDouble() ?? 0,
+      );
+      _other.text = _format((policy['otherFee'] as num?)?.toDouble() ?? 0);
+      _tax.text = _format((policy['taxPercent'] as num?)?.toDouble() ?? 6);
+      _version = policy['versionId']?.toString();
+      _manualCustomerPrices.clear();
+      for (final controller in _partner.values) {
+        controller.dispose();
       }
+      for (final controller in _customer.values) {
+        controller.dispose();
+      }
+      _partner.clear();
+      _customer.clear();
+      for (final rate in AppState.instance.rates) {
+        _partner[rate.dressType] = TextEditingController(
+          text: _format(rate.basePrice),
+        );
+        final initialCustomer = rate.customerPriceOverride
+            ? (rate.customerPrice ?? _calculate(rate.basePrice))
+            : _calculate(rate.basePrice);
+        _customer[rate.dressType] = TextEditingController(
+          text: _format(initialCustomer),
+        );
+        if (rate.customerPriceOverride) {
+          _manualCustomerPrices.add(rate.dressType);
+        }
+      }
+      _hydrating = false;
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadError = null;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = 'Could not load stitching rates. Please retry.';
+      });
     }
   }
 
-  Future<void> _confirmDelete(BuildContext context, String dressType) async {
-    final ok = await showDialog<bool>(
+  double _number(TextEditingController controller, double fallback) =>
+      double.tryParse(controller.text.trim().replaceAll(',', '.')) ?? fallback;
+
+  double _calculate(double partnerRate) =>
+      StitchingPricingService.customerPrice(
+        partnerRate: partnerRate,
+        platformPercent: _number(_platform, 15),
+        deliveryFee: _number(_delivery, 0),
+        measurementFee: _number(_measurement, 0),
+        otherFee: _number(_other, 0),
+        taxPercent: _number(_tax, 6),
+      );
+
+  String _format(double value) => value == value.roundToDouble()
+      ? value.toStringAsFixed(0)
+      : value.toStringAsFixed(2);
+
+  void _recalculateAll() {
+    if (_hydrating) return;
+    for (final name in _partner.keys) {
+      _recalculate(name);
+    }
+  }
+
+  void _recalculate(String name) {
+    if (_hydrating || _manualCustomerPrices.contains(name)) return;
+    final partner = double.tryParse(_partner[name]?.text.trim() ?? '');
+    if (partner == null) return;
+    final next = _format(_calculate(partner));
+    if (_customer[name]?.text == next) return;
+    _hydrating = true;
+    _customer[name]?.text = next;
+    _hydrating = false;
+  }
+
+  Future<void> _publish() async {
+    if (_saving) return;
+    final platform = double.tryParse(_platform.text.trim());
+    final delivery = double.tryParse(_delivery.text.trim());
+    final measurement = double.tryParse(_measurement.text.trim());
+    final other = double.tryParse(_other.text.trim());
+    final tax = double.tryParse(_tax.text.trim());
+    if (platform == null ||
+        delivery == null ||
+        measurement == null ||
+        other == null ||
+        tax == null) {
+      _message(
+        'Enter valid percentages (0–100) and non-negative delivery, measurement and other fees.',
+      );
+      return;
+    }
+    if (platform < 0 ||
+        platform > 100 ||
+        delivery < 0 ||
+        measurement < 0 ||
+        other < 0 ||
+        tax < 0 ||
+        tax > 100) {
+      _message(
+        'Enter valid percentages (0–100) and non-negative delivery, measurement and other fees.',
+      );
+      return;
+    }
+
+    final rates = <StitchingRate>[];
+    for (final existing in AppState.instance.rates) {
+      final partner = double.tryParse(
+        _partner[existing.dressType]?.text.trim() ?? '',
+      );
+      final customer = double.tryParse(
+        _customer[existing.dressType]?.text.trim() ?? '',
+      );
+      if (partner == null ||
+          customer == null ||
+          partner < 0 ||
+          customer < partner) {
+        _message(
+          'Check the partner and customer prices for ${existing.dressType}.',
+        );
+        return;
+      }
+      rates.add(
+        StitchingRate(
+          dressType: existing.dressType,
+          basePrice: partner,
+          customerPrice: customer,
+          customerPriceOverride: _manualCustomerPrices.contains(
+            existing.dressType,
+          ),
+          notes: existing.notes,
+        ),
+      );
+    }
+
+    setState(() => _saving = true);
+    try {
+      await StitchingPricingService.publish(
+        rates: rates,
+        platformPercent: platform,
+        deliveryFee: delivery,
+        measurementFee: measurement,
+        otherFee: other,
+        taxPercent: tax,
+      );
+      await AppState.instance.loadRates();
+      if (!mounted) return;
+      setState(() {
+        _saving = false;
+        _version = DateTime.now().microsecondsSinceEpoch.toString();
+      });
+      _message('Stitching pricing published. Customer rates are now active.');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      _message('Could not publish stitching pricing. Please retry.');
+    }
+  }
+
+  Future<void> _addRate() async {
+    final name = TextEditingController();
+    final partner = TextEditingController();
+    final notes = TextEditingController();
+    final result = await showDialog<(String, double, String?)>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete "$dressType"?'),
-        content: const Text('This will remove the rate for all tailors.'),
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Add stitching rate'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: name,
+              decoration: const InputDecoration(labelText: 'Dress type'),
+            ),
+            TextField(
+              controller: partner,
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
+              decoration: const InputDecoration(labelText: 'Partner rate (₹)'),
+            ),
+            TextField(
+              controller: notes,
+              decoration: const InputDecoration(labelText: 'Notes (optional)'),
+            ),
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = double.tryParse(partner.text.trim());
+              if (name.text.trim().isEmpty || parsed == null || parsed < 0) {
+                return;
+              }
+              Navigator.pop(dialogContext, (
+                name.text.trim(),
+                parsed,
+                notes.text.trim().isEmpty ? null : notes.text.trim(),
+              ));
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+    name.dispose();
+    partner.dispose();
+    notes.dispose();
+    if (result == null) return;
+    final customer = _calculate(result.$2);
+    await AppState.instance.updateRate(
+      result.$1,
+      result.$2,
+      customerPrice: customer,
+      notes: result.$3,
+    );
+    if (!mounted) return;
+    setState(() {
+      _partner[result.$1] = TextEditingController(text: _format(result.$2));
+      _customer[result.$1] = TextEditingController(text: _format(customer));
+    });
+  }
+
+  Future<void> _deleteRate(String name) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('Delete "$name"?'),
+        content: const Text(
+          'This removes the rate from the active stitching list.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: AppColors.error),
+            onPressed: () => Navigator.pop(dialogContext, true),
             child: const Text('Delete'),
           ),
         ],
       ),
     );
-    if (ok == true) await AppState.instance.deleteRate(dressType);
+    if (ok != true) return;
+    await AppState.instance.deleteRate(name);
+    _partner.remove(name)?.dispose();
+    _customer.remove(name)?.dispose();
+    _manualCustomerPrices.remove(name);
+    if (mounted) setState(() {});
   }
-}
 
-class _RateUpdate {
-  final String dressType;
-  final double price;
-  final String? notes;
-
-  const _RateUpdate(this.dressType, this.price, this.notes);
-}
-
-class _RateTile extends StatelessWidget {
-  final StitchingRate rate;
-  final VoidCallback onEdit;
-  final VoidCallback onDelete;
-
-  const _RateTile({
-    required this.rate,
-    required this.onEdit,
-    required this.onDelete,
-  });
+  void _message(String value) => ScaffoldMessenger.of(
+    context,
+  ).showSnackBar(SnackBar(content: Text(value)));
 
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.cardShadow,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
+  Widget build(BuildContext context) => Scaffold(
+    backgroundColor: AppColors.background,
+    appBar: AppBar(
+      title: const Text(
+        'Stitching Rates Pricing',
+        style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
       ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.checkroom_rounded,
-              color: AppColors.primary,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(rate.dressType, style: AppTextStyles.titleMedium),
-                if (rate.notes != null && rate.notes!.isNotEmpty)
-                  Text(
-                    rate.notes!,
-                    style: AppTextStyles.bodySmall,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_ios_rounded),
+        onPressed: () => context.pop(),
+      ),
+      actions: [
+        IconButton(
+          tooltip: 'Add rate',
+          icon: const Icon(Icons.add_rounded),
+          onPressed: _loading ? null : _addRate,
+        ),
+      ],
+    ),
+    body: _loading
+        ? const Center(child: CircularProgressIndicator())
+        : ListView(
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 20),
+            children: [
+              if (_loadError != null)
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Text(_loadError!),
                   ),
-              ],
-            ),
-          ),
-          Text(
-            '₹${rate.basePrice.toStringAsFixed(0)}',
-            style: AppTextStyles.headlineMedium.copyWith(
-              color: AppColors.primary,
-            ),
-          ),
-          const SizedBox(width: 8),
-          PopupMenuButton<String>(
-            icon: const Icon(
-              Icons.more_vert_rounded,
-              color: AppColors.textSecondary,
-              size: 20,
-            ),
-            onSelected: (v) {
-              if (v == 'edit') onEdit();
-              if (v == 'delete') onDelete();
-            },
-            itemBuilder: (_) => [
-              const PopupMenuItem(value: 'edit', child: Text('Edit')),
-              const PopupMenuItem(
-                value: 'delete',
-                child: Text('Delete', style: TextStyle(color: AppColors.error)),
+                ),
+              _infoCard(),
+              if (_version != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, bottom: 4),
+                  child: Text(
+                    'Active pricing version: $_version',
+                    style: AppTextStyles.bodySmall,
+                  ),
+                ),
+              const SizedBox(height: 8),
+              _feeCard(),
+              const SizedBox(height: 6),
+              for (final rate in AppState.instance.rates) _rateCard(rate),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _saving ? null : _publish,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.publish_rounded),
+                label: Text(_saving ? 'Publishing…' : 'Publish rate card'),
               ),
+            ],
+          ),
+  );
+
+  Widget _infoCard() => Container(
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: AppColors.primary.withValues(alpha: 0.07),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: AppColors.primary.withValues(alpha: 0.2)),
+    ),
+    child: const Text(
+      'Partner rates are shared with Tailors. Customer rates are calculated from the fee policy and can be edited before publishing.',
+      style: TextStyle(fontSize: 13),
+    ),
+  );
+
+  Widget _feeCard() => Card(
+    color: AppColors.surface,
+    child: Padding(
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Customer fee policy', style: AppTextStyles.headlineSmall),
+          const SizedBox(height: 4),
+          Text(
+            'Customer price = partner rate + platform fee + tax + fixed delivery, measurement and other fees. Percentages apply to the partner rate; fixed fees are added as entered.',
+            style: AppTextStyles.bodySmall,
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              _setting(_platform, 'Platform %'),
+              _setting(_delivery, 'Delivery ₹'),
+              _setting(_measurement, 'Measurement ₹'),
+              _setting(_other, 'Other fee ₹'),
+              _setting(_tax, 'Taxes %'),
             ],
           ),
         ],
       ),
+    ),
+  );
+
+  Widget _setting(TextEditingController controller, String label) => SizedBox(
+    width: 132,
+    child: TextField(
+      controller: controller,
+      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+      decoration: pricingInputDecoration(
+        labelText: label,
+        verticalPadding: 6,
+        compact: true,
+      ),
+      style: const TextStyle(fontSize: 13),
+    ),
+  );
+
+  Widget _rateCard(StitchingRate rate) => Card(
+    color: AppColors.surface,
+    margin: const EdgeInsets.only(bottom: 5),
+    child: Padding(
+      padding: const EdgeInsets.fromLTRB(10, 4, 6, 8),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.checkroom_rounded, color: AppColors.primary),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(rate.dressType, style: AppTextStyles.headlineSmall),
+              ),
+              PopupMenuButton<String>(
+                constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
+                onSelected: (value) {
+                  if (value == 'delete') unawaited(_deleteRate(rate.dressType));
+                  if (value == 'notes') unawaited(_editNotes(rate));
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'notes', child: Text('Edit notes')),
+                  PopupMenuItem(value: 'delete', child: Text('Delete')),
+                ],
+              ),
+            ],
+          ),
+          if (rate.notes?.isNotEmpty == true)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 5),
+                child: Text(rate.notes!, style: AppTextStyles.bodySmall),
+              ),
+            ),
+          Row(
+            children: [
+              Expanded(
+                child: _rateInput(_partner[rate.dressType]!, 'Partner ₹'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(child: _customerInput(rate.dressType)),
+            ],
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _rateInput(TextEditingController controller, String label) =>
+      TextField(
+        controller: controller,
+        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+        decoration: pricingInputDecoration(
+          labelText: label,
+          prefixText: '₹ ',
+          verticalPadding: 6,
+          compact: true,
+        ),
+        style: const TextStyle(fontSize: 13),
+        onChanged: (_) => _recalculateAll(),
+      );
+
+  Widget _customerInput(String name) => TextField(
+    controller: _customer[name],
+    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+    decoration: pricingInputDecoration(
+      labelText:
+          'Customer ₹${_manualCustomerPrices.contains(name) ? ' · edited' : ''}',
+      prefixText: '₹ ',
+      verticalPadding: 6,
+      compact: true,
+    ),
+    style: const TextStyle(fontSize: 13),
+    onChanged: (value) {
+      if (_hydrating) return;
+      final partner = double.tryParse(_partner[name]?.text.trim() ?? '');
+      final customer = double.tryParse(value.trim());
+      if (partner == null || customer == null) return;
+      if ((customer - _calculate(partner)).abs() < 0.01) {
+        _manualCustomerPrices.remove(name);
+      } else {
+        _manualCustomerPrices.add(name);
+      }
+      setState(() {});
+    },
+  );
+
+  Future<void> _editNotes(StitchingRate rate) async {
+    final notes = TextEditingController(text: rate.notes ?? '');
+    final value = await showDialog<String?>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('${rate.dressType} notes'),
+        content: TextField(
+          controller: notes,
+          maxLines: 3,
+          decoration: const InputDecoration(labelText: 'Notes (optional)'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, notes.text.trim()),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
     );
+    notes.dispose();
+    if (value == null) return;
+    await AppState.instance.updateRate(
+      rate.dressType,
+      double.tryParse(_partner[rate.dressType]?.text ?? '') ?? rate.basePrice,
+      customerPrice:
+          double.tryParse(_customer[rate.dressType]?.text ?? '') ??
+          rate.customerPrice,
+      customerPriceOverride: _manualCustomerPrices.contains(rate.dressType),
+      notes: value.isEmpty ? null : value,
+    );
+    if (mounted) setState(() {});
   }
 }

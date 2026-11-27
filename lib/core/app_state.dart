@@ -1178,6 +1178,9 @@ class AppState extends ChangeNotifier {
               (d) => StitchingRate(
                 dressType: d['dressType'] as String,
                 basePrice: (d['basePrice'] as num).toDouble(),
+                customerPrice: (d['customerPrice'] as num?)?.toDouble(),
+                customerPriceOverride:
+                    d['customerPriceOverride'] as bool? ?? false,
                 notes: d['notes'] as String?,
               ),
             )
@@ -1185,10 +1188,7 @@ class AppState extends ChangeNotifier {
         notifyListeners();
       }
     } catch (error) {
-      _logAppStateTiming(
-        'rates_read.failed type=${error.runtimeType}',
-        timer,
-      );
+      _logAppStateTiming('rates_read.failed type=${error.runtimeType}', timer);
       // Fallback to defaults if Firestore unavailable
       _loadDefaultRates();
     }
@@ -1227,21 +1227,33 @@ class AppState extends ChangeNotifier {
   Future<void> updateRate(
     String dressType,
     double price, {
+    double? customerPrice,
+    bool customerPriceOverride = false,
     String? notes,
   }) async {
     await _db.collection('rates').doc(_rateDocId(dressType)).set({
       'dressType': dressType,
       'basePrice': price,
+      'customerPrice': ?customerPrice,
+      'customerPriceOverride': customerPriceOverride,
       'notes': notes,
     }, SetOptions(merge: true));
 
     final idx = _rates.indexWhere((r) => r.dressType == dressType);
     if (idx != -1) {
       _rates[idx].basePrice = price;
+      _rates[idx].customerPrice = customerPrice ?? _rates[idx].customerPrice;
+      _rates[idx].customerPriceOverride = customerPriceOverride;
       _rates[idx].notes = notes;
     } else {
       _rates.add(
-        StitchingRate(dressType: dressType, basePrice: price, notes: notes),
+        StitchingRate(
+          dressType: dressType,
+          basePrice: price,
+          customerPrice: customerPrice,
+          customerPriceOverride: customerPriceOverride,
+          notes: notes,
+        ),
       );
     }
     notifyListeners();

@@ -3,6 +3,16 @@ import 'package:cloud_functions/cloud_functions.dart';
 
 import '../models/payment_models.dart';
 
+class MeasurementPartnerWorkspaceData {
+  const MeasurementPartnerWorkspaceData({
+    required this.assignments,
+    required this.supportRequests,
+  });
+
+  final List<Map<String, dynamic>> assignments;
+  final List<Map<String, dynamic>> supportRequests;
+}
+
 class OrderLifecyclePolicy {
   const OrderLifecyclePolicy({
     this.cancellationFeePercent = 10,
@@ -331,7 +341,8 @@ class OrderLifecycleService {
     });
   }
 
-  static Future<List<Map<String, dynamic>>> getMeasurementPartnerAssignments({
+  static Future<MeasurementPartnerWorkspaceData>
+  getMeasurementPartnerAssignments({
     required String accountId,
     required String profileId,
   }) async {
@@ -340,11 +351,23 @@ class OrderLifecycleService {
       'profileId': profileId,
     });
     final rawAssignments = result['assignments'];
-    if (rawAssignments is! List) return const [];
-    return rawAssignments
-        .whereType<Map>()
-        .map((assignment) => Map<String, dynamic>.from(assignment))
-        .toList(growable: false);
+    final assignments = rawAssignments is! List
+        ? const <Map<String, dynamic>>[]
+        : rawAssignments
+              .whereType<Map>()
+              .map((assignment) => Map<String, dynamic>.from(assignment))
+              .toList(growable: false);
+    final rawSupportRequests = result['supportRequests'];
+    final supportRequests = rawSupportRequests is! List
+        ? const <Map<String, dynamic>>[]
+        : rawSupportRequests
+              .whereType<Map>()
+              .map((request) => Map<String, dynamic>.from(request))
+              .toList(growable: false);
+    return MeasurementPartnerWorkspaceData(
+      assignments: assignments,
+      supportRequests: supportRequests,
+    );
   }
 
   static Future<void> assignInboundPickupPartner({

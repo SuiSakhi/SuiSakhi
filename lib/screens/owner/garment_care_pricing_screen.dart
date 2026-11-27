@@ -6,6 +6,7 @@ import '../../core/constants/garment_care_colors.dart';
 import '../../core/metadata/garment_care_catalog_metadata.dart';
 import '../../models/garment_care_domain.dart';
 import '../../services/garment_care_service.dart';
+import '../../widgets/common/pricing_input_decoration.dart';
 
 class GarmentCarePricingScreen extends StatefulWidget {
   const GarmentCarePricingScreen({super.key});
@@ -18,7 +19,7 @@ class GarmentCarePricingScreen extends StatefulWidget {
 class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
   final _commission = TextEditingController(text: '15');
   final _tax = TextEditingController(text: '6');
-  final _delivery = TextEditingController(text: '6');
+  final _other = TextEditingController(text: '0');
   final _logistics = TextEditingController(text: '0');
   final Map<String, TextEditingController> _customerPrices = {};
   final Map<String, TextEditingController> _partnerRates = {};
@@ -77,7 +78,7 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
     }
     _commission.addListener(_recalculateAll);
     _tax.addListener(_recalculateAll);
-    _delivery.addListener(_recalculateAll);
+    _other.addListener(_recalculateAll);
     _loadPricing();
   }
 
@@ -96,7 +97,7 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
   void dispose() {
     _commission.dispose();
     _tax.dispose();
-    _delivery.dispose();
+    _other.dispose();
     _logistics.dispose();
     for (final controller in _customerPrices.values) {
       controller.dispose();
@@ -124,14 +125,16 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
       );
       final pricingModelVersion =
           (pricing['pricingModelVersion'] as num?)?.toInt() ?? 1;
+      final legacyDeliveryPercent =
+          (pricing['deliveryPercent'] as num?)?.toDouble() ?? 6;
+      final legacyMeasurementFee =
+          (pricing['legacyMeasurementFee'] as num?)?.toDouble() ?? 0;
       _hydrating = true;
       _commission.text = _format(
         (pricing['platformCommissionPercent'] as num?)?.toDouble() ?? 15,
       );
       _tax.text = _format((pricing['taxPercent'] as num?)?.toDouble() ?? 6);
-      _delivery.text = _format(
-        (pricing['deliveryPercent'] as num?)?.toDouble() ?? 6,
-      );
+      _other.text = _format((pricing['otherFee'] as num?)?.toDouble() ?? 0);
       _logistics.text = _format(
         (pricing['logisticsAmount'] as num?)?.toDouble() ?? 0,
       );
@@ -163,13 +166,20 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
           final partner = double.tryParse(_partnerFor(key).text);
           final customer = double.tryParse(_customerFor(key).text);
           if (partner == null || customer == null) continue;
-          if ((customer - _calculatedCustomer(partner)).abs() > 0.01) {
+          final currentExpected = _calculatedCustomer(partner);
+          final previousExpected = pricingModelVersion >= 3
+              ? currentExpected + legacyMeasurementFee
+              : _legacyCalculatedCustomer(partner, legacyDeliveryPercent) +
+                    legacyMeasurementFee;
+          final expected = pricingModelVersion >= 4
+              ? currentExpected
+              : previousExpected;
+          if ((customer - expected).abs() > 0.01) {
             _manualCustomerPrices.add(key);
           }
         }
-      } else {
-        _recalculateAll();
       }
+      _recalculateAll();
       if (mounted) {
         setState(() {
           _loading = false;
@@ -208,8 +218,15 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
   double _calculatedCustomer(double partner) {
     final commission = double.tryParse(_commission.text) ?? 15;
     final tax = double.tryParse(_tax.text) ?? 6;
-    final delivery = double.tryParse(_delivery.text) ?? 6;
-    return ((partner * (100 + commission + tax + delivery) / 100) * 100)
+    final other = double.tryParse(_other.text) ?? 0;
+    return ((partner * (100 + commission + tax) / 100 + other) * 100).round() /
+        100;
+  }
+
+  double _legacyCalculatedCustomer(double partner, double deliveryPercent) {
+    final commission = double.tryParse(_commission.text) ?? 15;
+    final tax = double.tryParse(_tax.text) ?? 6;
+    return ((partner * (100 + commission + tax + deliveryPercent) / 100) * 100)
             .round() /
         100;
   }
@@ -240,15 +257,22 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
     if (_saving) return;
     final commission = double.tryParse(_commission.text.trim());
     final tax = double.tryParse(_tax.text.trim());
-    final delivery = double.tryParse(_delivery.text.trim());
+    final other = double.tryParse(_other.text.trim());
     final logistics = double.tryParse(_logistics.text.trim());
     if (commission == null ||
         tax == null ||
-        delivery == null ||
+        other == null ||
         logistics == null) {
-      _message(
-        'Enter valid commission, tax, delivery and fixed pickup values.',
-      );
+      _message('Enter valid percentages and non-negative fixed fees.');
+      return;
+    }
+    if (commission < 0 ||
+        commission > 100 ||
+        tax < 0 ||
+        tax > 100 ||
+        other < 0 ||
+        logistics < 0) {
+      _message('Percentages must be 0–100 and fixed fees cannot be negative.');
       return;
     }
     final rates = <String, dynamic>{};
@@ -262,9 +286,10 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
         );
         return;
       }
-      if (customer + 0.01 < partner * (100 + tax + delivery) / 100) {
+      final minimumCustomer = partner * (100 + commission + tax) / 100 + other;
+      if (customer + 0.01 < minimumCustomer) {
         _message(
-          'Customer price for ${GarmentCareServiceCatalog.labelFor(id)} must cover the Partner rate, tax and delivery.',
+          'Customer price for ${GarmentCareServiceCatalog.labelFor(id)} must cover the Partner rate, fees and tax.',
         );
         return;
       }
@@ -292,9 +317,11 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
           );
           return;
         }
-        if (itemCustomer + 0.01 < itemPartner * (100 + tax + delivery) / 100) {
+        final minimumItemCustomer =
+            itemPartner * (100 + commission + tax) / 100 + other;
+        if (itemCustomer + 0.01 < minimumItemCustomer) {
           _message(
-            'Customer price for ${itemType.value} must cover the Partner rate, tax and delivery.',
+            'Customer price for ${itemType.value} must cover the Partner rate, fees and tax.',
           );
           return;
         }
@@ -312,7 +339,7 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
         itemTypeRates: itemTypeRates,
         platformCommissionPercent: commission,
         taxPercent: tax,
-        deliveryPercent: delivery,
+        otherFee: other,
         logisticsAmount: logistics,
       );
       if (!mounted) return;
@@ -351,7 +378,7 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
       backgroundColor: GarmentCareColors.background,
       appBar: AppBar(title: const Text('Garment Care Pricing')),
       body: ListView(
-        padding: const EdgeInsets.fromLTRB(12, 8, 12, 24),
+        padding: const EdgeInsets.fromLTRB(10, 6, 10, 18),
         children: [
           OutlinedButton.icon(
             onPressed: () =>
@@ -363,14 +390,14 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
             Card(
               color: Colors.white,
               child: Padding(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.all(10),
                 child: Text(_loadError!, style: const TextStyle(fontSize: 12)),
               ),
             ),
           if (_loading) const LinearProgressIndicator(),
           if (_activeVersion != null)
             Padding(
-              padding: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.only(bottom: 5),
               child: Text(
                 'Active version: ${_activeVersion!.substring(0, _activeVersion!.length < 8 ? _activeVersion!.length : 8)} · Publishing creates a new version.',
                 style: const TextStyle(fontSize: 11),
@@ -379,37 +406,37 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
           Card(
             color: Colors.white,
             child: Padding(
-              padding: const EdgeInsets.all(10),
+              padding: const EdgeInsets.all(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Customer price = Partner rate + commission + tax + delivery. For example, ₹100 becomes ₹127. Customer prices remain editable.',
+                    'Customer price = Partner rate + platform and tax percentages (on the Partner rate) + fixed other fees. Logistics is a separate fixed fee per order; customer prices remain editable.',
                     style: TextStyle(fontSize: 12),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   Wrap(
-                    spacing: 8,
-                    runSpacing: 2,
+                    spacing: 6,
+                    runSpacing: 3,
                     children: [
                       _settingField(_commission, 'Platform %'),
                       _settingField(_tax, 'Tax %'),
-                      _settingField(_delivery, 'Delivery %'),
-                      _settingField(_logistics, 'Extra fixed ₹ / order'),
+                      _settingField(_other, 'Other fee ₹'),
+                      _settingField(_logistics, 'Logistics ₹ / order'),
                     ],
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           for (
             var groupIndex = 0;
             groupIndex < GarmentCareServiceGroup.values.length;
             groupIndex++
           )
             _groupRates(GarmentCareServiceGroup.values[groupIndex], groupIndex),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: _saving ? null : _publish,
             icon: _saving
@@ -428,18 +455,13 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
 
   Widget _settingField(TextEditingController controller, String label) =>
       SizedBox(
-        width: 142,
+        width: 136,
         child: TextField(
           controller: controller,
           keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: InputDecoration(
+          decoration: pricingInputDecoration(
             labelText: label,
-            isDense: true,
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 9,
-              vertical: 9,
-            ),
-            border: const OutlineInputBorder(),
+            verticalPadding: 7,
           ),
           style: const TextStyle(fontSize: 12),
         ),
@@ -451,11 +473,12 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
         const <String>[];
     return Card(
       color: Colors.white,
-      margin: const EdgeInsets.only(bottom: 6),
+      margin: const EdgeInsets.only(bottom: 4),
       child: ExpansionTile(
         initiallyExpanded: groupIndex == 0,
-        tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-        childrenPadding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+        dense: true,
+        tilePadding: const EdgeInsets.symmetric(horizontal: 8),
+        childrenPadding: const EdgeInsets.fromLTRB(6, 0, 6, 5),
         title: Text(group.label, style: const TextStyle(fontSize: 14)),
         subtitle: Text(
           '${serviceIds.length} services',
@@ -529,7 +552,7 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
 
   Widget _rateRow(String label, String key, {bool isOverride = false}) =>
       Padding(
-        padding: const EdgeInsets.symmetric(vertical: 3, horizontal: 4),
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 3),
         child: Row(
           children: [
             Expanded(
@@ -555,14 +578,10 @@ class _GarmentCarePricingScreenState extends State<GarmentCarePricingScreen> {
       TextField(
         controller: controller,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: InputDecoration(
+        decoration: pricingInputDecoration(
           labelText: label.isEmpty ? null : label,
-          isDense: true,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 6,
-            vertical: 8,
-          ),
-          border: const OutlineInputBorder(),
+          verticalPadding: 6,
+          horizontalPadding: 6,
         ),
         style: const TextStyle(fontSize: 11),
       );

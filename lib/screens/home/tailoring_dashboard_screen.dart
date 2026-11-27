@@ -106,6 +106,14 @@ class _TailoringDashboardScreenState extends State<TailoringDashboardScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: () => context.push('/customer-rates'),
+                        icon: const Icon(Icons.price_check_outlined),
+                        label: const Text('View price list'),
+                      ),
+                    ),
                     const SizedBox(height: 12),
                     const _QuickActions(),
                     const SizedBox(height: 22),
@@ -429,7 +437,7 @@ class _QuickActions extends StatelessWidget {
           icon: Icons.camera_alt_outlined,
           color: Color(0xFF0085C5),
           background: Color(0xFFEDF8FF),
-          route: '/measurements',
+          route: '/fabric-estimation',
         ),
       ];
 

@@ -21,6 +21,8 @@ class _CustomerServiceGuideScreenState
     'Garment care',
     'Rent an outfit',
     'Bulk order',
+    'Become a Partner',
+    'Rate list',
   ];
 
   final _inputController = TextEditingController();
@@ -100,6 +102,36 @@ class _CustomerServiceGuideScreenState
         'You can contact the SuiSakhi support team here.',
         'Contact support',
         '/customer-help-support',
+      );
+    }
+
+    if (_hasAny(normalized, const [
+      'become a partner',
+      'join as partner',
+      'partner onboarding',
+      'partner opportunity',
+      'partner application',
+    ])) {
+      return _actionReply(
+        'Explore partner roles and apply to join the SuiSakhi network.',
+        'Become a Partner',
+        '/partner/opportunities',
+      );
+    }
+
+    if (_hasAny(normalized, const [
+      'rate list',
+      'rates',
+      'price list',
+      'pricing',
+      'service prices',
+      'service rates',
+      'cost of services',
+    ])) {
+      return _actionReply(
+        'View current tailoring, garment care and doorstep service estimates.',
+        'View rate list',
+        '/customer-rates',
       );
     }
 

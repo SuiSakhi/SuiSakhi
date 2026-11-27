@@ -38,6 +38,7 @@ const SMART_ASSIST_RESPONSE_SCHEMA = {
 };
 
 const FIELD_ALLOWLIST = {
+  answerCustomerHelpQuestion: ["question", "topic"],
   suggestFabricStyling: [
     "garmentType",
     "occasion",
@@ -174,13 +175,18 @@ function normalizeRequest(data) {
         code: "invalid-argument",
       });
     }
-    if (key === "customerNotes" && input[key] != null && input[key].length > MAX_NOTE_LENGTH) {
+    if (
+      (key === "customerNotes" || key === "question") &&
+      input[key] != null &&
+      input[key].length > MAX_NOTE_LENGTH
+    ) {
       throw Object.assign(new Error("Customer notes are too long."), {
         code: "invalid-argument",
       });
     }
     if (
       key !== "customerNotes" &&
+      key !== "question" &&
       key !== "customerNotesRedacted" &&
       input[key] != null &&
       input[key].length > MAX_FIELD_LENGTH
@@ -189,7 +195,7 @@ function normalizeRequest(data) {
         code: "invalid-argument",
       });
     }
-    if (key === "customerNotes") {
+    if (key === "customerNotes" || key === "question") {
       const result = sanitizeCustomerNotes(input[key]);
       normalized.input[key] = result.value;
       normalized.redacted = result.redacted;
@@ -266,6 +272,8 @@ function normalizeRequest(data) {
 function buildSystemPrompt(request) {
   const feature = request.feature;
   const task = {
+    answerCustomerHelpQuestion:
+      "Answer the customer's SuiSakhi help question in a warm, practical way using simple language and reply in the language the customer used. Give one direct answer of at most 90 words. Provide general fabric, design, measurement, garment-care and service-navigation guidance. Never claim to know personal order status or account records, and never promise stock, a specific fabric quantity, a price, a refund, a delivery date, a partner decision or a business-policy outcome. For exact quantities, direct the customer to the separate AI Measurement & Fabric Estimation screen. For order-specific or unresolved issues, recommend the relevant order screen or a Helpdesk request.",
     suggestFabricStyling:
       "Recommend practical fabric, lining, colour, styling and care guidance. Give at most three suggestions. Keep each title to 5 words, content to 35 words, and explanation to 20 words. Give at most one short warning and one short clarification question. Treat all choices as suggestions, never as stock or price promises.",
     improveTailorInstructions:
@@ -362,6 +370,14 @@ function parseModelResponse(body, feature) {
 
   const allText = JSON.stringify(result);
   if (
+    feature === "answerCustomerHelpQuestion" &&
+    /(?:₹|\bINR\b|\b(?:Rs\.?|rupees?)\s*\d|\b\d+(?:\.\d+)?\s*(?:m|meters?|metres?|yards?)\b)/i.test(
+      allText,
+    )
+  ) {
+    throw providerFailure("unsafe_provider_output", "Unsafe provider output.");
+  }
+  if (
     /\b(?:chest|bust|waist|hips?|shoulder|neck|thigh|inseam|arm(?:\s+length)?|height|weight)\b[^\n]{0,30}\b\d+(?:\.\d+)?(?:\s*(?:cm|mm|inches?|in)\b)?/i.test(allText) ||
     /\b\d+(?:\.\d+)?\s*(?:cm|mm|inches?|in)\b[^\n]{0,24}\b(?:chest|bust|waist|hips?|shoulder|neck|thigh|inseam|arm|height|weight)\b/i.test(allText) ||
     /\b(?:email|phone|mobile|address|date of birth|customer name)\s*[:=]/i.test(allText) ||
@@ -374,14 +390,24 @@ function parseModelResponse(body, feature) {
 
 function emptyInputResponse(request) {
   const input = request.input;
-  const needsGarment = request.feature !== "outfitIdea";
+  const needsGarment = !["outfitIdea", "answerCustomerHelpQuestion"].includes(
+    request.feature,
+  );
   const missingGarment = needsGarment && !input.garmentType;
   const missingNotes =
     request.feature === "improveTailorInstructions" && !input.customerNotes;
   const missingRateCard =
     request.feature === "priceEstimate" && input.shopRates.length === 0;
   const missingSeason = request.feature === "outfitIdea" && !input.season;
-  if (!missingGarment && !missingNotes && !missingRateCard && !missingSeason) {
+  const missingQuestion =
+    request.feature === "answerCustomerHelpQuestion" && !input.question;
+  if (
+    !missingGarment &&
+    !missingNotes &&
+    !missingRateCard &&
+    !missingSeason &&
+    !missingQuestion
+  ) {
     return null;
   }
 
@@ -390,6 +416,7 @@ function emptyInputResponse(request) {
   if (missingNotes) questions.push("Add the tailoring requirements you want clarified.");
   if (missingRateCard) questions.push("Add the shop's current stitching rate card.");
   if (missingSeason) questions.push("Which season should the outfit idea suit?");
+  if (missingQuestion) questions.push("What would you like help with?");
   return {
     feature: request.feature,
     suggestions: [],

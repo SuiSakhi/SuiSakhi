@@ -82,6 +82,12 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
       subtitle: 'View the latest 10 saved or tailor-confirmed measurements',
       icon: Icons.history_outlined,
     ),
+    _MeasurementMethod(
+      id: 'helpdesk',
+      title: 'Ask SuiSakhi Helpdesk',
+      subtitle: 'Get help choosing or confirming a measurement method',
+      icon: Icons.support_agent_outlined,
+    ),
   ];
 
   @override
@@ -337,6 +343,10 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
         await _showAutomaticAssignmentInfo();
         break;
 
+      case 'helpdesk':
+        await context.push('/customer-help-support');
+        break;
+
       default:
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Please select a measurement method.')),
@@ -398,6 +408,8 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
                   onSelectionChanged: (selection) =>
                       setSheetState(() => _manualUnit = selection.first),
                 ),
+                const SizedBox(height: 10),
+                _buildManualMeasurementChartGuide(),
                 const SizedBox(height: 10),
                 Expanded(
                   child: ListView(
@@ -461,6 +473,89 @@ class _MeasurementContextScreenState extends State<MeasurementContextScreen> {
                 ),
               ],
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildManualMeasurementChartGuide() {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: AppColors.divider),
+      ),
+      child: ExpansionTile(
+        leading: const Icon(Icons.accessibility_new_rounded),
+        title: Text(
+          'Universal measurement chart',
+          style: AppTextStyles.titleMedium.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Text(
+          'Visual reference for all 22 points',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        children: [
+          Text(
+            'Match each field number to the chart. Tap the image to zoom in.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 8),
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: _showManualMeasurementChart,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/universal_measurement_chart.png',
+                width: double.infinity,
+                height: 190,
+                fit: BoxFit.contain,
+                semanticLabel: 'Universal women and girls measurement chart',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showManualMeasurementChart() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Close chart',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+              Expanded(
+                child: InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Image.asset(
+                    'assets/images/universal_measurement_chart.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
           ),
         ),
       ),

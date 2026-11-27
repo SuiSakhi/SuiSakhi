@@ -387,9 +387,9 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
           ),
         ),
         SizedBox(
-          height: 58,
+          height: 48,
           child: ListView.separated(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             scrollDirection: Axis.horizontal,
             itemCount: _orderQueues.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
@@ -476,10 +476,11 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
                         margin: EdgeInsets.zero,
                         child: ListTile(
                           contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 7,
+                            horizontal: 14,
+                            vertical: 3,
                           ),
                           leading: CircleAvatar(
+                            radius: 21,
                             backgroundColor: const Color(0xFFFBE7F0),
                             child: Icon(
                               _orderIcon(type),
@@ -493,13 +494,21 @@ class _OwnerSupportInboxScreenState extends State<OwnerSupportInboxScreen> {
                                 : '${_orderTypeLabel(type)} order',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontWeight: FontWeight.w700),
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           subtitle: Text(
                             '${_orderTypeLabel(type)} · ${order['customerName'] ?? 'Customer'}'
                             '${order['customerPhone']?.toString().trim().isNotEmpty == true ? ' · ${order['customerPhone']}' : ''}\n'
                             '${order['orderNumber'] ?? orderId} · $status'
                             '${order['servicePincode']?.toString().trim().isNotEmpty == true ? '\nPIN ${order['servicePincode']}' : ''}',
+                            style: const TextStyle(
+                              fontSize: 14,
+                              height: 1.2,
+                              color: Color(0xFF777286),
+                            ),
                           ),
                           isThreeLine: true,
                           trailing: const Icon(Icons.chevron_right_rounded),
@@ -943,7 +952,7 @@ class _SupportRequestCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(13),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -958,32 +967,33 @@ class _SupportRequestCard extends StatelessWidget {
                 _AdminStatusChip(status: data['status']?.toString() ?? 'Open'),
               ],
             ),
-            const SizedBox(height: 5),
+            const SizedBox(height: 4),
             Text(
               '${data['customerName'] ?? 'Customer'} · ${data['category'] ?? 'Other'}',
-              style: const TextStyle(color: Color(0xFF777286), fontSize: 12),
+              style: const TextStyle(color: Color(0xFF777286), fontSize: 13),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Text(
               data['message']?.toString() ?? '',
-              maxLines: 3,
+              maxLines: 2,
               overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14, height: 1.2),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 5),
             Row(
               children: [
                 const Icon(Icons.assignment_ind_outlined, size: 16),
                 const SizedBox(width: 5),
                 Text(
                   'Queue: ${data['assignedTeam'] ?? 'customer_support'}',
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: 13),
                 ),
                 const Spacer(),
                 Text(
                   ticketId.length > 8 ? ticketId.substring(0, 8) : ticketId,
                   style: const TextStyle(
                     color: Color(0xFF777286),
-                    fontSize: 10,
+                    fontSize: 11,
                   ),
                 ),
               ],

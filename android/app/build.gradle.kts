@@ -8,6 +8,13 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+dependencies {
+    // Firebase Auth 23.2.1 can fail to persist sessions when its Android
+    // Keystore-backed crypto key becomes unavailable. Keep the Dart API plugin
+    // in place while using the Auth SDK version with keyset recovery support.
+    implementation("com.google.firebase:firebase-auth:24.2.0")
+}
+
 android {
     namespace = "com.suisakhi.app"
     compileSdk = flutter.compileSdkVersion

@@ -84,7 +84,8 @@ class OrderService {
     String? catalogueCommercialType,
     double? approvedDesignCharge,
     double? stitchingBaseCharge,
-    Map<String, dynamic>? fabricPurchaseEstimate,
+    double? fabricPurchasedMeters,
+    List<Map<String, dynamic>>? instructionMedia,
     Map<String, dynamic>? customerFabricAssets,
     String? orderId,
     String? designSource,
@@ -152,7 +153,9 @@ class OrderService {
         'catalogueCommercialType': catalogueCommercialType!.trim(),
       'approvedDesignCharge': ?approvedDesignCharge,
       'stitchingBaseCharge': ?stitchingBaseCharge,
-      'fabricPurchaseEstimate': ?fabricPurchaseEstimate,
+      'fabricPurchasedMeters': ?fabricPurchasedMeters,
+      if (instructionMedia?.isNotEmpty == true)
+        'instructionMedia': instructionMedia,
       'customerFabricAssets': ?customerFabricAssets,
       if (catalogueVersionId?.trim().isNotEmpty == true)
         'catalogueDesignSnapshot': {
@@ -198,6 +201,8 @@ class OrderService {
   static Future<String?> createQuickFixOrder({
     required List<String> serviceIds,
     required double estimatedTotal,
+    required double partnerPayoutEstimate,
+    String? pricingVersionId,
     required String notes,
     required String slotLabel,
     required String addressLine,
@@ -227,6 +232,9 @@ class OrderService {
       'orderDate': FieldValue.serverTimestamp(),
       'price': estimatedTotal,
       'estimatedPrice': estimatedTotal,
+      'quickCarePartnerPayoutEstimate': partnerPayoutEstimate,
+      if (pricingVersionId?.trim().isNotEmpty == true)
+        'quickCarePricingVersionId': pricingVersionId!.trim(),
       'priceEstimateOnly': true,
       'paymentStatus': 'unpaid',
       'advancePercent': 0,

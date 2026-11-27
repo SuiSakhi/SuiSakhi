@@ -227,6 +227,34 @@ service firebase.storage {
               /databases/(default)/documents/users/$(request.auth.uid)
             ).data.activeProfileId
           )
+      );
+    }
+
+    function isAssignedTailorForOrder(orderId) {
+      let order = firestore.get(
+        /databases/(default)/documents/orders/$(orderId)
+      ).data;
+      let user = firestore.get(
+        /databases/(default)/documents/users/$(request.auth.uid)
+      ).data;
+      return order.assignedTailorAccountId is string
+        && order.assignedTailorProfileId is string
+        && user.accountId == order.assignedTailorAccountId
+        && user.activeProfileId == order.assignedTailorProfileId;
+    }
+
+    function canReadOrderInstructionMedia(orderId, customerUid) {
+      return signedIn()
+        && (
+          request.auth.uid == customerUid
+          || isConfiguredAdmin()
+          || isConfiguredSupportAgent()
+          || (
+            firestore.get(
+              /databases/(default)/documents/orders/$(orderId)
+            ).data.customerId == customerUid
+            && isAssignedTailorForOrder(orderId)
+          )
         );
     }
 
@@ -290,6 +318,43 @@ service firebase.storage {
       allow delete: if request.auth != null
           && request.auth.uid == userId
           && scopeType == 'wishlists';
+    }
+
+    // Customer-recorded tailoring instructions are private to the Customer,
+    // configured Helpdesk/Admin, and the Tailor assigned to the order.
+    match /order_instruction_media/{userId}/{scopeType}/{scopeId}/{fileName} {
+      allow read: if request.auth != null
+          && (
+            request.auth.uid == userId
+            || isConfiguredAdmin()
+            || isConfiguredSupportAgent()
+            || (
+              scopeType == 'orders'
+              && canReadOrderInstructionMedia(scopeId, userId)
+            )
+          );
+      allow create: if request.auth != null
+          && request.auth.uid == userId
+          && request.resource.metadata.customerUid == request.auth.uid
+          && scopeType in ['orders', 'drafts']
+          && (
+            (
+              request.resource.contentType in [
+                'audio/mp4', 'audio/aac', 'audio/mpeg', 'audio/wav'
+              ]
+              && request.resource.size > 0
+              && request.resource.size <= 15 * 1024 * 1024
+            )
+            || (
+              request.resource.contentType in [
+                'video/mp4', 'video/quicktime'
+              ]
+              && request.resource.size > 0
+              && request.resource.size <= 30 * 1024 * 1024
+            )
+          );
+      allow update: if false;
+      allow delete: if request.auth != null && request.auth.uid == userId;
     }
 
     // Pickup evidence is immutable once uploaded and names its uploader so

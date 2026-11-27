@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/constants/app_colors.dart';
@@ -19,23 +20,32 @@ class _SplashScreenState extends State<SplashScreen>
   late AnimationController _controller;
   late Animation<double> _scaleAnim;
   late Animation<double> _fadeAnim;
-  bool _checkedInitialAuthState = false;
+  bool _resumeNavigationStarted = false;
 
   @override
   void initState() {
     super.initState();
     _authSubscription = FirebaseAuth.instance.authStateChanges().listen(
       (user) {
-        if (_checkedInitialAuthState) return;
-        _checkedInitialAuthState = true;
-        if (user == null) return;
+        if (kDebugMode) {
+          debugPrint(
+            '[SessionRestore] Firebase auth state: ${user == null ? 'signed_out' : 'signed_in'}',
+          );
+        }
+        // Firebase can emit an initial null while native auth persistence is
+        // still restoring. Keep listening so a later signed-in event resumes
+        // the saved session instead of leaving the user at the welcome screen.
+        if (user == null || _resumeNavigationStarted) return;
+        _resumeNavigationStarted = true;
 
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) context.go('/login?intent=customer&resume=1');
         });
       },
-      onError: (Object _) {
-        _checkedInitialAuthState = true;
+      onError: (Object error) {
+        if (kDebugMode) {
+          debugPrint('[SessionRestore] Firebase auth stream failed: $error');
+        }
       },
     );
     _controller = AnimationController(

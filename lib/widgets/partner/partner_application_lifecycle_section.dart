@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/partner_application.dart';
+import 'partner_agreement_acceptance_dialog.dart';
 
 /// Common lifecycle presentation for every SuiSakhi Partner application.
 ///
@@ -171,7 +172,8 @@ class PartnerApplicationLifecycleActions extends StatelessWidget {
   final bool canSaveDraft;
   final bool canSubmit;
   final VoidCallback onSaveDraft;
-  final VoidCallback onSubmitForReview;
+  final Future<void> Function(Map<String, dynamic> legalAcceptance)
+  onSubmitForReview;
   final VoidCallback onApplyAgain;
   final VoidCallback onContinueLater;
 
@@ -234,7 +236,9 @@ class PartnerApplicationLifecycleActions extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         FilledButton.icon(
-          onPressed: canSubmit && !saving ? onSubmitForReview : null,
+          onPressed: canSubmit && !saving
+              ? () => _reviewAgreementsAndSubmit(context)
+              : null,
           style: FilledButton.styleFrom(
             minimumSize: const Size.fromHeight(52),
             textStyle: const TextStyle(
@@ -264,6 +268,24 @@ class PartnerApplicationLifecycleActions extends StatelessWidget {
       icon: Icon(icon),
       label: Text(label),
     );
+  }
+
+  Future<void> _reviewAgreementsAndSubmit(BuildContext context) async {
+    try {
+      final acceptance = await PartnerAgreementAcceptanceDialog.show(
+        context,
+        application,
+      );
+      if (acceptance == null || !context.mounted) return;
+      await onSubmitForReview(acceptance);
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.toString().replaceFirst('Bad state: ', '')),
+        ),
+      );
+    }
   }
 }
 

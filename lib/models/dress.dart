@@ -86,8 +86,10 @@ class DressOrder {
   final String? catalogueCommercialType;
   final double approvedDesignCharge;
   final String? fabricChoice;
+  final double? fabricPurchasedMeters;
   final String? fabricImageUrl;
   final Map<String, dynamic>? customerFabricAssets;
+  final List<Map<String, dynamic>> instructionMedia;
   final Map<String, dynamic>? fabricPurchaseEstimate;
   final Map<String, dynamic>? fabricRequirementReview;
   final String? customerId;
@@ -230,8 +232,10 @@ class DressOrder {
     this.catalogueCommercialType,
     this.approvedDesignCharge = 0,
     this.fabricChoice,
+    this.fabricPurchasedMeters,
     this.fabricImageUrl,
     this.customerFabricAssets,
+    this.instructionMedia = const [],
     this.fabricPurchaseEstimate,
     this.fabricRequirementReview,
     this.customerId,
@@ -520,6 +524,12 @@ class DressOrder {
     final customerFabricAssets = _dynamicMapFromFirestore(
       data['customerFabricAssets'],
     );
+    final instructionMedia = data['instructionMedia'] is List
+        ? (data['instructionMedia'] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList(growable: false)
+        : const <Map<String, dynamic>>[];
     return DressOrder(
       id: id,
       dressType: data['dressType'] as String? ?? '',
@@ -547,9 +557,12 @@ class DressOrder {
       approvedDesignCharge:
           (data['approvedDesignCharge'] as num?)?.toDouble() ?? 0,
       fabricChoice: data['fabricChoice'] as String?,
+      fabricPurchasedMeters: (data['fabricPurchasedMeters'] as num?)
+          ?.toDouble(),
       fabricImageUrl:
           (data['fabricImageUrl'] ?? data['materialImageUrl']) as String?,
       customerFabricAssets: customerFabricAssets,
+      instructionMedia: instructionMedia,
       fabricPurchaseEstimate: _dynamicMapFromFirestore(
         data['fabricPurchaseEstimate'],
       ),

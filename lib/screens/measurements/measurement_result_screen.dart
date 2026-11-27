@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/garment_measurement_catalog.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/measurement.dart';
 import '../../services/local_fit_advice_service.dart';
@@ -82,10 +83,10 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
               children: [
                 _buildAccuracyCard(),
                 const SizedBox(height: 24),
-                SectionHeader(title: 'Captured Measurements'),
+                SectionHeader(title: 'Universal 22-Point Profile'),
                 const SizedBox(height: 8),
                 Text(
-                  'Primary: ${unit.abbrev} · line below shows the other unit',
+                  'AI estimates appear where available; remaining points need a tape measurement. Values use ${unit.abbrev}.',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: AppColors.textHint,
                   ),
@@ -94,6 +95,10 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                 _buildAiEstimateWarning(),
                 const SizedBox(height: 16),
                 _buildMeasurementList(m, unit),
+                if (m.thigh != null || m.inseam != null) ...[
+                  const SizedBox(height: 16),
+                  _buildSupplementaryEstimates(m, unit),
+                ],
                 const SizedBox(height: 24),
                 _buildAiTipsCard(m),
                 const SizedBox(height: 24),
@@ -361,47 +366,16 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
   }
 
   Widget _buildMeasurementList(BodyMeasurements m, MeasurementUnit unit) {
-    final items = [
-      ('Height', m.height, Icons.height_rounded, AppColors.primary),
-      ('Chest', m.chest, Icons.straighten_rounded, const Color(0xFFE84F8B)),
-      ('Waist', m.waist, Icons.radio_button_unchecked, const Color(0xFFF5A623)),
-      ('Hips', m.hips, Icons.accessibility_rounded, const Color(0xFF9C27B0)),
-      (
-        'Shoulder Width',
-        m.shoulder,
-        Icons.width_wide_rounded,
-        const Color(0xFF4CAF50),
-      ),
-      (
-        'Arm Length',
-        m.armLength,
-        Icons.back_hand_outlined,
-        AppColors.primaryDark,
-      ),
-      ('Neck', m.neck, Icons.circle_outlined, const Color(0xFF00BCD4)),
-      (
-        'Thigh',
-        m.thigh,
-        Icons.airline_seat_legroom_normal,
-        const Color(0xFFFF5722),
-      ),
-      (
-        'Inseam',
-        m.inseam,
-        Icons.arrow_downward_rounded,
-        const Color(0xFF795548),
-      ),
-    ];
-
     return Column(
-      children: items.map((item) {
-        final primary = item.$2 != null
-            ? MeasurementFormat.formatWithUnit(item.$2, unit)
+      children: GarmentMeasurementCatalog.all.map((spec) {
+        final valueCm = m.universalChartValueCm(spec.number);
+        final primary = valueCm != null
+            ? MeasurementFormat.formatWithUnit(valueCm, unit)
             : '—';
-        final secondary = item.$2 != null
+        final secondary = valueCm != null
             ? (unit == MeasurementUnit.cm
-                  ? '${MeasurementFormat.formatValue(item.$2, MeasurementUnit.inch)} in'
-                  : '${MeasurementFormat.formatValue(item.$2, MeasurementUnit.cm)} cm')
+                  ? '${MeasurementFormat.formatValue(valueCm, MeasurementUnit.inch)} in'
+                  : '${MeasurementFormat.formatValue(valueCm, MeasurementUnit.cm)} cm')
             : '';
 
         return Container(
@@ -421,21 +395,38 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
           child: Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(8),
+                width: 30,
+                height: 30,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: item.$4.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
+                  color: spec.color.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
                 ),
-                child: Icon(item.$3, color: item.$4, size: 20),
+                child: Text(
+                  spec.number.toString(),
+                  style: TextStyle(
+                    color: spec.color,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
-              const SizedBox(width: 14),
-              Expanded(child: Text(item.$1, style: AppTextStyles.titleMedium)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  spec.label,
+                  style: AppTextStyles.titleMedium.copyWith(fontSize: 14),
+                ),
+              ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
                     primary,
-                    style: AppTextStyles.headlineSmall.copyWith(color: item.$4),
+                    style: AppTextStyles.headlineSmall.copyWith(
+                      color: valueCm == null ? AppColors.textHint : spec.color,
+                      fontSize: valueCm == null ? 13 : null,
+                    ),
                   ),
                   if (secondary.isNotEmpty)
                     Text(
@@ -445,12 +436,66 @@ class _MeasurementResultScreenState extends State<MeasurementResultScreen> {
                         fontSize: 11,
                       ),
                     ),
+                  if (valueCm == null)
+                    Text(
+                      'Needs tape',
+                      style: AppTextStyles.bodySmall.copyWith(
+                        color: AppColors.textHint,
+                        fontSize: 10,
+                      ),
+                    ),
                 ],
               ),
             ],
           ),
         );
       }).toList(),
+    );
+  }
+
+  Widget _buildSupplementaryEstimates(
+    BodyMeasurements m,
+    MeasurementUnit unit,
+  ) {
+    final estimates = [
+      if (m.thigh != null) ('Thigh', m.thigh!),
+      if (m.inseam != null) ('Inseam', m.inseam!),
+    ];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Additional camera estimates', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'These are shown separately because they do not match a point in the universal 22-point chart.',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+          ),
+          const SizedBox(height: 8),
+          for (final estimate in estimates)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(estimate.$1, style: AppTextStyles.bodyMedium),
+                  Text(
+                    MeasurementFormat.formatWithUnit(estimate.$2, unit),
+                    style: AppTextStyles.labelLarge,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 

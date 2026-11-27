@@ -5,6 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../widgets/orders/order_instruction_media_links.dart';
+import '../../widgets/orders/order_stage_progress.dart';
+
 String _formatHelpdeskOrderReference(Object? value) {
   final reference = value?.toString().trim() ?? '';
   if (RegExp(r'^\d{12}$').hasMatch(reference)) {
@@ -14,7 +17,14 @@ String _formatHelpdeskOrderReference(Object? value) {
 }
 
 class HelpdeskOrderExplorerScreen extends StatefulWidget {
-  const HelpdeskOrderExplorerScreen({super.key});
+  const HelpdeskOrderExplorerScreen({
+    super.key,
+    this.initialOrderType = 'all',
+    this.initialStatusCategory = 'all',
+  });
+
+  final String initialOrderType;
+  final String initialStatusCategory;
 
   @override
   State<HelpdeskOrderExplorerScreen> createState() =>
@@ -27,18 +37,46 @@ class _HelpdeskOrderExplorerScreenState
   List<Map<String, dynamic>> _orders = const [];
   bool _loading = true;
   String? _error;
-  String _quickCareQueue = 'All';
+  late String _selectedOrderType;
+  late String _selectedStatusCategory;
 
-  static const _quickCareQueues = [
-    'All',
-    'Needs partner',
-    'In progress',
-    'Closed',
+  static const _orderTypes = [
+    ('all', 'All services'),
+    ('tailoring', 'Tailoring'),
+    ('garment_care', 'Garment Care'),
+    ('quick_care', 'Quick Care'),
+    ('measurements', 'Measurements'),
+    ('other', 'Other / brand'),
+  ];
+  static const _statusCategories = [
+    ('all', 'All statuses'),
+    ('active', 'Active'),
+    ('pending_routing', 'Pending routing'),
+    ('new_waiting', 'New / waiting'),
+    ('offered', 'Offered / assigned'),
+    ('awaiting_customer', 'Awaiting customer'),
+    ('accepted', 'Accepted'),
+    ('in_progress', 'In progress'),
+    ('awaiting_delivery', 'Awaiting delivery'),
+    ('needs_admin', 'Needs Admin'),
+    ('completed', 'Completed'),
+    ('cancelled', 'Cancelled'),
+    ('other', 'Other status'),
   ];
 
   @override
   void initState() {
     super.initState();
+    _selectedOrderType =
+        _orderTypes.any((type) => type.$1 == widget.initialOrderType)
+        ? widget.initialOrderType
+        : 'all';
+    _selectedStatusCategory =
+        _statusCategories.any(
+          (category) => category.$1 == widget.initialStatusCategory,
+        )
+        ? widget.initialStatusCategory
+        : 'all';
     _loadOrders();
   }
 
@@ -84,75 +122,368 @@ class _HelpdeskOrderExplorerScreenState
     }
   }
 
-  List<Map<String, dynamic>> get _filteredOrders {
-    Iterable<Map<String, dynamic>> result = _orders;
-    if (_quickCareQueue != 'All') {
-      result = result.where((order) {
-        if (order['orderType'] != 'quick_care') return false;
-        final workflow = (order['workflowStatus'] ?? order['status'] ?? '')
-            .toString()
-            .toLowerCase();
-        final assignment = (order['assignmentStatus'] ?? 'searching')
-            .toString()
-            .toLowerCase();
-        return switch (_quickCareQueue) {
-          'Needs partner' =>
-            ![
-                  'accepted',
-                  'inprogress',
-                  'paused',
-                  'awaitingcustomerapproval',
-                  'paymentpending',
-                  'completed',
-                  'cancelled',
-                ].contains(workflow) &&
-                !['accepted', 'completed', 'cancelled'].contains(assignment),
-          'In progress' =>
-            [
-                  'accepted',
-                  'inprogress',
-                  'paused',
-                  'awaitingcustomerapproval',
-                  'paymentpending',
-                ].contains(workflow) ||
-                assignment == 'accepted',
-          'Closed' =>
-            ['completed', 'cancelled'].contains(workflow) ||
-                assignment == 'cancelled',
-          _ => true,
-        };
-      });
-    }
-    final query = _search.text.trim().toLowerCase();
-    if (query.isEmpty) return result.toList();
+  List<Map<String, dynamic>> get _ordersForSelectedType =>
+      _selectedOrderType == 'all'
+      ? _orders
+      : _orders
+            .where((order) => order['orderType'] == _selectedOrderType)
+            .toList(growable: false);
+
+  bool _matchesSearch(Map<String, dynamic> order, String query) {
+    if (query.isEmpty) return true;
     final normalizedQuery = query.replaceAll(RegExp(r'[^a-z0-9]'), '');
-    return result.where((order) {
-      final searchable = [
-        order['orderNumber'],
-        order['orderId'],
-        order['customerName'],
-        order['customerUid'],
-        order['summary'],
-        order['status'],
-        order['orderType'],
-        order['assignmentStatus'],
-        order['workflowStatus'],
-      ].join(' ').toLowerCase();
-      final normalizedSearchable = searchable.replaceAll(
-        RegExp(r'[^a-z0-9]'),
-        '',
+    final searchable = [
+      order['orderNumber'],
+      order['orderId'],
+      order['customerName'],
+      order['customerUid'],
+      order['summary'],
+      order['status'],
+      order['orderType'],
+      order['assignmentStatus'],
+      order['workflowStatus'],
+      order['orderStatus'],
+      order['measurementStatus'],
+      order['servicePincode'],
+      order['deliveryAddress'],
+    ].join(' ').toLowerCase();
+    final normalizedSearchable = searchable.replaceAll(
+      RegExp(r'[^a-z0-9]'),
+      '',
+    );
+    return searchable.contains(query) ||
+        (normalizedQuery.isNotEmpty &&
+            normalizedSearchable.contains(normalizedQuery));
+  }
+
+  List<Map<String, dynamic>> get _searchedOrders {
+    final result = _ordersForSelectedType;
+    final query = _search.text.trim().toLowerCase();
+    if (query.isEmpty) return result.toList(growable: false);
+    return result.where((order) => _matchesSearch(order, query)).toList();
+  }
+
+  List<Map<String, dynamic>> get _filteredOrders {
+    final orders = _searchedOrders;
+    if (_selectedStatusCategory == 'all') return orders;
+    return orders
+        .where(
+          (order) => _matchesStatusCategory(order, _selectedStatusCategory),
+        )
+        .toList(growable: false);
+  }
+
+  bool _matchesStatusCategory(Map<String, dynamic> order, String category) {
+    if (category == 'active') {
+      return !const {
+        'completed',
+        'cancelled',
+      }.contains(_orderStatusCategory(order));
+    }
+    if (category == 'pending_routing') {
+      if (order['needsRouting'] is bool) return order['needsRouting'] == true;
+      return const {
+        'new_waiting',
+        'offered',
+        'awaiting_delivery',
+        'needs_admin',
+      }.contains(_orderStatusCategory(order));
+    }
+    return _orderStatusCategory(order) == category;
+  }
+
+  String _orderStatusCategory(Map<String, dynamic> order) {
+    String normalize(Object? value) => (value ?? '')
+        .toString()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]'), '');
+
+    final type = (order['orderType'] ?? 'other').toString();
+    final assignment = normalize(order['assignmentStatus']);
+    final workflow = normalize(order['workflowStatus']);
+    final orderStatus = normalize(order['orderStatus']);
+    final status = normalize(order['status']);
+    final payment = normalize(order['paymentStatus']);
+    final measurement = normalize(order['measurementStatus']);
+    final submission = normalize(order['measurementSubmissionStatus']);
+    final states = [
+      assignment,
+      workflow,
+      orderStatus,
+      status,
+      payment,
+      measurement,
+      submission,
+    ].where((value) => value.isNotEmpty).toSet();
+    bool hasAny(Set<String> values) =>
+        states.any((state) => values.any((value) => state.contains(value)));
+
+    if (hasAny({'cancelled', 'canceled', 'rejected', 'failed'})) {
+      return 'cancelled';
+    }
+    if (hasAny({
+      'completed',
+      'servicecompleted',
+      'delivered',
+      'closed',
+      'resolved',
+      'returned',
+    })) {
+      return 'completed';
+    }
+
+    if (type == 'garment_care') {
+      if (hasAny({
+        'customeractionrequired',
+        'awaitingpayment',
+        'awaitingconsent',
+      })) {
+        return 'awaiting_customer';
+      }
+      if (hasAny({'awaitingdelivery', 'partiallydelivered'})) {
+        return 'awaiting_delivery';
+      }
+      if (hasAny({
+        'partnerassignment',
+        'awaitingnextservice',
+        'returnpending',
+        'open',
+        'queued',
+      })) {
+        return 'new_waiting';
+      }
+    }
+
+    if (type == 'quick_care') {
+      if (hasAny({
+        'awaitingcustomerapproval',
+        'paymentpending',
+        'customerdecision',
+      })) {
+        return 'awaiting_customer';
+      }
+      if (hasAny({'inprogress', 'paused', 'processing'})) return 'in_progress';
+      if (assignment == 'accepted' || workflow == 'accepted') return 'accepted';
+      if (hasAny({'partnerassigned', 'offered', 'assigned'})) return 'offered';
+      if (hasAny({'requestsubmitted', 'searching', 'queued', 'new'})) {
+        return 'new_waiting';
+      }
+    }
+
+    if (type == 'tailoring') {
+      if (assignment == 'needsadminfollowup') return 'needs_admin';
+      if (assignment == 'awaitingcustomerdecision') return 'awaiting_customer';
+      if (assignment == 'offered') return 'offered';
+      if (assignment == 'searching' ||
+          assignment == 'queuedfordispatch' ||
+          assignment == 'reassigning') {
+        return 'new_waiting';
+      }
+      if (assignment == 'finalized') {
+        if (hasAny({'readyforpickup', 'awaitingdelivery', 'outfordelivery'})) {
+          return 'awaiting_delivery';
+        }
+        if (hasAny({'inprogress', 'inproduction', 'processing'})) {
+          return 'in_progress';
+        }
+        return 'accepted';
+      }
+    }
+
+    if (type == 'measurements') {
+      if (hasAny({
+        'awaitingcustomer',
+        'customeractionrequired',
+        'awaitingpayment',
+      })) {
+        return 'awaiting_customer';
+      }
+      if (measurement == 'completed' || submission == 'completed') {
+        return 'completed';
+      }
+      if (hasAny({
+        'appointment_scheduled',
+        'appointmentscheduled',
+        'partnercompleted',
+      })) {
+        return 'accepted';
+      }
+      if (hasAny({
+        'awaitingarrangement',
+        'awaitingappointment',
+        'notstarted',
+        'searching',
+        'new',
+      })) {
+        return 'new_waiting';
+      }
+    }
+
+    if (hasAny({'needsadminfollowup', 'needsadmin'})) return 'needs_admin';
+    if (hasAny({
+      'awaitingcustomer',
+      'customeractionrequired',
+      'awaitingpayment',
+      'pendingpayment',
+    })) {
+      return 'awaiting_customer';
+    }
+    if (hasAny({'awaitingdelivery', 'partiallydelivered', 'readyforpickup'})) {
+      return 'awaiting_delivery';
+    }
+    if (hasAny({'offered', 'assigned', 'partnerassigned'})) return 'offered';
+    if (hasAny({'accepted'})) return 'accepted';
+    if (hasAny({'inprogress', 'processing', 'paused'})) return 'in_progress';
+    if (hasAny({
+      'searching',
+      'queued',
+      'pending',
+      'open',
+      'new',
+      'requestsubmitted',
+    })) {
+      return 'new_waiting';
+    }
+
+    return 'other';
+  }
+
+  String _statusCategoryLabel(Map<String, dynamic> order) =>
+      switch (_orderStatusCategory(order)) {
+        'new_waiting' => 'New / waiting',
+        'offered' => 'Offered / assigned',
+        'awaiting_customer' => 'Awaiting customer',
+        'accepted' => 'Accepted',
+        'in_progress' => 'In progress',
+        'awaiting_delivery' => 'Awaiting delivery',
+        'needs_admin' => 'Needs Admin',
+        'completed' => 'Completed',
+        'cancelled' => 'Cancelled',
+        _ => 'Other status',
+      };
+
+  ({List<String> stages, int step}) _progressForOrder(
+    Map<String, dynamic> order,
+  ) {
+    final category = _orderStatusCategory(order);
+    final type = order['orderType']?.toString() ?? '';
+    if (type == 'tailoring') {
+      return (
+        stages: const [
+          'New',
+          'Offered',
+          'Accepted',
+          'Stitching',
+          'Quality',
+          'Delivered',
+        ],
+        step: switch (category) {
+          'new_waiting' => 0,
+          'offered' => 1,
+          'accepted' => 2,
+          'in_progress' => 3,
+          'awaiting_delivery' => 4,
+          'completed' => 5,
+          'needs_admin' => 1,
+          _ => 0,
+        },
       );
-      return searchable.contains(query) ||
-          (normalizedQuery.isNotEmpty &&
-              normalizedSearchable.contains(normalizedQuery));
-    }).toList();
+    }
+    if (type == 'garment_care') {
+      return (
+        stages: const ['New', 'Pickup', 'Care', 'Return', 'Complete'],
+        step: switch (category) {
+          'new_waiting' => 0,
+          'offered' || 'accepted' => 1,
+          'in_progress' || 'awaiting_customer' => 2,
+          'awaiting_delivery' => 3,
+          'completed' => 4,
+          'needs_admin' => 2,
+          _ => 0,
+        },
+      );
+    }
+    if (type == 'quick_care') {
+      return (
+        stages: const [
+          'Request',
+          'Accepted',
+          'In service',
+          'Payment',
+          'Closed',
+        ],
+        step: switch (category) {
+          'new_waiting' => 0,
+          'offered' || 'accepted' => 1,
+          'in_progress' || 'needs_admin' => 2,
+          'awaiting_customer' || 'awaiting_delivery' => 3,
+          'completed' => 4,
+          _ => 0,
+        },
+      );
+    }
+    if (type == 'measurements') {
+      return (
+        stages: const ['Assigned', 'Scheduled', 'Visit', 'Submitted'],
+        step: switch (category) {
+          'new_waiting' || 'offered' => 0,
+          'accepted' => 1,
+          'in_progress' || 'awaiting_customer' || 'needs_admin' => 2,
+          'completed' => 3,
+          _ => 0,
+        },
+      );
+    }
+    return (
+      stages: const ['New', 'Accepted', 'In progress', 'Complete'],
+      step: switch (category) {
+        'new_waiting' || 'offered' => 0,
+        'accepted' => 1,
+        'in_progress' || 'awaiting_customer' || 'awaiting_delivery' => 2,
+        'completed' => 3,
+        _ => 0,
+      },
+    );
+  }
+
+  int _statusCategoryCount(String category) => _searchedOrders.where((order) {
+    if (category == 'all') return true;
+    return _matchesStatusCategory(order, category);
+  }).length;
+
+  int _orderTypeCount(String type) {
+    final query = _search.text.trim().toLowerCase();
+    return _orders.where((order) {
+      if (type != 'all' && order['orderType'] != type) return false;
+      if (!_matchesSearch(order, query)) return false;
+      return _selectedStatusCategory == 'all' ||
+          _matchesStatusCategory(order, _selectedStatusCategory);
+    }).length;
+  }
+
+  String _ordersTitle() {
+    final typeLabel = switch (_selectedOrderType) {
+      'tailoring' => 'Tailoring orders',
+      'garment_care' => 'Garment Care orders',
+      'quick_care' => 'Quick Care orders',
+      'measurements' => 'Measurement orders',
+      'other' => 'Other / brand orders',
+      _ => 'All customer orders',
+    };
+    if (_selectedStatusCategory == 'all') return typeLabel;
+    final statusLabel = _statusCategories
+        .firstWhere((category) => category.$1 == _selectedStatusCategory)
+        .$2;
+    return _selectedOrderType == 'all'
+        ? '$statusLabel · all services'
+        : '$typeLabel · $statusLabel';
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: const Color(0xFFF8F6FC),
     appBar: AppBar(
-      title: const Text('All customer orders'),
+      title: Text(_ordersTitle()),
       backgroundColor: const Color(0xFFF8F6FC),
       actions: [
         IconButton(
@@ -186,55 +517,35 @@ class _HelpdeskOrderExplorerScreenState
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             scrollDirection: Axis.horizontal,
-            itemCount: _quickCareQueues.length,
+            itemCount: _orderTypes.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
             itemBuilder: (context, index) {
-              final queue = _quickCareQueues[index];
-              final count = _orders.where((order) {
-                if (order['orderType'] != 'quick_care') return false;
-                final workflow =
-                    (order['workflowStatus'] ?? order['status'] ?? '')
-                        .toString()
-                        .toLowerCase();
-                final assignment = (order['assignmentStatus'] ?? 'searching')
-                    .toString()
-                    .toLowerCase();
-                return switch (queue) {
-                  'Needs partner' =>
-                    ![
-                          'accepted',
-                          'inprogress',
-                          'paused',
-                          'awaitingcustomerapproval',
-                          'paymentpending',
-                          'completed',
-                          'cancelled',
-                        ].contains(workflow) &&
-                        ![
-                          'accepted',
-                          'completed',
-                          'cancelled',
-                        ].contains(assignment),
-                  'In progress' =>
-                    [
-                          'accepted',
-                          'inprogress',
-                          'paused',
-                          'awaitingcustomerapproval',
-                          'paymentpending',
-                        ].contains(workflow) ||
-                        assignment == 'accepted',
-                  'Closed' =>
-                    ['completed', 'cancelled'].contains(workflow) ||
-                        assignment == 'cancelled',
-                  _ => true,
-                };
-              }).length;
-              final label = queue == 'All' ? 'All orders' : queue;
+              final type = _orderTypes[index];
+              final count = _orderTypeCount(type.$1);
               return ChoiceChip(
-                selected: _quickCareQueue == queue,
-                onSelected: (_) => setState(() => _quickCareQueue = queue),
-                label: Text('$label ($count)'),
+                selected: _selectedOrderType == type.$1,
+                onSelected: (_) => setState(() => _selectedOrderType = type.$1),
+                label: Text('${type.$2} ($count)'),
+              );
+            },
+          ),
+        ),
+        SizedBox(
+          height: 52,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            scrollDirection: Axis.horizontal,
+            itemCount: _statusCategories.length,
+            separatorBuilder: (_, _) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              final category = _statusCategories[index];
+              return ChoiceChip(
+                selected: _selectedStatusCategory == category.$1,
+                onSelected: (_) =>
+                    setState(() => _selectedStatusCategory = category.$1),
+                label: Text(
+                  '${category.$2} (${_statusCategoryCount(category.$1)})',
+                ),
               );
             },
           ),
@@ -274,32 +585,32 @@ class _HelpdeskOrderExplorerScreenState
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         itemCount: orders.length,
-        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        separatorBuilder: (_, _) => const SizedBox(height: 6),
         itemBuilder: (context, index) {
           final order = orders[index];
           final type = _typeLabel(order['orderType']?.toString() ?? '');
           final id = order['orderId']?.toString() ?? '';
-          final workflow =
-              (order['workflowStatus'] ?? order['status'] ?? 'Unknown')
-                  .toString();
-          final workflowLabel = _quickCareStatusLabel(workflow);
           final paymentFollowup =
               order['orderType'] == 'quick_care' &&
               _needsQuickCarePaymentFollowup(order);
-          final statusText = order['orderType'] == 'quick_care'
-              ? paymentFollowup
-                    ? 'Payment follow-up'
-                    : workflowLabel
-              : _humanizeOrderListStatus(order['status']?.toString() ?? '');
+          final expectedAt = DateTime.tryParse(
+            (order['expectedCompletionAt'] ?? '').toString(),
+          );
+          final servicePincode = (order['servicePincode'] ?? '').toString();
+          final statusText = paymentFollowup
+              ? 'Payment follow-up'
+              : _statusCategoryLabel(order);
+          final progress = _progressForOrder(order);
           return Card(
             color: Colors.white,
             margin: EdgeInsets.zero,
             child: ListTile(
               contentPadding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 8,
+                horizontal: 14,
+                vertical: 3,
               ),
               leading: CircleAvatar(
+                radius: 21,
                 backgroundColor: const Color(0xFFEFE7FA),
                 child: Icon(
                   _typeIcon(order['orderType']?.toString() ?? ''),
@@ -312,13 +623,32 @@ class _HelpdeskOrderExplorerScreenState
                     : '$type order',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               subtitle: Padding(
                 padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  '$type · ${order['customerName'] ?? 'Customer'}\n'
-                  '${_formatHelpdeskOrderReference(order['orderNumber'] ?? id)} · $statusText',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$type · ${order['customerName'] ?? 'Customer'}\n'
+                      '${_formatHelpdeskOrderReference(order['orderNumber'] ?? id)} · $statusText'
+                      '${servicePincode.isEmpty ? '' : ' · PIN $servicePincode'}'
+                      '${expectedAt == null ? '' : ' · target ${expectedAt.day}/${expectedAt.month}/${expectedAt.year}'}',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        height: 1.2,
+                        color: Color(0xFF777286),
+                      ),
+                    ),
+                    OrderStageProgress(
+                      stages: progress.stages,
+                      currentStep: progress.step,
+                    ),
+                  ],
                 ),
               ),
               isThreeLine: true,
@@ -334,36 +664,6 @@ class _HelpdeskOrderExplorerScreenState
       ),
     );
   }
-}
-
-String _quickCareStatusLabel(String status) => switch (status.toLowerCase()) {
-  'requestsubmitted' => 'Request submitted',
-  'partnerassigned' => 'Partner assigned',
-  'accepted' => 'Accepted',
-  'inprogress' => 'In progress',
-  'paused' => 'Paused',
-  'awaitingcustomerapproval' => 'Quote awaiting customer',
-  'paymentpending' => 'Payment pending',
-  'completed' => 'Completed',
-  'cancelled' => 'Cancelled',
-  _ => status,
-};
-
-String _humanizeOrderListStatus(String status) {
-  if (status.trim().isEmpty || status.toLowerCase() == 'unknown') {
-    return 'Status unavailable';
-  }
-  return status
-      .replaceAllMapped(
-        RegExp(r'([a-z0-9])([A-Z])'),
-        (match) => '${match[1]} ${match[2]}',
-      )
-      .replaceAll('_', ' ')
-      .replaceAll('-', ' ')
-      .split(RegExp(r'\s+'))
-      .where((word) => word.isNotEmpty)
-      .map((word) => word[0].toUpperCase() + word.substring(1))
-      .join(' ');
 }
 
 String _typeLabel(String value) => switch (value) {
@@ -655,8 +955,17 @@ class _HelpdeskOrderDetailsSheetState
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              '${_typeLabel(widget.orderType)} · ${_formatHelpdeskOrderReference(widget.data['orderNumber'] ?? order['orderTrackingId'] ?? widget.orderId)}',
+              '${_typeLabel(widget.orderType)} order',
               style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 2),
+            Text(
+              'Reference · ${_formatHelpdeskOrderReference(widget.data['orderNumber'] ?? order['orderTrackingId'] ?? widget.orderId)}',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: const Color(0xFF777286)),
             ),
             const SizedBox(height: 12),
             Expanded(
@@ -683,6 +992,7 @@ class _HelpdeskOrderDetailsSheetState
                     if (widget.data[key] != null)
                       _DetailExpansion(
                         title: _detailLabel(key),
+                        fieldName: key,
                         value: widget.data[key],
                         initiallyExpanded: key == 'order',
                       ),
@@ -786,11 +1096,13 @@ String _detailLabel(String key) => switch (key) {
 class _DetailExpansion extends StatelessWidget {
   const _DetailExpansion({
     required this.title,
+    required this.fieldName,
     required this.value,
     required this.initiallyExpanded,
   });
 
   final String title;
+  final String fieldName;
   final Object value;
   final bool initiallyExpanded;
 
@@ -804,7 +1116,7 @@ class _DetailExpansion extends StatelessWidget {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          child: _ReadableHelpdeskValue(value: value),
+          child: _ReadableHelpdeskValue(value: value, fieldName: fieldName),
         ),
       ],
     ),
@@ -824,6 +1136,21 @@ const _hiddenHelpdeskFields = <String>{
   'pricingPolicyVersionId',
   'schemaVersion',
   'nextSubOrderSequence',
+  'storagePath',
+  'previewUrl',
+  'downloadUrl',
+  'byteSize',
+  'contentType',
+  'fileName',
+  'designId',
+  'designTemplateId',
+  'catalogueVersionId',
+  'cataloguePriceVersion',
+  'sourceWishlistItemId',
+  'wishlistItemId',
+  'assetId',
+  'personId',
+  'assignmentVersion',
 };
 
 const _helpdeskFieldLabels = <String, String>{
@@ -844,6 +1171,20 @@ const _helpdeskFieldLabels = <String, String>{
   'balanceAmount': 'Balance due',
   'customerNameSnapshot': 'Customer name',
   'toPartnerAccountId': 'Assigned partner account',
+  'clientName': 'For',
+  'personName': 'Person wearing the garment',
+  'relationship': 'Relationship',
+  'dressType': 'Garment / service',
+  'designTemplateTitle': 'Selected design',
+  'fabricChoice': 'Fabric',
+  'fabricDescription': 'Fabric details',
+  'fabricPurchasedMeters': 'Fabric purchased',
+  'designSource': 'Design source',
+  'accentColorHex': 'Accent colour',
+  'catalogueCommercialType': 'Design type',
+  'fit': 'Fit',
+  'deliveryAddress': 'Delivery address',
+  'serviceVisitAddress': 'Service address',
 };
 
 String _helpdeskFieldLabel(String key) {
@@ -933,7 +1274,267 @@ String _readableHelpdeskScalar(Object? value, String fieldName) {
   ).hasMatch(fieldName)) {
     return _humanizeHelpdeskText(text);
   }
+  if (RegExp(
+    r'(source|choice|type|fit)$',
+    caseSensitive: false,
+  ).hasMatch(fieldName)) {
+    return _humanizeHelpdeskText(text);
+  }
   return text;
+}
+
+bool _isHelpdeskImageField(String fieldName) {
+  final key = fieldName.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  return key.contains('imageurl') ||
+      key.contains('imagepath') ||
+      key.contains('photourl') ||
+      key.contains('photopath') ||
+      key.contains('previewurl') ||
+      key.contains('thumbnailurl') ||
+      key.contains('referenceimageurl');
+}
+
+String? _helpdeskMediaKind(Map<String, dynamic> record, String fieldName) {
+  final kind = (record['kind'] ?? '').toString().toLowerCase();
+  final contentType = (record['contentType'] ?? record['mimeType'] ?? '')
+      .toString()
+      .toLowerCase();
+  final source =
+      (record['storagePath'] ??
+              record['previewUrl'] ??
+              record['downloadUrl'] ??
+              record['url'] ??
+              '')
+          .toString()
+          .trim();
+  if (source.isEmpty) return null;
+  if (kind == 'audio' || contentType.startsWith('audio/')) return 'audio';
+  if (kind == 'video' || contentType.startsWith('video/')) return 'video';
+  if (contentType.startsWith('image/') || _isHelpdeskImageField(fieldName)) {
+    return 'image';
+  }
+  final normalized = fieldName.toLowerCase();
+  if (normalized.contains('fabricphoto') ||
+      normalized.contains('selectedpreview') ||
+      normalized == 'previews') {
+    return 'image';
+  }
+  return null;
+}
+
+class _CustomerFabricAssetsPreview extends StatelessWidget {
+  const _CustomerFabricAssetsPreview({required this.assets});
+
+  final Map<String, dynamic> assets;
+
+  @override
+  Widget build(BuildContext context) {
+    final photo = assets['fabricPhoto'];
+    final rawPreviews = assets['previews'];
+    final previews = rawPreviews is Iterable
+        ? rawPreviews
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList()
+        : <Map<String, dynamic>>[];
+    if (previews.isEmpty && assets['selectedPreview'] is Map) {
+      previews.add(Map<String, dynamic>.from(assets['selectedPreview'] as Map));
+    }
+    if (photo is! Map && previews.isEmpty) {
+      return const _EmptyHelpdeskDetails();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (photo is Map) ...[
+          _HelpdeskMediaAttachment(
+            record: Map<String, dynamic>.from(photo),
+            kind: 'image',
+            label: 'Customer fabric photo',
+          ),
+          if (previews.isNotEmpty) const SizedBox(height: 12),
+        ],
+        if (previews.isNotEmpty) ...[
+          const Text(
+            'Selected design previews',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          for (var index = 0; index < previews.length; index++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _HelpdeskMediaAttachment(
+                record: previews[index],
+                kind: 'image',
+                label: _previewLabel(previews[index], index),
+              ),
+            ),
+        ],
+      ],
+    );
+  }
+
+  String _previewLabel(Map<String, dynamic> preview, int index) {
+    final view = preview['viewType']?.toString().trim() ?? '';
+    if (view.isNotEmpty) return '${_humanizeHelpdeskText(view)} view';
+    return 'Design preview ${index + 1}';
+  }
+}
+
+class _InstructionMediaDetails extends StatelessWidget {
+  const _InstructionMediaDetails({required this.media});
+
+  final List<Map<String, dynamic>> media;
+
+  @override
+  Widget build(BuildContext context) {
+    if (media.isEmpty) return const _EmptyHelpdeskDetails();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        for (var index = 0; index < media.length; index++) ...[
+          if (index > 0) const SizedBox(height: 10),
+          _HelpdeskMediaAttachment(
+            record: media[index],
+            kind: (media[index]['kind'] ?? '').toString().toLowerCase(),
+            label: switch ((media[index]['kind'] ?? '')
+                .toString()
+                .toLowerCase()) {
+              'audio' => 'Voice note',
+              'video' => 'Video note',
+              _ => 'Order attachment ${index + 1}',
+            },
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _HelpdeskMediaAttachment extends StatelessWidget {
+  const _HelpdeskMediaAttachment({
+    required this.record,
+    required this.kind,
+    required this.label,
+  });
+
+  final Map<String, dynamic> record;
+  final String kind;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final note =
+        (record['transcript'] ?? record['caption'] ?? record['note'] ?? '')
+            .toString()
+            .trim();
+    final visibleNote = const {'before_work', 'after_work'}.contains(note)
+        ? ''
+        : note;
+    final path = (record['storagePath'] ?? '').toString().trim();
+    final url =
+        (record['previewUrl'] ?? record['downloadUrl'] ?? record['url'] ?? '')
+            .toString()
+            .trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+        if (visibleNote.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          SelectableText(visibleNote),
+        ],
+        const SizedBox(height: 6),
+        if (kind == 'image')
+          _HelpdeskImagePreview(label: '', storagePath: path, source: url)
+        else if (kind == 'audio' || kind == 'video')
+          path.isEmpty
+              ? const Text('This recording is not available to play.')
+              : OrderInstructionMediaLinks(
+                  media: [
+                    {'kind': kind, 'storagePath': path},
+                  ],
+                )
+        else
+          const Text('Preview unavailable.'),
+      ],
+    );
+  }
+}
+
+class _HelpdeskImagePreview extends StatelessWidget {
+  const _HelpdeskImagePreview({
+    required this.label,
+    this.storagePath,
+    this.source = '',
+  });
+
+  final String label;
+  final String? storagePath;
+  final String source;
+
+  Future<String?> _resolveSource() async {
+    final path = storagePath?.trim() ?? '';
+    if (path.isNotEmpty) {
+      return FirebaseStorage.instance.ref(path).getDownloadURL();
+    }
+    final value = source.trim();
+    if (value.startsWith('https://') || value.startsWith('http://')) {
+      return value;
+    }
+    if (value.isNotEmpty) {
+      return FirebaseStorage.instance.ref(value).getDownloadURL();
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<String?>(
+    future: _resolveSource(),
+    builder: (context, snapshot) {
+      final url = snapshot.data;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (label.isNotEmpty) ...[
+            Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
+            const SizedBox(height: 6),
+          ],
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              width: double.infinity,
+              constraints: const BoxConstraints(minHeight: 84, maxHeight: 220),
+              color: const Color(0xFFFFF8FA),
+              alignment: Alignment.center,
+              child: snapshot.connectionState == ConnectionState.waiting
+                  ? const SizedBox(
+                      height: 84,
+                      child: Center(
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    )
+                  : url == null || url.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Image preview unavailable.'),
+                    )
+                  : Image.network(
+                      url,
+                      width: double.infinity,
+                      height: 220,
+                      fit: BoxFit.contain,
+                      errorBuilder: (_, _, _) => const Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('Image preview unavailable.'),
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
 }
 
 class _ReadableHelpdeskValue extends StatelessWidget {
@@ -944,8 +1545,39 @@ class _ReadableHelpdeskValue extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final normalizedFieldName = fieldName.toLowerCase().replaceAll(
+      RegExp(r'[^a-z0-9]'),
+      '',
+    );
+    if (normalizedFieldName == 'customerfabricassets' && value is Map) {
+      return _CustomerFabricAssetsPreview(
+        assets: Map<String, dynamic>.from(value as Map),
+      );
+    }
+    if (normalizedFieldName == 'instructionmedia' && value is List) {
+      final media = (value as List)
+          .whereType<Map>()
+          .map((item) => Map<String, dynamic>.from(item))
+          .toList(growable: false);
+      return _InstructionMediaDetails(media: media);
+    }
+    if (value is String && _isHelpdeskImageField(fieldName)) {
+      return _HelpdeskImagePreview(
+        label: _helpdeskFieldLabel(fieldName),
+        source: value.toString(),
+      );
+    }
     if (value is Map) {
-      final record = Map<String, dynamic>.from(value as Map)
+      final rawRecord = Map<String, dynamic>.from(value as Map);
+      final mediaKind = _helpdeskMediaKind(rawRecord, fieldName);
+      if (mediaKind != null) {
+        return _HelpdeskMediaAttachment(
+          record: rawRecord,
+          kind: mediaKind,
+          label: _helpdeskFieldLabel(fieldName),
+        );
+      }
+      final record = rawRecord
         ..removeWhere(
           (key, value) => _isHiddenHelpdeskField(key) || _isEmpty(value),
         );
@@ -976,29 +1608,47 @@ class _ReadableHelpdeskValue extends StatelessWidget {
       return Column(
         children: [
           for (var index = 0; index < items.length; index++)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(top: 8),
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF8FA),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFF1DCE5)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _helpdeskRecordTitle(items[index], index),
-                    style: const TextStyle(fontWeight: FontWeight.w700),
+            Builder(
+              builder: (context) {
+                final item = items[index];
+                final itemMedia = item is Map
+                    ? _helpdeskMediaKind(
+                        Map<String, dynamic>.from(item),
+                        fieldName,
+                      )
+                    : null;
+                if (itemMedia != null && item is Map) {
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: _HelpdeskMediaAttachment(
+                      record: Map<String, dynamic>.from(item),
+                      kind: itemMedia,
+                      label: _helpdeskRecordTitle(item, index),
+                    ),
+                  );
+                }
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(top: 8),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8FA),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1DCE5)),
                   ),
-                  const SizedBox(height: 6),
-                  _ReadableHelpdeskValue(
-                    value: items[index],
-                    fieldName: fieldName,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        _helpdeskRecordTitle(item, index),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      const SizedBox(height: 6),
+                      _ReadableHelpdeskValue(value: item, fieldName: fieldName),
+                    ],
                   ),
-                ],
-              ),
+                );
+              },
             ),
         ],
       );
@@ -1035,13 +1685,44 @@ class _ReadableHelpdeskField extends StatelessWidget {
         ),
       );
     }
+    if (_isHelpdeskImageField(name) && value is String) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: _HelpdeskImagePreview(
+          label: _helpdeskFieldLabel(name),
+          source: value.toString(),
+        ),
+      );
+    }
+    if (_isHiddenHelpdeskField(name)) return const SizedBox.shrink();
+    final displayValue = _readableHelpdeskScalar(value, name);
+    final isLongText = displayValue.length > 42 || displayValue.contains('\n');
+    if (isLongText) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 7),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              _helpdeskFieldLabel(name),
+              style: const TextStyle(color: Color(0xFF777286), fontSize: 13),
+            ),
+            const SizedBox(height: 3),
+            SelectableText(
+              displayValue,
+              style: const TextStyle(fontSize: 14, height: 1.35),
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 5,
+            flex: 4,
             child: Text(
               _helpdeskFieldLabel(name),
               style: const TextStyle(color: Color(0xFF777286), fontSize: 13),
@@ -1050,10 +1731,10 @@ class _ReadableHelpdeskField extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             flex: 6,
-            child: Text(
-              _readableHelpdeskScalar(value, name),
-              textAlign: TextAlign.end,
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+            child: SelectableText(
+              displayValue,
+              textAlign: TextAlign.start,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
         ],
@@ -1080,6 +1761,8 @@ bool _isEmpty(Object? value) {
   if (value is String) return value.trim().isEmpty;
   if (value is List) return value.isEmpty || value.every(_isEmpty);
   if (value is Map) {
+    final record = Map<String, dynamic>.from(value);
+    if (_helpdeskMediaKind(record, '') != null) return false;
     return value.isEmpty ||
         value.entries.every(
           (entry) => _isHiddenHelpdeskField(entry.key) || _isEmpty(entry.value),

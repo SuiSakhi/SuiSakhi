@@ -96,6 +96,9 @@ exports.processCatalogueViewOriginal = createCatalogueStorageTrigger({
 const garmentCare = require("./garment_care");
 const helpdesk = require("./helpdesk");
 const quickCare = require("./quickcare");
+const orderInstructionTranscription = require("./order_instruction_transcription");
+exports.transcribeOrderInstructionAudioV2 =
+  orderInstructionTranscription.transcribeOrderInstructionAudioV2;
 exports.getMyHelpdeskAccess = helpdesk.getMyHelpdeskAccess;
 exports.getAdminHelpdeskOverview = helpdesk.getAdminHelpdeskOverview;
 exports.updateHelpdeskTicket = helpdesk.updateHelpdeskTicket;
@@ -140,6 +143,8 @@ exports.getGarmentCareDeliveryPaymentDetails = garmentCare.getGarmentCareDeliver
 exports.completeSandboxGarmentCarePayment = garmentCare.completeSandboxGarmentCarePayment;
 exports.completeSandboxGarmentCarePaymentBatch = garmentCare.completeSandboxGarmentCarePaymentBatch;
 exports.recordGarmentCarePaymentAtDelivery = garmentCare.recordGarmentCarePaymentAtDelivery;
+exports.recordAdminPartnerPayout = garmentCare.recordAdminPartnerPayout;
+exports.recordAdminPartnerPayoutBatch = garmentCare.recordAdminPartnerPayoutBatch;
 exports.lookupGarmentCareOrderTag = garmentCare.lookupGarmentCareOrderTag;
 exports.updateGarmentCarePartnerPreferences = garmentCare.updateGarmentCarePartnerPreferences;
 exports.updateGarmentCareDeliveryPartnerAvailability = garmentCare.updateGarmentCareDeliveryPartnerAvailability;
@@ -247,8 +252,10 @@ exports.sendUserWhatsApp = functions.https.onCall(async (data, context) => {
 });
 
 /**
- * Updates a Tailor's order-availability signal on their common Partner profile.
- * Approved status alone never makes a Partner eligible for new order offers.
+ * Updates order availability for Tailor, Delivery, and Measurement Partners.
+ * Keep these partner roles on the established callable so each uses the same
+ * authenticated endpoint and invoker policy. Approved status alone never
+ * makes a Partner eligible for new work offers.
  */
 exports.setTailorAvailability = functions.https.onCall(async (data, context) => {
   if (!context.auth) {
@@ -257,7 +264,20 @@ exports.setTailorAvailability = functions.https.onCall(async (data, context) => 
 
   const accountId = String((data && data.accountId) || "").trim();
   const profileId = String((data && data.profileId) || "").trim();
+  const partnerType = String((data && data.partnerType) || "tailor").trim();
   const available = data && data.available;
+  const partnerTypeLabels = {
+    tailor: "Tailor",
+    deliveryPartner: "Delivery Partner",
+    measurementPartner: "Measurement Partner",
+  };
+  const partnerTypeLabel = partnerTypeLabels[partnerType];
+  if (!partnerTypeLabel) {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "This Partner type cannot update availability.",
+    );
+  }
   if (!accountId || !profileId || typeof available !== "boolean") {
     throw new functions.https.HttpsError(
       "invalid-argument",
@@ -291,11 +311,11 @@ exports.setTailorAvailability = functions.https.onCall(async (data, context) => 
     (profile.accountId && profile.accountId !== accountId) ||
     (profile.profileId && profile.profileId !== profileId) ||
     profile.role !== "partner" ||
-    profile.partnerType !== "tailor"
+    profile.partnerType !== partnerType
   ) {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "This profile is not a Tailor Partner profile.",
+      `This profile is not a ${partnerTypeLabel} profile.`,
     );
   }
 
@@ -308,19 +328,219 @@ exports.setTailorAvailability = functions.https.onCall(async (data, context) => 
   if (available && !activeAndApproved) {
     throw new functions.https.HttpsError(
       "failed-precondition",
-      "Only an approved, active, verified Tailor can accept new order offers.",
+      `Only an approved, active, verified ${partnerTypeLabel} can accept new work offers.`,
     );
   }
 
   const availabilityStatus = available ? "available" : "unavailable";
-  await profileRef.update({
+  const updates = {
     availabilityStatus,
     availabilityUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
     availabilityUpdatedByUid: context.auth.uid,
+    [`partnerData.extensions.${partnerType}.operational.availableForOrders`]: available,
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
+  };
+  if (partnerType === "deliveryPartner") {
+    updates.garmentCareDeliveryAvailable = available;
+    updates.garmentCareDeliveryAvailabilityUpdatedAt =
+      admin.firestore.FieldValue.serverTimestamp();
+    updates.garmentCareDeliveryAvailabilityUpdatedByUid = context.auth.uid;
+  }
+  if (Array.isArray(data.availabilitySlots)) {
+    const days = new Set([
+      "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]);
+    const slots = data.availabilitySlots
+      .filter((slot) => slot && typeof slot === "object")
+      .map((slot) => ({
+        day: String(slot.day || "").toLowerCase(),
+        start: String(slot.start || ""),
+        end: String(slot.end || ""),
+      }))
+      .filter((slot) => days.has(slot.day) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.start) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.end) && slot.start < slot.end);
+    if (slots.length !== data.availabilitySlots.length) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Choose valid working days and hours.",
+      );
+    }
+    updates[`partnerData.extensions.${partnerType}.operational.availabilitySlots`] = slots;
+  }
+  await profileRef.update(updates);
 
   return { availabilityStatus };
+});
+
+/**
+ * Updates a Delivery Partner's single availability switch and schedule.
+ * Turning it off prevents the profile from receiving new delivery routing;
+ * existing assignments remain visible and actionable.
+ */
+exports.setDeliveryPartnerAvailability = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Sign in required");
+  }
+  const accountId = String((data && data.accountId) || "").trim();
+  const profileId = String((data && data.profileId) || "").trim();
+  const available = data && data.available;
+  if (!accountId || !profileId || typeof available !== "boolean") {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "A Delivery Partner account, profile, and availability choice are required.",
+    );
+  }
+
+  const accountRef = admin.firestore().collection("accounts").doc(accountId);
+  const profileRef = accountRef.collection("profiles").doc(profileId);
+  const [accountSnap, profileSnap] = await Promise.all([
+    accountRef.get(),
+    profileRef.get(),
+  ]);
+  if (!accountSnap.exists || !profileSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "The Delivery Partner profile could not be found.");
+  }
+  if (!context.auth.token.phone_number ||
+      accountSnap.get("mobileE164") !== context.auth.token.phone_number) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "You can update availability only for your own Delivery Partner account.",
+    );
+  }
+
+  const profile = profileSnap.data() || {};
+  if ((profile.accountId && profile.accountId !== accountId) ||
+      (profile.profileId && profile.profileId !== profileId) ||
+      profile.role !== "partner" || profile.partnerType !== "deliveryPartner") {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "This profile is not a Delivery Partner profile.",
+    );
+  }
+  const activeAndApproved = profile.status === "active" &&
+    profile.operationalStatus === "active" && profile.activationStatus === "active" &&
+    profile.approvalStatus === "approved" && profile.kycStatus === "verified";
+  if (available && !activeAndApproved) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Only an approved, active, verified Delivery Partner can accept work.",
+    );
+  }
+
+  const updates = {
+    availabilityStatus: available ? "available" : "unavailable",
+    availabilityUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    availabilityUpdatedByUid: context.auth.uid,
+    garmentCareDeliveryAvailable: available,
+    garmentCareDeliveryAvailabilityUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    garmentCareDeliveryAvailabilityUpdatedByUid: context.auth.uid,
+    "partnerData.extensions.deliveryPartner.operational.availableForOrders": available,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (Array.isArray(data.availabilitySlots)) {
+    const days = new Set([
+      "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]);
+    const slots = data.availabilitySlots
+      .filter((slot) => slot && typeof slot === "object")
+      .map((slot) => ({
+        day: String(slot.day || "").toLowerCase(),
+        start: String(slot.start || ""),
+        end: String(slot.end || ""),
+      }))
+      .filter((slot) => days.has(slot.day) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.start) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.end) && slot.start < slot.end);
+    if (slots.length !== data.availabilitySlots.length) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Choose valid working days and hours.",
+      );
+    }
+    updates["partnerData.extensions.deliveryPartner.operational.availabilitySlots"] = slots;
+  }
+  await profileRef.update(updates);
+  return { availabilityStatus: available ? "available" : "unavailable" };
+});
+
+exports.setMeasurementPartnerAvailability = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError("unauthenticated", "Sign in required");
+  }
+  const accountId = String((data && data.accountId) || "").trim();
+  const profileId = String((data && data.profileId) || "").trim();
+  const available = data && data.available;
+  if (!accountId || !profileId || typeof available !== "boolean") {
+    throw new functions.https.HttpsError(
+      "invalid-argument",
+      "A Partner account, profile, and availability choice are required.",
+    );
+  }
+  const accountRef = admin.firestore().collection("accounts").doc(accountId);
+  const profileRef = accountRef.collection("profiles").doc(profileId);
+  const [accountSnap, profileSnap] = await Promise.all([
+    accountRef.get(),
+    profileRef.get(),
+  ]);
+  if (!accountSnap.exists || !profileSnap.exists) {
+    throw new functions.https.HttpsError("not-found", "The Partner profile could not be found.");
+  }
+  if (!context.auth.token.phone_number ||
+      accountSnap.get("mobileE164") !== context.auth.token.phone_number) {
+    throw new functions.https.HttpsError(
+      "permission-denied",
+      "You can update availability only for your own Partner account.",
+    );
+  }
+  const profile = profileSnap.data() || {};
+  if ((profile.accountId && profile.accountId !== accountId) ||
+      (profile.profileId && profile.profileId !== profileId) ||
+      profile.role !== "partner" || profile.partnerType !== "measurementPartner") {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "This profile is not a Measurement Partner profile.",
+    );
+  }
+  const activeAndApproved = profile.status === "active" &&
+    profile.operationalStatus === "active" && profile.activationStatus === "active" &&
+    profile.approvalStatus === "approved" && profile.kycStatus === "verified";
+  if (available && !activeAndApproved) {
+    throw new functions.https.HttpsError(
+      "failed-precondition",
+      "Only an approved, active, verified Measurement Partner can accept work.",
+    );
+  }
+  const updates = {
+    availabilityStatus: available ? "available" : "unavailable",
+    availabilityUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    availabilityUpdatedByUid: context.auth.uid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+  if (Array.isArray(data.availabilitySlots)) {
+    const days = new Set([
+      "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]);
+    const slots = data.availabilitySlots
+      .filter((slot) => slot && typeof slot === "object")
+      .map((slot) => ({
+        day: String(slot.day || "").toLowerCase(),
+        start: String(slot.start || ""),
+        end: String(slot.end || ""),
+      }))
+      .filter((slot) => days.has(slot.day) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.start) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.end) && slot.start < slot.end);
+    if (slots.length !== data.availabilitySlots.length) {
+      throw new functions.https.HttpsError(
+        "invalid-argument",
+        "Choose valid working days and hours.",
+      );
+    }
+    updates["partnerData.extensions.measurementPartner.operational.availabilitySlots"] = slots;
+  }
+  await profileRef.update(updates);
+  return { availabilityStatus: available ? "available" : "unavailable" };
 });
 
 // Production core-tailoring assignment lives separately from the legacy

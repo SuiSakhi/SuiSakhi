@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -10,6 +11,8 @@ import '../../services/order_lifecycle_service.dart';
 import '../../services/partner_workspace_service.dart';
 import '../../widgets/orders/delivery_pin_dialog.dart';
 import '../../widgets/orders/optional_pickup_photo_dialog.dart';
+import '../../widgets/orders/order_stage_progress.dart';
+import '../../widgets/partner/partner_availability_card.dart';
 
 class MeasurementPartnerAssignmentsScreen extends StatefulWidget {
   const MeasurementPartnerAssignmentsScreen({
@@ -30,10 +33,16 @@ class MeasurementPartnerAssignmentsScreen extends StatefulWidget {
 
 class _MeasurementPartnerAssignmentsScreenState
     extends State<MeasurementPartnerAssignmentsScreen> {
-  late Future<List<Map<String, dynamic>>> _assignmentsFuture;
+  late Future<MeasurementPartnerWorkspaceData> _assignmentsFuture;
   late Future<String> _partnerNameFuture;
   String _pinFilter = '';
   String _orderCategory = 'active';
+  bool _availabilityLoaded = false;
+  bool _availabilityReady = false;
+  bool _availableForOrders = false;
+  bool _availabilitySaving = false;
+  String? _availabilityError;
+  List<AvailabilitySlot> _availabilitySlots = const [];
 
   @override
   void initState() {
@@ -46,7 +55,120 @@ class _MeasurementPartnerAssignmentsScreenState
             profileId: widget.profileId,
           ).then((profile) => profile.businessDisplayName);
     _reload();
+    _loadAvailability();
   }
+
+  Future<void> _loadAvailability() async {
+    try {
+      final profile = await FirebaseFirestore.instance
+          .collection('accounts')
+          .doc(widget.accountId)
+          .collection('profiles')
+          .doc(widget.profileId)
+          .get();
+      final data = profile.data() ?? const <String, dynamic>{};
+      final activeAndApproved =
+          data['role'] == 'partner' &&
+          data['partnerType'] == 'measurementPartner' &&
+          data['status'] == 'active' &&
+          data['operationalStatus'] == 'active' &&
+          data['activationStatus'] == 'active' &&
+          data['approvalStatus'] == 'approved' &&
+          data['kycStatus'] == 'verified';
+      if (!mounted) return;
+      setState(() {
+        _availabilityReady = activeAndApproved;
+        _availableForOrders =
+            activeAndApproved && data['availabilityStatus'] == 'available';
+        _availabilitySlots = readPartnerAvailabilitySlots(
+          data,
+          extensionKey: 'measurementPartner',
+        );
+        _availabilityLoaded = true;
+        _availabilityError = null;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _availabilityLoaded = true;
+        _availabilityError = 'Could not load availability. Tap to retry.';
+      });
+    }
+  }
+
+  Future<void> _setAvailability(bool available) =>
+      _saveAvailability(available, _availabilitySlots);
+
+  Future<void> _editAvailabilityHours() async {
+    final slots = await showPartnerAvailabilityHoursDialog(
+      context,
+      title: 'Measurement Partner working hours',
+      initialSlots: _availabilitySlots,
+    );
+    if (slots == null) return;
+    await _saveAvailability(_availableForOrders, slots);
+  }
+
+  Future<void> _saveAvailability(
+    bool available,
+    List<AvailabilitySlot> slots,
+  ) async {
+    if (_availabilitySaving || (available && !_availabilityReady)) return;
+    setState(() {
+      _availabilitySaving = true;
+      _availabilityError = null;
+    });
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('setTailorAvailability')
+          .call({
+            'accountId': widget.accountId,
+            'profileId': widget.profileId,
+            'partnerType': 'measurementPartner',
+            'available': available,
+            'availabilitySlots': slots,
+          });
+      if (!mounted) return;
+      setState(() {
+        _availableForOrders = available;
+        _availabilitySlots = slots;
+        _availabilitySaving = false;
+      });
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() => _availabilitySaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Could not update availability.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _availabilitySaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update availability. Please retry.'),
+        ),
+      );
+    }
+  }
+
+  Widget _availabilityControl() => PartnerAvailabilityCard(
+    title: 'Measurement availability',
+    available: _availableForOrders,
+    loaded: _availabilityLoaded,
+    saving: _availabilitySaving,
+    enabled: _availabilityReady,
+    slots: _availabilitySlots,
+    error:
+        _availabilityError ??
+        (_availabilityLoaded && !_availabilityReady
+            ? 'An approved, active Measurement Partner profile is required.'
+            : null),
+    onRetry: _loadAvailability,
+    onAvailabilityChanged: _setAvailability,
+    onEditHours: _editAvailabilityHours,
+  );
 
   void _reload() {
     _assignmentsFuture = OrderLifecycleService.getMeasurementPartnerAssignments(
@@ -59,6 +181,15 @@ class _MeasurementPartnerAssignmentsScreenState
     setState(_reload);
     await _assignmentsFuture;
   }
+
+  Widget _measurementCategoryChip(String value, String label) => Padding(
+    padding: const EdgeInsets.only(right: 2),
+    child: ChoiceChip(
+      selected: _orderCategory == value,
+      onSelected: (_) => setState(() => _orderCategory = value),
+      label: Text(label),
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -94,7 +225,7 @@ class _MeasurementPartnerAssignmentsScreenState
           ),
         ],
       ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
+      body: FutureBuilder<MeasurementPartnerWorkspaceData>(
         future: _assignmentsFuture,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
@@ -118,14 +249,17 @@ class _MeasurementPartnerAssignmentsScreenState
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final orders = snapshot.data!;
+          final workspace = snapshot.data!;
+          final orders = workspace.assignments;
+          final supportRequests = workspace.supportRequests;
           if (orders.isEmpty) {
             return RefreshIndicator(
               onRefresh: _refresh,
               child: ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 children: [
-                  const SizedBox(height: 180),
+                  _availabilityControl(),
+                  const SizedBox(height: 48),
                   Icon(
                     Icons.straighten_rounded,
                     size: 54,
@@ -154,6 +288,18 @@ class _MeasurementPartnerAssignmentsScreenState
                 .toUpperCase();
             return pin.isEmpty || orderPin.contains(pin);
           }).toList();
+          final visibleOrderIds = visibleOrders
+              .map((order) => order['orderId']?.toString() ?? '')
+              .toSet();
+          final visibleSupportRequests = supportRequests
+              .where(
+                (request) =>
+                    pin.isEmpty ||
+                    visibleOrderIds.contains(
+                      request['linkedOrderId']?.toString() ?? '',
+                    ),
+              )
+              .toList(growable: false);
           final completedMeasurements = visibleOrders
               .where(
                 (order) =>
@@ -177,15 +323,24 @@ class _MeasurementPartnerAssignmentsScreenState
                 order['outboundHandoverPartnerProfileId'] == widget.profileId;
             return measurementTask || inbound || outbound;
           }).toList();
-          final categoryOrders = _orderCategory == 'active'
-              ? activeOrders
-              : completedMeasurements;
+          final videoRequests = activeOrders
+              .where(
+                (order) => order['measurementMethod'] == 'video_appointment',
+              )
+              .toList(growable: false);
+          final categoryOrders = switch (_orderCategory) {
+            'video' => videoRequests,
+            'completed' => completedMeasurements,
+            _ => activeOrders,
+          };
           return RefreshIndicator(
             onRefresh: _refresh,
             child: ListView(
               physics: const AlwaysScrollableScrollPhysics(),
               padding: const EdgeInsets.all(16),
               children: [
+                _availabilityControl(),
+                const SizedBox(height: 14),
                 TextField(
                   keyboardType: TextInputType.number,
                   onChanged: (value) => setState(() => _pinFilter = value),
@@ -207,40 +362,54 @@ class _MeasurementPartnerAssignmentsScreenState
                   ),
                 ),
                 const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: ChoiceChip(
-                        selected: _orderCategory == 'active',
-                        onSelected: (_) =>
-                            setState(() => _orderCategory = 'active'),
-                        label: const SizedBox(
-                          width: double.infinity,
-                          child: Text(
-                            'Active Orders\nCurrent Orders',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _measurementCategoryChip(
+                        'active',
+                        'Active measurement (${activeOrders.length})',
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ChoiceChip(
-                        selected: _orderCategory == 'completed',
-                        onSelected: (_) =>
-                            setState(() => _orderCategory = 'completed'),
-                        label: const SizedBox(
-                          width: double.infinity,
-                          child: Text(
-                            'Completed / History\nOrders',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
+                      const SizedBox(width: 8),
+                      _measurementCategoryChip(
+                        'video',
+                        'Video requests (${videoRequests.length})',
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      _measurementCategoryChip(
+                        'support',
+                        'Help requests (${visibleSupportRequests.length})',
+                      ),
+                      const SizedBox(width: 8),
+                      _measurementCategoryChip(
+                        'completed',
+                        'Completed (${completedMeasurements.length})',
+                      ),
+                    ],
+                  ),
                 ),
-                if (visibleOrders.isEmpty)
+                if (_orderCategory == 'support' &&
+                    visibleSupportRequests.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 36),
+                    child: Text(
+                      'No open Measurement Issue requests are linked to your assigned orders.',
+                      textAlign: TextAlign.center,
+                    ),
+                  )
+                else if (_orderCategory == 'support') ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
+                    child: Text(
+                      'Measurement help requests',
+                      style: AppTextStyles.titleMedium,
+                    ),
+                  ),
+                  ...visibleSupportRequests.map(
+                    (request) =>
+                        _MeasurementSupportRequestCard(request: request),
+                  ),
+                ] else if (visibleOrders.isEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 36),
                     child: Text(
@@ -253,7 +422,9 @@ class _MeasurementPartnerAssignmentsScreenState
                   Padding(
                     padding: const EdgeInsets.only(top: 36),
                     child: Text(
-                      _orderCategory == 'active'
+                      _orderCategory == 'video'
+                          ? 'No video measurement requests are assigned to you.'
+                          : _orderCategory == 'active'
                           ? 'No active or current measurement orders.'
                           : 'No completed measurement history yet.',
                       textAlign: TextAlign.center,
@@ -264,8 +435,10 @@ class _MeasurementPartnerAssignmentsScreenState
                   Padding(
                     padding: const EdgeInsets.fromLTRB(2, 16, 2, 8),
                     child: Text(
-                      _orderCategory == 'active'
-                          ? 'Active Orders / Current Orders'
+                      _orderCategory == 'video'
+                          ? 'Video measurement requests'
+                          : _orderCategory == 'active'
+                          ? 'Active measurement / current orders'
                           : 'Completed / History Orders',
                       style: AppTextStyles.titleMedium,
                     ),
@@ -277,7 +450,7 @@ class _MeasurementPartnerAssignmentsScreenState
                       accountId: widget.accountId,
                       profileId: widget.profileId,
                       onSaved: _refresh,
-                      showActions: _orderCategory == 'active',
+                      showActions: _orderCategory != 'completed',
                     ),
                   ),
                 ],
@@ -285,6 +458,67 @@ class _MeasurementPartnerAssignmentsScreenState
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+class _MeasurementSupportRequestCard extends StatelessWidget {
+  const _MeasurementSupportRequestCard({required this.request});
+
+  final Map<String, dynamic> request;
+
+  String _text(String key, [String fallback = '']) =>
+      (request[key] ?? fallback).toString().trim();
+
+  @override
+  Widget build(BuildContext context) {
+    final createdAt = DateTime.tryParse(_text('createdAt'))?.toLocal();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.support_agent_rounded,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _text('subject', 'Measurement help request'),
+                    style: AppTextStyles.titleMedium,
+                  ),
+                ),
+                Chip(label: Text(_text('status', 'Open'))),
+              ],
+            ),
+            Text(
+              'Order · ${_text('linkedOrderId')} · Customer · ${_text('customerName', 'Customer')}',
+              style: AppTextStyles.bodySmall,
+            ),
+            if (createdAt != null)
+              Text(
+                'Raised · ${MaterialLocalizations.of(context).formatMediumDate(createdAt)}',
+                style: AppTextStyles.bodySmall,
+              ),
+            if (_text('message').isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text(_text('message'), style: AppTextStyles.bodyMedium),
+            ],
+            const SizedBox(height: 6),
+            Text(
+              'Helpdesk status is shown here; replies and resolution are managed by SuiSakhi Helpdesk.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -478,6 +712,28 @@ class _MeasurementAssignmentCard extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+            OrderStageProgress(
+              stages: _hasMeasurementTask
+                  ? const ['Assigned', 'Scheduled', 'Visit', 'Submitted']
+                  : const ['Assigned', 'Collect', 'Return', 'Done'],
+              currentStep: _hasMeasurementTask
+                  ? _measurementCompleted
+                        ? 3
+                        : appointment == null
+                        ? 0
+                        : appointment.isBefore(DateTime.now())
+                        ? 2
+                        : 1
+                  : _measurementCompleted
+                  ? 3
+                  : _text('outboundHandoverStatus') == 'in_transit'
+                  ? 2
+                  : _text('outboundHandoverStatus') == 'assigned'
+                  ? 2
+                  : _text('inboundPickupStatus') == 'assigned'
+                  ? 1
+                  : 0,
             ),
             const SizedBox(height: 8),
             Text(

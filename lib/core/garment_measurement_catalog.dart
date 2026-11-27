@@ -78,21 +78,93 @@ class GarmentMeasurementCatalog {
     return all[number - 1];
   }
 
+  /// Resolves a stored measurement label to the universal chart field.
+  /// Older records use short labels such as `chest`, `height`, or `inseam`,
+  /// while current customer references use the numbered catalog key.
+  static GarmentMeasurementSpec? forAnyKey(String key) {
+    final direct = forKey(key);
+    if (direct != null) return direct;
+
+    final normalized = key.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+    if (normalized.isEmpty) return null;
+
+    if (normalized.contains('necktoheel') ||
+        normalized == 'height' ||
+        normalized == 'totalheight') {
+      return all[6];
+    }
+    if (normalized.contains('necktoaboveknee')) return all[7];
+    if (normalized.contains('abovekneetoankle') ||
+        normalized == 'inseam' ||
+        normalized == 'insideleg') {
+      return all[8];
+    }
+    if (normalized.contains('armlength') || normalized == 'sleevelength') {
+      return all[9];
+    }
+    if (normalized.contains('shoulderseam')) return all[10];
+    if (normalized.contains('armhole') || normalized.contains('armscye')) {
+      return all[11];
+    }
+    if (normalized.contains('bicep') || normalized.contains('upperarm')) {
+      return all[12];
+    }
+    if (normalized.contains('forearm')) return all[13];
+    if (normalized.contains('wrist')) return all[14];
+    if (normalized.contains('vneck') || normalized.contains('neckdepth')) {
+      return all[15];
+    }
+    if (normalized.contains('shouldertowaist')) return all[16];
+    if (normalized.contains('waisttoaboveknee') ||
+        normalized.contains('kurtitoplength') ||
+        normalized == 'length' ||
+        normalized == 'garmentlength') {
+      return all[17];
+    }
+    if (normalized.contains('shoulderwidth') || normalized == 'shoulder') {
+      return all[18];
+    }
+    if (normalized.contains('upperback')) return all[19];
+    if (normalized.contains('midback')) return all[20];
+    if (normalized.contains('waistback')) return all[21];
+    if (normalized.contains('underbust')) return all[3];
+    if (normalized.contains('overbust') || normalized.contains('upperbust')) {
+      return all[1];
+    }
+    if (normalized.contains('bust') || normalized == 'chest') return all[2];
+    if (normalized.contains('hip')) return all[5];
+    if (normalized.contains('waist')) return all[4];
+    if (normalized == 'neck' || normalized.contains('neckcircumference')) {
+      return all[0];
+    }
+    return null;
+  }
+
   static Set<int> recommendedNumbers(String dressType) {
     final type = dressType.toLowerCase();
     if (type.contains('blouse') || type.contains('choli')) {
       return {1, 2, 3, 4, 5, 11, 12, 13, 14, 15, 16};
     }
-    if (type.contains('kurti') || type.contains('kameez')) {
+    if (type.contains('anarkali')) {
+      return {1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 16, 17, 18};
+    }
+    if (type.contains('kurti') ||
+        type.contains('kurta') ||
+        type.contains('kameez') ||
+        type.contains('tunic') ||
+        type.contains('top')) {
       return {1, 2, 3, 4, 5, 6, 10, 11, 12, 16, 17, 18};
     }
-    if (type.contains('salwar') ||
-        type.contains('churidar') ||
-        type.contains('palazzo') ||
-        type.contains('pant')) {
-      return {5, 6, 9, 10, 13, 14, 15};
+    if (type.contains('salwar') || type.contains('churidar')) {
+      return {1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18};
     }
-    if (type.contains('lehenga')) return {5, 6, 17, 18, 20, 22};
+    if (type.contains('palazzo') || type.contains('pant')) {
+      return {5, 6, 9};
+    }
+    if (type.contains('lehenga')) {
+      return {1, 2, 3, 4, 5, 6, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 20, 22};
+    }
+    if (type.contains('skirt')) return {5, 6, 8, 9, 20, 22};
     if (type.contains('gown') || type.contains('dress')) {
       return {1, 2, 3, 5, 6, 7, 17, 18};
     }

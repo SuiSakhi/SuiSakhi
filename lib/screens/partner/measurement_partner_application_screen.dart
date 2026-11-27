@@ -13,6 +13,7 @@ import '../../models/operating_schedule.dart';
 import '../../models/partner_application.dart';
 import '../../models/partner_capability_selection.dart';
 import '../../services/measurement_partner_application_service.dart';
+import '../../widgets/partner/partner_agreement_acceptance_dialog.dart';
 import '../../services/partner_service.dart';
 import '../../widgets/address/address_form_section.dart';
 import '../../widgets/capability/capability_multi_selector.dart';
@@ -368,7 +369,9 @@ class _MeasurementPartnerApplicationScreenState
           (_emailController.text.trim().isEmpty
               ? profileEmail
               : _emailController.text);
-      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
+      _additionalContactNumbersController.text = application
+          .additionalContactNumbers
+          .join(', ');
 
       // MEASUREMENT PARTNER EXTENSION:
       // Load the complete saved extension after common cross-category reuse.
@@ -387,7 +390,8 @@ class _MeasurementPartnerApplicationScreenState
       setState(() {
         _accountId = accountId;
         _customerProfileId = customerProfileId;
-        _application = application; _loadingFoundation = false;
+        _application = application;
+        _loadingFoundation = false;
         _foundationLoadError = null;
       });
     } catch (error) {
@@ -452,8 +456,9 @@ class _MeasurementPartnerApplicationScreenState
     }
     if (_additionalContactNumbersController.text.trim().isEmpty &&
         application.additionalContactNumbers.isNotEmpty) {
-      _additionalContactNumbersController.text =
-          application.additionalContactNumbers.join(', ');
+      _additionalContactNumbersController.text = application
+          .additionalContactNumbers
+          .join(', ');
     }
 
     // TAILOR-SPECIFIC SOURCE ADAPTER:
@@ -1217,6 +1222,22 @@ class _MeasurementPartnerApplicationScreenState
       return;
     }
 
+    Map<String, dynamic>? legalAcceptance;
+    try {
+      legalAcceptance = await PartnerAgreementAcceptanceDialog.show(
+        context,
+        application,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      final message = error.toString().replaceFirst('Bad state: ', '');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+      return;
+    }
+    if (legalAcceptance == null || !mounted) return;
+
     setState(() {
       _saving = true;
     });
@@ -1256,6 +1277,7 @@ class _MeasurementPartnerApplicationScreenState
         applicationId: application.id,
         accountId: accountId,
         customerProfileId: customerProfileId,
+        legalAcceptance: legalAcceptance,
       );
 
       if (!mounted) {
@@ -1380,11 +1402,14 @@ class _MeasurementPartnerApplicationScreenState
         return;
       }
 
-      _application = newApplication; _contactNameController.text = newApplication.contactName ?? '';
+      _application = newApplication;
+      _contactNameController.text = newApplication.contactName ?? '';
       _businessNameController.text = newApplication.businessName ?? '';
       _mobileController.text = newApplication.mobileE164 ?? '';
       _emailController.text = newApplication.email ?? '';
-      _additionalContactNumbersController.text = newApplication.additionalContactNumbers.join(', ');
+      _additionalContactNumbersController.text = newApplication
+          .additionalContactNumbers
+          .join(', ');
 
       setState(() {
         _saving = false;
@@ -1667,7 +1692,8 @@ class _MeasurementPartnerApplicationScreenState
               businessNameController: _businessNameController,
               mobileController: _mobileController,
               emailController: _emailController,
-                  additionalContactNumbersController: _additionalContactNumbersController,
+              additionalContactNumbersController:
+                  _additionalContactNumbersController,
               editable: _isEditable,
               description:
                   'These details will be used for the Measurement Partner '

@@ -12,6 +12,7 @@ import '../models/delivery_partner_details.dart';
 import '../models/fabric_supplier_partner_details.dart';
 import '../models/printing_partner_details.dart';
 import '../models/rental_partner_details.dart';
+import 'partner_agreement_service.dart';
 
 class PartnerService {
   PartnerService._();
@@ -145,8 +146,9 @@ class PartnerService {
         reusedPartnerDetails?['mobileE164']?.toString() ?? mobileE164,
       ),
       additionalContactNumbers: _normalizedContactNumbers(
-        (reusedPartnerDetails?['additionalContactNumbers'] as List?)
-                ?.map((value) => value.toString()) ??
+        (reusedPartnerDetails?['additionalContactNumbers'] as List?)?.map(
+              (value) => value.toString(),
+            ) ??
             additionalContactNumbers,
         reusedPartnerDetails?['mobileE164']?.toString() ?? mobileE164,
       ),
@@ -757,6 +759,7 @@ class PartnerService {
     required String applicationId,
     required String accountId,
     required String customerProfileId,
+    required Map<String, dynamic> legalAcceptance,
   }) async {
     final user = FirebaseAuth.instance.currentUser;
 
@@ -788,10 +791,36 @@ class PartnerService {
         throw StateError('This partner application cannot be submitted again.');
       }
 
+      await _validateLegalAcceptance(
+        transaction: transaction,
+        application: application,
+        legalAcceptance: legalAcceptance,
+      );
+
+      final verifiedPhone = user.phoneNumber?.trim();
+      final acceptanceRecord = <String, dynamic>{
+        'schemaVersion': 1,
+        'applicationId': application.id,
+        'accountId': accountId,
+        'customerProfileId': customerProfileId,
+        'partnerType': application.partnerType.name,
+        'acceptedByUid': user.uid,
+        'verifiedLoginPhone': verifiedPhone,
+        'partnerLegalName': legalAcceptance['partnerLegalName'],
+        'signatoryName': legalAcceptance['signatoryName'],
+        'signatoryCapacity': legalAcceptance['signatoryCapacity'],
+        'consentText': legalAcceptance['consentText'],
+        'acceptedDocumentIds': legalAcceptance['acceptedDocumentIds'],
+        'documents': legalAcceptance['documents'],
+        'joiningSecurityDeposit': legalAcceptance['joiningSecurityDeposit'],
+        'acceptedAt': FieldValue.serverTimestamp(),
+      };
+
       transaction.set(document, {
         'status': PartnerApplicationStatus.submitted.name,
         'submittedAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),
+        'legalAcceptance': acceptanceRecord,
 
         // A corrected rejected application starts a fresh review.
         'reviewedAt': null,
@@ -800,6 +829,111 @@ class PartnerService {
         'rejectionReason': null,
       }, SetOptions(merge: true));
     });
+  }
+
+  static Future<void> _validateLegalAcceptance({
+    required Transaction transaction,
+    required PartnerApplication application,
+    required Map<String, dynamic> legalAcceptance,
+  }) async {
+    final requiredIds = PartnerAgreementService.requiredPackIds(
+      application.partnerType,
+    );
+    final consentText = legalAcceptance['consentText']?.toString().trim();
+    final legalName = legalAcceptance['partnerLegalName']?.toString().trim();
+    final signatoryName = legalAcceptance['signatoryName']?.toString().trim();
+    final capacity = legalAcceptance['signatoryCapacity']?.toString().trim();
+    final rawAcceptedIds = legalAcceptance['acceptedDocumentIds'];
+    final rawDocuments = legalAcceptance['documents'];
+    final rawDeposit = legalAcceptance['joiningSecurityDeposit'];
+    final payoutConfigSnapshot = await transaction.get(
+      _db.doc('config/payouts'),
+    );
+    final configuredDeposit =
+        (payoutConfigSnapshot.data()?['partnerJoiningSecurityDeposit'] as num?)
+            ?.toDouble() ??
+        0.0;
+    final submittedDeposit = rawDeposit is Map
+        ? (rawDeposit['amount'] as num?)?.toDouble()
+        : null;
+    final depositTermsAccepted =
+        rawDeposit is Map && rawDeposit['accepted'] == true;
+    final expectedDepositTerms = configuredDeposit > 0
+        ? 'One-time Partner joining security deposit: '
+              '₹${configuredDeposit.toStringAsFixed(2)}. This deposit is refundable after the Partner discontinues service with SuiSakhi.'
+        : 'No Partner joining security deposit is currently charged.';
+    final expectedCollectionStatus = configuredDeposit > 0
+        ? 'notCollected'
+        : 'notRequired';
+    if (legalName?.isNotEmpty != true ||
+        signatoryName?.isNotEmpty != true ||
+        capacity?.isNotEmpty != true ||
+        consentText?.isNotEmpty != true ||
+        rawAcceptedIds is! Iterable ||
+        rawDocuments is! Iterable ||
+        !configuredDeposit.isFinite ||
+        configuredDeposit < 0 ||
+        submittedDeposit == null ||
+        (submittedDeposit - configuredDeposit).abs() > 0.001 ||
+        (rawDeposit is Map &&
+            (rawDeposit['currency'] != 'INR' ||
+                rawDeposit['termsText'] != expectedDepositTerms ||
+                rawDeposit['collectionStatus'] != expectedCollectionStatus)) ||
+        rawDeposit is! Map ||
+        (configuredDeposit > 0 && !depositTermsAccepted)) {
+      throw StateError('Complete the Partner agreement acceptance first.');
+    }
+
+    final acceptedIds = rawAcceptedIds.map((value) => value.toString()).toSet();
+    if (acceptedIds.length != requiredIds.length ||
+        !requiredIds.every(acceptedIds.contains)) {
+      throw StateError('Accept every agreement required for this category.');
+    }
+
+    final documentsByPackId = <String, Map<String, dynamic>>{};
+    for (final rawDocument in rawDocuments) {
+      if (rawDocument is! Map) continue;
+      final snapshot = Map<String, dynamic>.from(rawDocument);
+      final packId = snapshot['sourcePackId']?.toString() ?? '';
+      if (packId.isNotEmpty && requiredIds.contains(packId)) {
+        documentsByPackId[packId] = snapshot;
+      }
+    }
+    if (documentsByPackId.length != requiredIds.length) {
+      throw StateError('Review and accept every required agreement again.');
+    }
+
+    // Confirm the accepted text is still the current Admin-published version.
+    // These reads share the submission transaction with the status change.
+    for (final packId in requiredIds) {
+      final accepted = documentsByPackId[packId]!;
+      final templateId = accepted['templateId']?.toString() ?? '';
+      if (templateId.isEmpty || accepted['accepted'] != true) {
+        throw StateError('Review and accept every required agreement again.');
+      }
+      final templateSnapshot = await transaction.get(
+        _db.collection('template_security').doc(templateId),
+      );
+      final template = templateSnapshot.data();
+      final audiences = template?['audiences'];
+      final partnerCategories = template?['partnerCategories'];
+      final currentBody = template?['body']?.toString();
+      if (!templateSnapshot.exists ||
+          template?['sourcePackId'] != packId ||
+          template?['isPublished'] != true ||
+          template?['legalReviewComplete'] != true ||
+          audiences is! Iterable ||
+          !audiences.contains('partner') ||
+          partnerCategories is! Iterable ||
+          (partnerCategories.isNotEmpty &&
+              !partnerCategories.contains(application.partnerType.name)) ||
+          currentBody != accepted['bodySnapshot'] ||
+          template?['title'] != accepted['title']) {
+        throw StateError(
+          'A Partner agreement changed or is no longer published. Please review it again.',
+        );
+      }
+    }
   }
 
   /// Moves a submitted Partner application into Admin review.
@@ -1794,7 +1928,9 @@ class PartnerService {
     profiles.sort((left, right) {
       DateTime changedAt(Map<String, dynamic> data) {
         final value = data['updatedAt'] ?? data['createdAt'];
-        return value is Timestamp ? value.toDate() : DateTime.fromMillisecondsSinceEpoch(0);
+        return value is Timestamp
+            ? value.toDate()
+            : DateTime.fromMillisecondsSinceEpoch(0);
       }
 
       return changedAt(right.data()).compareTo(changedAt(left.data()));
@@ -1809,7 +1945,9 @@ class PartnerService {
     final sourceWorkshop = categoryWorkshop.isNotEmpty
         ? categoryWorkshop
         : _stringMap(partnerData['workshopDetails']);
-    final sourceServiceLocation = _stringMap(sourceExtension['serviceLocation']);
+    final sourceServiceLocation = _stringMap(
+      sourceExtension['serviceLocation'],
+    );
     final sourceAddress = _stringMap(sourceServiceLocation['address']);
     final nestedWorkshopAddress = _stringMap(sourceWorkshop['businessAddress']);
     final workshopAddress = nestedWorkshopAddress.isNotEmpty
@@ -1821,8 +1959,8 @@ class PartnerService {
     final legacyBusinessAddress = workshopAddress.isNotEmpty
         ? workshopAddress
         : _stringMap(partnerData['businessAddress']).isNotEmpty
-            ? _stringMap(partnerData['businessAddress'])
-            : profileAddress;
+        ? _stringMap(partnerData['businessAddress'])
+        : profileAddress;
     final sourceSchedule = _stringMap(sourceExtension['operatingSchedule']);
 
     dynamic firstValue(Iterable<dynamic> values) {
@@ -1838,8 +1976,10 @@ class PartnerService {
     ]);
     final areaList = serviceAreas is List
         ? serviceAreas.map((value) => value.toString()).toList()
-        : sourceServiceLocation['serviceArea']?.toString().split(RegExp(r'[\s,;]+')) ??
-            const <String>[];
+        : sourceServiceLocation['serviceArea']?.toString().split(
+                RegExp(r'[\s,;]+'),
+              ) ??
+              const <String>[];
     final sharedWorkshop = <String, dynamic>{
       'addressLine1': firstValue([
         sourceWorkshop['addressLine1'],
@@ -1911,7 +2051,8 @@ class PartnerService {
         legacyBusinessAddress['lon'],
       ]),
       'serviceAreaPincodes': areaList,
-      'operatingDays': firstValue([
+      'operatingDays':
+          firstValue([
             sourceWorkshop['operatingDays'],
             sourceSchedule['operatingDays'],
           ]) ??
@@ -1959,10 +2100,14 @@ class PartnerService {
     }
 
     return {
-      'businessName': profile['businessName'] ?? profile['shopName'] ?? profile['displayName'],
+      'businessName':
+          profile['businessName'] ??
+          profile['shopName'] ??
+          profile['displayName'],
       'contactName': profile['contactName'],
       'mobileE164': profile['mobileE164'] ?? profile['phone'],
-      'additionalContactNumbers': profile['additionalContactNumbers'] ??
+      'additionalContactNumbers':
+          profile['additionalContactNumbers'] ??
           profile['alternateContactNumbers'] ??
           const <String>[],
       'email': profile['email'],
@@ -2031,11 +2176,7 @@ class PartnerService {
 
       if (basicDetailsPayload.isNotEmpty) {
         basicDetailsPayload['updatedAt'] = FieldValue.serverTimestamp();
-        transaction.set(
-          document,
-          basicDetailsPayload,
-          SetOptions(merge: true),
-        );
+        transaction.set(document, basicDetailsPayload, SetOptions(merge: true));
       }
     });
 
@@ -2060,19 +2201,15 @@ class PartnerService {
         return;
       }
 
-      transaction.set(
-        document,
-        {
-          'onboardingData': _mergeMissingPartnerValues(
-            current.onboardingData,
-            sourceOnboarding,
-          ),
-          'onboardingUpdatedByUid': uid,
-          'onboardingUpdatedAt': FieldValue.serverTimestamp(),
-          'updatedAt': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+      transaction.set(document, {
+        'onboardingData': _mergeMissingPartnerValues(
+          current.onboardingData,
+          sourceOnboarding,
+        ),
+        'onboardingUpdatedByUid': uid,
+        'onboardingUpdatedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
     });
 
     final refreshed = await document.get();
@@ -2088,8 +2225,7 @@ class PartnerService {
 
   static bool _hasMissingPartnerValues(dynamic current, dynamic source) {
     if (source is! Map) {
-      return _isMissingPartnerValue(current) &&
-          !_isMissingPartnerValue(source);
+      return _isMissingPartnerValue(current) && !_isMissingPartnerValue(source);
     }
     final currentMap = current is Map ? current : const <dynamic, dynamic>{};
     for (final entry in source.entries) {
@@ -2125,9 +2261,8 @@ class PartnerService {
     return merged;
   }
 
-  static Map<String, dynamic> _stringMap(dynamic value) => value is Map
-      ? Map<String, dynamic>.from(value)
-      : <String, dynamic>{};
+  static Map<String, dynamic> _stringMap(dynamic value) =>
+      value is Map ? Map<String, dynamic>.from(value) : <String, dynamic>{};
 
   static void _validateCustomerOwnership({
     required PartnerApplication application,
@@ -2177,9 +2312,8 @@ class PartnerService {
       final normalized = normalize(value);
       if (!RegExp(r'^\+\d{8,15}$').hasMatch(normalized)) continue;
       final digits = normalized.replaceAll(RegExp(r'\D'), '');
-      if (digits == primaryDigits || result.any(
-        (item) => item.replaceAll(RegExp(r'\D'), '') == digits,
-      )) {
+      if (digits == primaryDigits ||
+          result.any((item) => item.replaceAll(RegExp(r'\D'), '') == digits)) {
         continue;
       }
       result.add(normalized);

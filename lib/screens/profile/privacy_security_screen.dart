@@ -6,27 +6,36 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/security_template.dart';
 import '../../services/security_template_service.dart';
 
-class PrivacySecurityScreen extends StatelessWidget {
+class PrivacySecurityScreen extends StatefulWidget {
   const PrivacySecurityScreen({super.key, required this.audience});
 
   final String audience;
 
   @override
+  State<PrivacySecurityScreen> createState() => _PrivacySecurityScreenState();
+}
+
+class _PrivacySecurityScreenState extends State<PrivacySecurityScreen> {
+  String? _partnerCategoryFilter;
+
+  @override
   Widget build(BuildContext context) {
-    final isPartner = audience == 'partner';
+    final isPartner = widget.audience == 'partner';
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Privacy & Security'),
+        title: const Text('Privacy & Legal'),
         backgroundColor: AppColors.background,
         elevation: 0,
       ),
       body: StreamBuilder<List<SecurityTemplate>>(
-        stream: SecurityTemplateService.watchPublishedTemplates(audience),
+        stream: SecurityTemplateService.watchPublishedTemplates(
+          widget.audience,
+        ),
         builder: (context, snapshot) {
           if (snapshot.hasError) {
             debugPrint(
-              'Privacy & Security failed to load for $audience: '
+              'Privacy & Security failed to load for ${widget.audience}: '
               '${snapshot.error}\n${snapshot.stackTrace}',
             );
             return const _Message(
@@ -61,11 +70,150 @@ class PrivacySecurityScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              for (final template in templates)
-                _SecurityDocumentCard(template: template),
+              if (isPartner) ...[
+                Text(
+                  'Find the documents for a partner service category.',
+                  style: AppTextStyles.bodyMedium.copyWith(
+                    color: AppColors.textSecondary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _PartnerCategoryFilters(
+                  templates: templates,
+                  selected: _partnerCategoryFilter,
+                  onSelected: (value) =>
+                      setState(() => _partnerCategoryFilter = value),
+                ),
+                const SizedBox(height: 12),
+              ],
+              ..._groupedDocuments(templates, isPartner),
             ],
           );
         },
+      ),
+    );
+  }
+
+  List<Widget> _groupedDocuments(
+    List<SecurityTemplate> templates,
+    bool isPartner,
+  ) {
+    final filtered = templates.where((template) {
+      final selected = _partnerCategoryFilter;
+      if (!isPartner ||
+          selected == null ||
+          template.partnerCategories.isEmpty) {
+        return true;
+      }
+      return template.partnerCategories.contains(selected);
+    }).toList();
+    final sectionOrder = isPartner
+        ? const [
+            'account_privacy',
+            'service_safety',
+            'partner_terms',
+            'ip_support',
+            'general',
+          ]
+        : const ['account_privacy', 'service_safety', 'ip_support', 'general'];
+    final result = <Widget>[];
+    for (final section in sectionOrder) {
+      final documents = filtered
+          .where((template) => template.section == section)
+          .toList();
+      if (documents.isEmpty) continue;
+      result
+        ..add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+            child: Text(
+              SecurityTemplateService.sectionLabel(section).toUpperCase(),
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        )
+        ..addAll(
+          documents.map(
+            (template) => _SecurityDocumentCard(template: template),
+          ),
+        );
+    }
+    final unknownSections = filtered
+        .map((template) => template.section)
+        .where((section) => !sectionOrder.contains(section))
+        .toSet();
+    for (final section in unknownSections) {
+      final documents = filtered
+          .where((template) => template.section == section)
+          .toList();
+      result
+        ..add(
+          Padding(
+            padding: const EdgeInsets.fromLTRB(0, 12, 0, 8),
+            child: Text(
+              SecurityTemplateService.sectionLabel(section).toUpperCase(),
+              style: AppTextStyles.labelMedium.copyWith(
+                color: AppColors.textSecondary,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4,
+              ),
+            ),
+          ),
+        )
+        ..addAll(
+          documents.map(
+            (template) => _SecurityDocumentCard(template: template),
+          ),
+        );
+    }
+    return result;
+  }
+}
+
+class _PartnerCategoryFilters extends StatelessWidget {
+  const _PartnerCategoryFilters({
+    required this.templates,
+    required this.selected,
+    required this.onSelected,
+  });
+
+  final List<SecurityTemplate> templates;
+  final String? selected;
+  final ValueChanged<String?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final available = SecurityTemplateService.partnerCategoryCodes
+        .where(
+          (code) => templates.any(
+            (template) => template.partnerCategories.contains(code),
+          ),
+        )
+        .toList(growable: false);
+    if (available.isEmpty) return const SizedBox.shrink();
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          ChoiceChip(
+            label: const Text('All'),
+            selected: selected == null,
+            onSelected: (_) => onSelected(null),
+          ),
+          const SizedBox(width: 8),
+          for (final code in available) ...[
+            ChoiceChip(
+              label: Text(SecurityTemplateService.partnerCategoryLabel(code)),
+              selected: selected == code,
+              onSelected: (_) => onSelected(code),
+            ),
+            const SizedBox(width: 8),
+          ],
+        ],
       ),
     );
   }

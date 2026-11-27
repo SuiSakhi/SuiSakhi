@@ -188,7 +188,8 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       _accountId = accountId;
       _customerProfileId = customerProfileId;
-      _application = application; _contactNameController.text =
+      _application = application;
+      _contactNameController.text =
           application.contactName ?? (profileName.isEmpty ? '' : profileName);
 
       _businessNameController.text = application.businessName ?? '';
@@ -197,7 +198,9 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
 
       _emailController.text =
           application.email ?? (profileEmail.isEmpty ? '' : profileEmail);
-      _additionalContactNumbersController.text = application.additionalContactNumbers.join(', ');
+      _additionalContactNumbersController.text = application
+          .additionalContactNumbers
+          .join(', ');
 
       _loadWorkshopDetails(application.workshopDetails);
 
@@ -583,7 +586,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
       businessNameController: _businessNameController,
       mobileController: _mobileController,
       emailController: _emailController,
-                  additionalContactNumbersController: _additionalContactNumbersController,
+      additionalContactNumbersController: _additionalContactNumbersController,
       editable: _isEditable,
       description: 'These details will be used for the Tailor application.',
       businessNameLabel: 'Business or workshop name',
@@ -1042,7 +1045,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
     );
   }
 
-  Future<void> _submitForReview() async {
+  Future<void> _submitForReview(Map<String, dynamic> legalAcceptance) async {
     if (_saving) {
       return;
     }
@@ -1105,6 +1108,7 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         applicationId: application.id,
         accountId: accountId,
         customerProfileId: customerProfileId,
+        legalAcceptance: legalAcceptance,
       );
 
       if (!mounted) {
@@ -1189,11 +1193,14 @@ class _TailorApplicationScreenState extends State<TailorApplicationScreen> {
         return;
       }
 
-      _application = newApplication; _contactNameController.text = newApplication.contactName ?? '';
+      _application = newApplication;
+      _contactNameController.text = newApplication.contactName ?? '';
       _businessNameController.text = newApplication.businessName ?? '';
       _mobileController.text = newApplication.mobileE164 ?? '';
       _emailController.text = newApplication.email ?? '';
-      _additionalContactNumbersController.text = newApplication.additionalContactNumbers.join(', ');
+      _additionalContactNumbersController.text = newApplication
+          .additionalContactNumbers
+          .join(', ');
 
       _loadWorkshopDetails(newApplication.workshopDetails);
 

@@ -9,6 +9,7 @@ import '../../core/constants/app_colors.dart';
 import '../../models/address_details.dart';
 import '../../models/prd_catalog.dart';
 import '../../services/garment_care_service.dart';
+import '../../services/quick_care_pricing_service.dart';
 import '../../services/order_service.dart';
 
 /// Customer booking flow for Quick Care & Home Services.
@@ -35,10 +36,15 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
   String _slot = 'Next day — 10am–2pm';
   bool _express = false;
   bool _submitting = false;
+  bool _loadingPricing = true;
+  Map<String, double> _customerRates = const {};
+  Map<String, double> _partnerRates = const {};
+  double _customerVisitFee = 49;
+  double _partnerVisitFee = 49;
+  double _customerExpressFee = 99;
+  double _partnerExpressFee = 99;
+  String? _pricingVersionId;
   Timer? _sameDayExpressCutoffTimer;
-
-  static const _visitFee = 49.0;
-  static const _expressFee = 99.0;
   static const _slots = [
     'Same day (Express) — 2pm–6pm',
     'Next day — 10am–2pm',
@@ -50,7 +56,47 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
   void initState() {
     super.initState();
     _loadAddresses();
+    _loadPricing();
     _scheduleSameDayExpressCutoff();
+  }
+
+  Future<void> _loadPricing() async {
+    try {
+      final policy = await QuickCarePricingService.load();
+      final rates = Map<String, dynamic>.from(
+        policy['serviceRates'] as Map? ?? const {},
+      );
+      if (!mounted) return;
+      setState(() {
+        _customerRates = {
+          for (final entry in rates.entries)
+            if (entry.value is Map &&
+                (entry.value as Map)['customerAmount'] is num)
+              entry.key: ((entry.value as Map)['customerAmount'] as num)
+                  .toDouble(),
+        };
+        _partnerRates = {
+          for (final entry in rates.entries)
+            if (entry.value is Map &&
+                (entry.value as Map)['partnerAmount'] is num)
+              entry.key: ((entry.value as Map)['partnerAmount'] as num)
+                  .toDouble(),
+        };
+        _customerVisitFee =
+            (policy['homeVisitCustomerAmount'] as num?)?.toDouble() ?? 49;
+        _partnerVisitFee =
+            (policy['homeVisitPartnerAmount'] as num?)?.toDouble() ?? 49;
+        _customerExpressFee =
+            (policy['expressCustomerAmount'] as num?)?.toDouble() ?? 99;
+        _partnerExpressFee =
+            (policy['expressPartnerAmount'] as num?)?.toDouble() ?? 99;
+        _pricingVersionId = policy['versionId']?.toString();
+        _loadingPricing = false;
+      });
+    } catch (_) {
+      // The static catalogue estimate remains available if pricing cannot load.
+      if (mounted) setState(() => _loadingPricing = false);
+    }
   }
 
   void _scheduleSameDayExpressCutoff() {
@@ -200,16 +246,34 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
     for (final id in _selected) {
       final service = QuickFixService.byId(id);
       if (service != null && !service.requiresPartnerQuote) {
-        serviceTotal += service.midEstimate;
+        serviceTotal += _customerRates[service.id] ?? service.midEstimate;
       }
     }
     if (_selected.isEmpty) return 0;
     return serviceTotal +
-        _visitFee +
-        ((_express || _isExpressSlot) ? _expressFee : 0);
+        _customerVisitFee +
+        ((_express || _isExpressSlot) ? _customerExpressFee : 0);
+  }
+
+  double get _partnerEstimate {
+    var total = 0.0;
+    for (final id in _selected) {
+      final service = QuickFixService.byId(id);
+      if (service != null && !service.requiresPartnerQuote) {
+        total += _partnerRates[id] ?? service.midEstimate;
+      }
+    }
+    if (_selected.isEmpty) return 0;
+    return total +
+        _partnerVisitFee +
+        ((_express || _isExpressSlot) ? _partnerExpressFee : 0);
   }
 
   Future<void> _submit() async {
+    if (_loadingPricing) {
+      _showMessage('Pricing is loading. Please wait a moment and try again.');
+      return;
+    }
     if (_isExpressSlot && !_sameDayExpressAvailable) {
       setState(() => _slot = _slots[1]);
       _showMessage(
@@ -238,6 +302,8 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
     final id = await OrderService.createQuickFixOrder(
       serviceIds: _selected.toList(),
       estimatedTotal: _estimate,
+      partnerPayoutEstimate: _partnerEstimate,
+      pricingVersionId: _pricingVersionId,
       notes: _notes.text.trim(),
       slotLabel: _slot,
       addressLine: _address.text.trim(),
@@ -329,7 +395,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                         trailing: Text(
                           service.requiresPartnerQuote
                               ? 'Quote'
-                              : '₹${service.minInr}–₹${service.maxInr}',
+                              : '₹${(_customerRates[service.id] ?? service.midEstimate).toStringAsFixed(0)}',
                           style: const TextStyle(
                             color: AppColors.primary,
                             fontWeight: FontWeight.w700,
@@ -337,15 +403,19 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                         ),
                       ),
                     ),
-                    const ListTile(
+                    ListTile(
                       contentPadding: EdgeInsets.zero,
                       title: Text('Home visit'),
-                      trailing: Text('₹49'),
+                      trailing: Text(
+                        '₹${_customerVisitFee.toStringAsFixed(0)}',
+                      ),
                     ),
-                    const ListTile(
+                    ListTile(
                       contentPadding: EdgeInsets.zero,
                       title: Text('Express scheduling'),
-                      trailing: Text('+₹99'),
+                      trailing: Text(
+                        '+₹${_customerExpressFee.toStringAsFixed(0)}',
+                      ),
                     ),
                     Text(
                       'These are estimates. The partner confirms any final quote before starting work. You pay after the service is completed.',
@@ -833,7 +903,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                             Text(
                               service.requiresPartnerQuote
                                   ? 'Partner quote after assessment'
-                                  : 'Estimated price: ₹${service.minInr} – ₹${service.maxInr}',
+                                  : 'Estimated price: ₹${(_customerRates[service.id] ?? service.midEstimate).toStringAsFixed(0)}',
                               style: GoogleFonts.poppins(
                                 color: AppColors.textSecondary,
                                 fontSize: 9.5,
@@ -1038,7 +1108,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'Express fee (+₹99)',
+                'Express fee (+₹${_customerExpressFee.toStringAsFixed(0)})',
                 style: GoogleFonts.poppins(
                   fontWeight: FontWeight.w700,
                   fontSize: 11,
@@ -1289,8 +1359,8 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                   _selected.isEmpty
                       ? 'Choose services to see the estimate'
                       : _needsQuote
-                      ? 'Partner quote pending · visit ₹49'
-                      : 'Service + visit ₹49${(_express || _isExpressSlot) ? ' + express ₹99' : ''}',
+                      ? 'Partner quote pending · visit ₹${_customerVisitFee.toStringAsFixed(0)}'
+                      : 'Service + visit ₹${_customerVisitFee.toStringAsFixed(0)}${(_express || _isExpressSlot) ? ' + express ₹${_customerExpressFee.toStringAsFixed(0)}' : ''}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: GoogleFonts.poppins(
@@ -1316,7 +1386,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
             child: SizedBox(
               height: 48,
               child: FilledButton(
-                onPressed: _submitting ? null : _submit,
+                onPressed: _submitting || _loadingPricing ? null : _submit,
                 style: FilledButton.styleFrom(
                   backgroundColor: AppColors.primary,
                   foregroundColor: Colors.white,
@@ -1327,7 +1397,7 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    if (_submitting)
+                    if (_submitting || _loadingPricing)
                       const SizedBox.square(
                         dimension: 17,
                         child: CircularProgressIndicator(
@@ -1340,7 +1410,9 @@ class _QuickFixScreenState extends State<QuickFixScreen> {
                     const SizedBox(width: 7),
                     Flexible(
                       child: Text(
-                        'Submit Service Request',
+                        _loadingPricing
+                            ? 'Loading prices...'
+                            : 'Submit Service Request',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.poppins(

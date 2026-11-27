@@ -6,8 +6,41 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/partner_application.dart';
 import 'package:go_router/go_router.dart';
 
-class OwnerPartnerApplicationsScreen extends StatelessWidget {
+class OwnerPartnerApplicationsScreen extends StatefulWidget {
   const OwnerPartnerApplicationsScreen({super.key});
+
+  @override
+  State<OwnerPartnerApplicationsScreen> createState() =>
+      _OwnerPartnerApplicationsScreenState();
+}
+
+class _OwnerPartnerApplicationsScreenState
+    extends State<OwnerPartnerApplicationsScreen> {
+  PartnerType? _selectedPartnerType;
+  PartnerApplicationStatus? _selectedStatus;
+
+  static const _visibleStatuses = [
+    PartnerApplicationStatus.submitted,
+    PartnerApplicationStatus.underReview,
+    PartnerApplicationStatus.changesRequested,
+    PartnerApplicationStatus.approved,
+    PartnerApplicationStatus.rejected,
+    PartnerApplicationStatus.suspended,
+    PartnerApplicationStatus.inactive,
+  ];
+
+  Query<Map<String, dynamic>> get _applicationsQuery => FirebaseFirestore
+      .instance
+      .collection('partner_applications')
+      .where('status', whereIn: _visibleStatuses.map((s) => s.name).toList());
+
+  String _partnerTypeCategoryLabel(PartnerType type) => switch (type) {
+    PartnerType.tailor => 'Tailoring',
+    PartnerType.measurementPartner => 'Measurements',
+    PartnerType.garmentCare => 'Garment Care',
+    PartnerType.doorstepServices => 'Quick Care & Home Services',
+    _ => _PartnerApplicationCard._partnerTypeLabel(type),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -20,19 +53,7 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
         elevation: 0,
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
-        stream: FirebaseFirestore.instance
-            .collection('partner_applications')
-            .where(
-              'status',
-              whereIn: [
-                PartnerApplicationStatus.submitted.name,
-                PartnerApplicationStatus.underReview.name,
-                PartnerApplicationStatus.changesRequested.name,
-                PartnerApplicationStatus.rejected.name,
-                PartnerApplicationStatus.approved.name,
-              ],
-            )
-            .snapshots(),
+        stream: _applicationsQuery.snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
@@ -52,33 +73,45 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
             return _buildEmptyState();
           }
 
+          final categoryApplications = applications
+              .where(
+                (application) =>
+                    _selectedPartnerType == null ||
+                    application.partnerType == _selectedPartnerType,
+              )
+              .toList(growable: false);
+          final visibleApplications = categoryApplications
+              .where(
+                (application) =>
+                    _selectedStatus == null ||
+                    application.status == _selectedStatus,
+              )
+              .toList(growable: false);
+
           return RefreshIndicator(
             onRefresh: () async {
-              await FirebaseFirestore.instance
-                  .collection('partner_applications')
-                  .where(
-                    'status',
-                    whereIn: [
-                      PartnerApplicationStatus.submitted.name,
-                      PartnerApplicationStatus.underReview.name,
-                      PartnerApplicationStatus.changesRequested.name,
-                      PartnerApplicationStatus.rejected.name,
-                      PartnerApplicationStatus.approved.name,
-                    ],
-                  )
-                  .get();
+              await _applicationsQuery.get();
             },
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                _buildSummaryCard(applications),
-                const SizedBox(height: 20),
-                Text('Applications', style: AppTextStyles.headlineMedium),
+                _buildSummaryCard(categoryApplications),
+                const SizedBox(height: 16),
+                _buildPartnerTypeFilters(applications),
                 const SizedBox(height: 12),
-                ...applications.map(
-                  (application) =>
-                      _PartnerApplicationCard(application: application),
+                _buildStatusFilters(categoryApplications),
+                const SizedBox(height: 20),
+                Text(
+                  _selectedStatus == null
+                      ? 'Applications'
+                      : '${_PartnerApplicationCard._statusLabel(_selectedStatus!)} applications',
+                  style: AppTextStyles.headlineMedium,
                 ),
+                const SizedBox(height: 12),
+                if (visibleApplications.isEmpty)
+                  _buildFilteredEmptyState()
+                else
+                  ..._buildGroupedApplications(visibleApplications),
                 const SizedBox(height: 24),
               ],
             ),
@@ -87,6 +120,125 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
       ),
     );
   }
+
+  List<Widget> _buildGroupedApplications(
+    List<PartnerApplication> applications,
+  ) {
+    final types = _selectedPartnerType == null
+        ? PartnerType.values
+        : [_selectedPartnerType!];
+    final children = <Widget>[];
+    for (final type in types) {
+      final group = applications
+          .where((application) => application.partnerType == type)
+          .toList(growable: false);
+      if (group.isEmpty) continue;
+      children.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 10),
+          child: Text(
+            '${_partnerTypeCategoryLabel(type)} applications · ${group.length}',
+            style: AppTextStyles.titleMedium.copyWith(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+      children.addAll(
+        group.map(
+          (application) => _PartnerApplicationCard(application: application),
+        ),
+      );
+    }
+    return children;
+  }
+
+  Widget _buildPartnerTypeFilters(List<PartnerApplication> applications) {
+    int countFor(PartnerType? type) => applications.where((application) {
+      final matchesType = type == null || application.partnerType == type;
+      final matchesStatus =
+          _selectedStatus == null || application.status == _selectedStatus;
+      return matchesType && matchesStatus;
+    }).length;
+
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final type in <PartnerType?>[null, ...PartnerType.values])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                selected: _selectedPartnerType == type,
+                onSelected: (_) => setState(() => _selectedPartnerType = type),
+                label: Text(
+                  '${type == null ? 'All partner types' : _partnerTypeCategoryLabel(type)} (${countFor(type)})',
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusFilters(List<PartnerApplication> applications) {
+    int countFor(PartnerApplicationStatus? status) => applications
+        .where((application) => status == null || application.status == status)
+        .length;
+
+    return SizedBox(
+      height: 46,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        children: [
+          for (final status in <PartnerApplicationStatus?>[
+            null,
+            ..._visibleStatuses,
+          ])
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: ChoiceChip(
+                selected: _selectedStatus == status,
+                onSelected: (_) => setState(() => _selectedStatus = status),
+                label: Text(
+                  '${status == null ? 'All statuses' : _PartnerApplicationCard._statusLabel(status)} (${countFor(status)})',
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFilteredEmptyState() => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(20),
+    decoration: BoxDecoration(
+      color: AppColors.surface,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: AppColors.divider),
+    ),
+    child: Column(
+      children: [
+        const Icon(Icons.filter_alt_off_outlined, color: AppColors.textHint),
+        const SizedBox(height: 8),
+        Text(
+          'No applications match these filters.',
+          textAlign: TextAlign.center,
+          style: AppTextStyles.bodyMedium,
+        ),
+        TextButton(
+          onPressed: () => setState(() {
+            _selectedPartnerType = null;
+            _selectedStatus = null;
+          }),
+          child: const Text('Clear filters'),
+        ),
+      ],
+    ),
+  );
 
   List<PartnerApplication> _canonicalApplications(
     List<PartnerApplication> source,
@@ -118,27 +270,6 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
   }
 
   Widget _buildSummaryCard(List<PartnerApplication> applications) {
-    final submittedCount = applications
-        .where(
-          (application) =>
-              application.status == PartnerApplicationStatus.submitted,
-        )
-        .length;
-
-    final underReviewCount = applications
-        .where(
-          (application) =>
-              application.status == PartnerApplicationStatus.underReview,
-        )
-        .length;
-
-    final approvedCount = applications
-        .where(
-          (application) =>
-              application.status == PartnerApplicationStatus.approved,
-        )
-        .length;
-
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
@@ -169,33 +300,50 @@ class OwnerPartnerApplicationsScreen extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              Expanded(
-                child: _SummaryValue(
-                  label: 'Submitted',
-                  value: submittedCount,
-                  color: const Color(0xFFFF9800),
-                ),
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 52),
+            child: Text(
+              _selectedPartnerType == null
+                  ? 'All partner types'
+                  : '${_partnerTypeCategoryLabel(_selectedPartnerType!)} applications',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textSecondary,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryValue(
-                  label: 'In Review',
-                  value: underReviewCount,
-                  color: const Color(0xFF2196F3),
+            ),
+          ),
+          const SizedBox(height: 13),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final columns = constraints.maxWidth >= 560 ? 3 : 2;
+              return GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _visibleStatuses.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: columns,
+                  crossAxisSpacing: 7,
+                  mainAxisSpacing: 7,
+                  childAspectRatio: 1.5,
                 ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _SummaryValue(
-                  label: 'Approved',
-                  value: approvedCount,
-                  color: const Color(0xFF4CAF50),
-                ),
-              ),
-            ],
+                itemBuilder: (context, index) {
+                  final status = _visibleStatuses[index];
+                  return _SummaryValue(
+                    label: _PartnerApplicationCard._statusLabel(status),
+                    value: applications
+                        .where((application) => application.status == status)
+                        .length,
+                    color: _PartnerApplicationCard._statusColor(status),
+                    selected: _selectedStatus == status,
+                    onTap: () => setState(() {
+                      _selectedStatus = _selectedStatus == status
+                          ? null
+                          : status;
+                    }),
+                  );
+                },
+              );
+            },
           ),
         ],
       ),
@@ -278,8 +426,8 @@ class _PartnerApplicationCard extends StatelessWidget {
     final submittedAt = application.submittedAt ?? application.updatedAt;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(16),
@@ -342,7 +490,7 @@ class _PartnerApplicationCard extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
           _DetailRow(
             icon: Icons.person_outline_rounded,
             label: 'Contact',
@@ -364,7 +512,7 @@ class _PartnerApplicationCard extends StatelessWidget {
             label: 'Submitted',
             value: _formatDateTime(submittedAt),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
@@ -433,11 +581,11 @@ class _PartnerApplicationCard extends StatelessWidget {
       case PartnerApplicationStatus.draft:
         return 'Draft';
       case PartnerApplicationStatus.submitted:
-        return 'Submitted';
+        return 'Pending to Review';
       case PartnerApplicationStatus.underReview:
-        return 'Under Review';
+        return 'In Progress';
       case PartnerApplicationStatus.changesRequested:
-        return 'Changes Requested';
+        return 'Send Back to Customer';
       case PartnerApplicationStatus.approved:
         return 'Approved';
       case PartnerApplicationStatus.rejected:
@@ -458,7 +606,7 @@ class _PartnerApplicationCard extends StatelessWidget {
       case PartnerApplicationStatus.underReview:
         return const Color(0xFF2196F3);
       case PartnerApplicationStatus.changesRequested:
-        return const Color(0xFFFF9800);
+        return const Color(0xFF8E44AD);
       case PartnerApplicationStatus.approved:
         return const Color(0xFF4CAF50);
       case PartnerApplicationStatus.rejected:
@@ -476,39 +624,58 @@ class _SummaryValue extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
+    required this.selected,
+    required this.onTap,
   });
 
   final String label;
   final int value;
   final Color color;
+  final bool selected;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-      ),
-      child: Column(
-        children: [
-          Text(
-            '$value',
-            style: AppTextStyles.headlineLarge.copyWith(
-              color: color,
-              fontWeight: FontWeight.w800,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: selected ? 0.16 : 0.08),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : color.withValues(alpha: 0.08),
             ),
           ),
-          const SizedBox(height: 2),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: AppTextStyles.bodySmall.copyWith(
-              color: color,
-              fontWeight: FontWeight.w700,
-            ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                '$value',
+                style: AppTextStyles.headlineLarge.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  height: 1.1,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -528,7 +695,7 @@ class _DetailRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

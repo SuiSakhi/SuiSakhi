@@ -8,7 +8,6 @@ import 'package:cloud_functions/cloud_functions.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
-import '../../models/dress.dart';
 import '../../models/user_profile.dart';
 
 const bool _loginTimingEnabled =
@@ -30,8 +29,18 @@ class OwnerDashboardScreen extends StatefulWidget {
 }
 
 class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
+  final ScrollController _activeOrdersScrollController = ScrollController();
   int _totalOrders = 0;
+  int _activeOrderCount = 0;
+  int _newOrderCount = 0;
   int _pendingOrders = 0;
+  int _activePartnerCount = 0;
+  int _onlinePartnerCount = 0;
+  int _offlinePartnerCount = 0;
+  bool _loadingOperationsOrders = true;
+  String? _operationsOrdersError;
+  List<Map<String, dynamic>> _operationsOrders = const [];
+  Map<String, int> _orderCountsByType = const {};
   Map<String, int> _helpdeskStatusCounts = const {};
   int _closedByHelpdeskThisMonth = 0;
   int _closedByAdminThisMonth = 0;
@@ -58,8 +67,15 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     final timer = Stopwatch()..start();
     _logOwnerDashboardTiming('owner_dashboard.init', timer);
     _loadOrders();
+    _loadPartnerAvailability();
     _loadTailors();
     _loadHelpdeskOverview();
+  }
+
+  @override
+  void dispose() {
+    _activeOrdersScrollController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadHelpdeskOverview() async {
@@ -194,40 +210,182 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   Future<void> _loadOrders() async {
     final timer = Stopwatch()..start();
     _logOwnerDashboardTiming('owner_dashboard.orders.start', timer);
+    if (mounted) {
+      setState(() {
+        _loadingOperationsOrders = true;
+        _operationsOrdersError = null;
+      });
+    }
     try {
-      final snap = await FirebaseFirestore.instance.collection('orders').get();
-      _logOwnerDashboardTiming(
-        'owner_dashboard.orders.firestore_done count=${snap.docs.length}',
-        timer,
-      );
+      final response = await FirebaseFunctions.instance
+          .httpsCallable('listHelpdeskOrders')
+          .call(<String, dynamic>{'limit': 500});
+      _logOwnerDashboardTiming('owner_dashboard.orders.function_done', timer);
+      final payload = Map<String, dynamic>.from(response.data as Map);
+      final rows = (payload['orders'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+      final active = rows.where((order) => !_isClosedOrder(order)).toList()
+        ..sort(_compareOperationsOrders);
+      final newOrderCutoff = DateTime.now()
+          .subtract(const Duration(hours: 24))
+          .millisecondsSinceEpoch;
+      final newOrders = active
+          .where((order) => _dateMillis(order['createdAt']) >= newOrderCutoff)
+          .length;
+      final counts = <String, int>{};
+      for (final order in rows) {
+        final type = (order['orderType'] ?? 'other').toString();
+        counts[type] = (counts[type] ?? 0) + 1;
+      }
+      final pending = rows.where(_needsRouting).length;
       if (mounted) {
-        final productionOrders = snap.docs
-            .map((d) => DressOrder.fromFirestore(d.id, d.data()))
-            .where((order) => order.usesProductionAssignment)
-            .toList();
-
         setState(() {
-          _totalOrders = productionOrders.length;
-          _pendingOrders = productionOrders
-              .where(
-                (order) => [
-                  'searching',
-                  'queued_for_dispatch',
-                  'offered',
-                  'needs_admin_follow_up',
-                ].contains(order.assignmentStatus),
-              )
-              .length;
+          _totalOrders = rows.length;
+          _activeOrderCount = active.length;
+          _newOrderCount = newOrders;
+          _pendingOrders = pending;
+          _operationsOrders = active;
+          _orderCountsByType = counts;
+          _loadingOperationsOrders = false;
         });
       }
       _logOwnerDashboardTiming('owner_dashboard.orders.ready', timer);
+    } on FirebaseFunctionsException catch (error) {
+      _logOwnerDashboardTiming(
+        'owner_dashboard.orders.failed code=${error.code}',
+        timer,
+      );
+      if (!mounted) return;
+      setState(() {
+        _loadingOperationsOrders = false;
+        _operationsOrdersError = error.code == 'permission-denied'
+            ? 'Configured Admin access is required to view service orders.'
+            : 'All-service order totals are not available. Please retry.';
+      });
     } catch (error) {
       _logOwnerDashboardTiming(
         'owner_dashboard.orders.failed type=${error.runtimeType}',
         timer,
       );
-      // Keep the dashboard available if order totals cannot be loaded.
+      if (!mounted) return;
+      setState(() {
+        _loadingOperationsOrders = false;
+        _operationsOrdersError =
+            'All-service order totals could not be loaded. Please retry.';
+      });
     }
+  }
+
+  Future<void> _loadPartnerAvailability() async {
+    try {
+      final response = await FirebaseFunctions.instance
+          .httpsCallable('listHelpdeskOrders')
+          .call(<String, dynamic>{'action': 'getAdminPartnerManagement'});
+      final payload = Map<String, dynamic>.from(response.data as Map);
+      final partners = (payload['partners'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((partner) => Map<String, dynamic>.from(partner));
+      var active = 0;
+      var online = 0;
+      var offline = 0;
+      for (final partner in partners) {
+        if (partner['isActive'] != true) continue;
+        active++;
+        if (partner['availabilityTracked'] != true) continue;
+        if (partner['isAvailable'] == true) {
+          online++;
+        } else {
+          offline++;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _activePartnerCount = active;
+        _onlinePartnerCount = online;
+        _offlinePartnerCount = offline;
+      });
+    } catch (_) {
+      // Keep the rest of the dashboard useful if partner totals are unavailable.
+    }
+  }
+
+  static bool _isClosedOrder(Map<String, dynamic> order) {
+    final status =
+        [order['status'], order['workflowStatus'], order['orderStage']]
+            .whereType<Object>()
+            .join(' ')
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z]'), '');
+    return const [
+      'completed',
+      'servicecompleted',
+      'delivered',
+      'cancelled',
+      'canceled',
+      'closed',
+      'resolved',
+      'returned',
+      'failed',
+    ].any(status.contains);
+  }
+
+  static bool _needsRouting(Map<String, dynamic> order) {
+    if (order['needsRouting'] is bool) return order['needsRouting'] == true;
+    final assignment = (order['assignmentStatus'] ?? '')
+        .toString()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z]'), '');
+    if (const [
+      'searching',
+      'queuedfordispatch',
+      'offered',
+      'needsadminfollowup',
+      'reassigning',
+    ].contains(assignment)) {
+      return true;
+    }
+    final stage =
+        [order['status'], order['workflowStatus'], order['orderStage']]
+            .whereType<Object>()
+            .join(' ')
+            .toLowerCase()
+            .replaceAll(RegExp(r'[^a-z]'), '');
+    return const [
+      'awaitingpartner',
+      'needsadminfollowup',
+      'queued',
+      'searching',
+      'unassigned',
+      'partnerassignment',
+      'awaitingnextservice',
+      'awaitingdelivery',
+      'returnpending',
+      'open',
+      'new',
+    ].any(stage.contains);
+  }
+
+  static int _compareOperationsOrders(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftDue = _dateMillis(left['expectedCompletionAt']);
+    final rightDue = _dateMillis(right['expectedCompletionAt']);
+    if (leftDue > 0 && rightDue > 0) return leftDue.compareTo(rightDue);
+    if (leftDue > 0) return -1;
+    if (rightDue > 0) return 1;
+    return _dateMillis(
+      right['createdAt'],
+    ).compareTo(_dateMillis(left['createdAt']));
+  }
+
+  static int _dateMillis(dynamic value) {
+    if (value is num) return value.toInt();
+    if (value is DateTime) return value.millisecondsSinceEpoch;
+    return DateTime.tryParse(value?.toString() ?? '')?.millisecondsSinceEpoch ??
+        0;
   }
 
   @override
@@ -247,11 +405,15 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               Text('Admin Dashboard', style: AppTextStyles.headlineLarge),
               const SizedBox(height: 4),
               Text(
-                'Manage your shop, tailors and pricing',
+                'Orders, Partners, customer support and pricing',
                 style: AppTextStyles.bodyMedium,
               ),
               const SizedBox(height: 24),
               _buildStatRow(),
+              const SizedBox(height: 12),
+              _buildPartnerAvailabilityStrip(context),
+              const SizedBox(height: 18),
+              _buildOrderFollowUp(context),
               const SizedBox(height: 18),
               _buildHelpdeskOverview(context),
               const SizedBox(height: 26),
@@ -265,6 +427,253 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
     );
   }
 
+  Widget _buildPartnerAvailabilityStrip(BuildContext context) => InkWell(
+    onTap: () => context.push('/owner/partner-management'),
+    borderRadius: BorderRadius.circular(14),
+    child: Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Wrap(
+        spacing: 14,
+        runSpacing: 7,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            'Partner availability',
+            style: AppTextStyles.titleMedium.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          _availabilityCount(
+            Icons.circle,
+            '$_onlinePartnerCount online',
+            AppColors.success,
+          ),
+          _availabilityCount(
+            Icons.circle,
+            '$_offlinePartnerCount offline',
+            AppColors.error,
+          ),
+          Text(
+            '$_activePartnerCount active partners',
+            style: AppTextStyles.bodySmall,
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _availabilityCount(IconData icon, String label, Color color) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Icon(icon, size: 10, color: color),
+      const SizedBox(width: 5),
+      Text(label, style: AppTextStyles.bodySmall.copyWith(color: color)),
+    ],
+  );
+
+  Widget _buildOrderFollowUp(BuildContext context) {
+    final visibleOrders = _operationsOrders.take(6).toList();
+    final orderListHeight = (visibleOrders.length * 128.0)
+        .clamp(128.0, 320.0)
+        .toDouble();
+    final serviceSummary = [
+      ('Tailoring', _orderCountsByType['tailoring'] ?? 0),
+      ('Garment Care', _orderCountsByType['garment_care'] ?? 0),
+      ('Quick Care', _orderCountsByType['quick_care'] ?? 0),
+      ('Measurements', _orderCountsByType['measurements'] ?? 0),
+      ('Other', _orderCountsByType['other'] ?? 0),
+    ].where((entry) => entry.$2 > 0).map((entry) => '${entry.$1} ${entry.$2}');
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.event_note_rounded, color: AppColors.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Active orders · all services',
+                  style: AppTextStyles.titleLarge,
+                ),
+              ),
+              IconButton(
+                tooltip: 'Refresh service orders',
+                onPressed: _loadingOperationsOrders ? null : _loadOrders,
+                icon: const Icon(Icons.refresh_rounded),
+              ),
+              TextButton(
+                onPressed: () => context.push('/support/orders?status=active'),
+                child: const Text('View all'),
+              ),
+            ],
+          ),
+          Text(
+            '$_activeOrderCount active of $_totalOrders recent orders'
+            ' · $_newOrderCount new in the last 24 hours'
+            '${serviceSummary.isEmpty ? '' : ' · ${serviceSummary.join(' · ')}'}',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          if (_loadingOperationsOrders)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else if (_operationsOrdersError != null)
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _operationsOrdersError!,
+                    style: AppTextStyles.bodySmall.copyWith(
+                      color: AppColors.error,
+                    ),
+                  ),
+                ),
+                TextButton(onPressed: _loadOrders, child: const Text('Retry')),
+              ],
+            )
+          else if (visibleOrders.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 10),
+              child: Text('No active service orders need follow-up.'),
+            )
+          else
+            SizedBox(
+              height: orderListHeight,
+              child: Scrollbar(
+                controller: _activeOrdersScrollController,
+                thumbVisibility: true,
+                thickness: 4,
+                radius: const Radius.circular(8),
+                child: ListView.separated(
+                  controller: _activeOrdersScrollController,
+                  primary: false,
+                  padding: const EdgeInsets.only(right: 8, bottom: 2),
+                  itemCount: visibleOrders.length,
+                  separatorBuilder: (_, _) => const SizedBox(height: 2),
+                  itemBuilder: (context, index) =>
+                      _activeOrderTile(context, visibleOrders[index]),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _activeOrderTile(BuildContext context, Map<String, dynamic> order) {
+    final dueDate = DateTime.tryParse(
+      (order['expectedCompletionAt'] ?? '').toString(),
+    );
+    final dueLabel = dueDate == null
+        ? 'Delivery / completion date not set — follow up'
+        : 'Target: ${_shortDate(dueDate)}';
+    final service = switch ((order['orderType'] ?? 'other').toString()) {
+      'tailoring' => 'Tailoring',
+      'garment_care' => 'Garment Care',
+      'quick_care' => 'Quick Care',
+      'measurements' => 'Measurements',
+      _ => 'Other / brand',
+    };
+    final orderNumber = (order['orderNumber'] ?? order['orderId'] ?? '')
+        .toString();
+    final shortOrderNumber = orderNumber.length > 20
+        ? orderNumber.substring(0, 20)
+        : orderNumber;
+    final pincode = (order['servicePincode'] ?? '').toString().trim();
+    final assigned = (order['assignedPartnerName'] ?? '').toString().trim();
+    final createdAt = DateTime.tryParse((order['createdAt'] ?? '').toString());
+    return InkWell(
+      onTap: () => context.push(
+        '/support/orders?type=${Uri.encodeComponent((order['orderType'] ?? 'all').toString())}&status=active',
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(top: 7),
+        padding: const EdgeInsets.all(11),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF8FA),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '$service · $shortOrderNumber',
+                    style: AppTextStyles.titleMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Text(
+                  (order['status'] ?? 'Status unavailable').toString(),
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              [
+                (order['customerName'] ?? 'Customer').toString(),
+                if (pincode.isNotEmpty) 'PIN $pincode',
+                if (assigned.isNotEmpty) 'Partner: $assigned',
+              ].join(' · '),
+              style: AppTextStyles.bodySmall,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              dueLabel,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: dueDate == null
+                    ? AppColors.error
+                    : AppColors.textSecondary,
+                fontWeight: dueDate == null ? FontWeight.w600 : null,
+              ),
+            ),
+            if (createdAt != null)
+              Text(
+                'Placed: ${_shortDate(createdAt)}',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textSecondary,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _shortDate(DateTime value) {
+    final date = value.toLocal();
+    return '${date.day.toString().padLeft(2, '0')}/'
+        '${date.month.toString().padLeft(2, '0')}/${date.year}';
+  }
+
   Widget _buildHelpdeskOverview(BuildContext context) {
     const metrics = <(String, String, Color)>[
       ('Open', 'Open', Color(0xFFE58A19)),
@@ -275,7 +684,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
       ('Closed', 'Closed', Color(0xFF697386)),
     ];
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(18),
@@ -321,8 +730,8 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
               builder: (context, constraints) {
                 final width = (constraints.maxWidth - 10) / 2;
                 return Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
+                  spacing: 8,
+                  runSpacing: 8,
                   children: metrics.map((metric) {
                     return InkWell(
                       onTap: () => context.push('/owner/support-requests'),
@@ -331,7 +740,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                         width: width,
                         padding: const EdgeInsets.symmetric(
                           horizontal: 12,
-                          vertical: 10,
+                          vertical: 8,
                         ),
                         decoration: BoxDecoration(
                           color: metric.$3.withValues(alpha: 0.08),
@@ -362,7 +771,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 );
               },
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
             Text(
               'Resolved / closed this month · Helpdesk: $_closedByHelpdeskThisMonth  |  Admin: $_closedByAdminThisMonth',
               style: AppTextStyles.bodySmall.copyWith(
@@ -376,7 +785,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 color: AppColors.textSecondary,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
           ],
           Wrap(
             spacing: 10,
@@ -624,25 +1033,25 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
   Widget _buildStatRow() {
     final stats = [
       (
-        'Production Orders',
-        '$_totalOrders',
+        'Active Orders',
+        '$_activeOrderCount',
         Icons.receipt_long_rounded,
         AppColors.primary,
-        () => context.push('/owner/order-routing'),
+        () => context.push('/support/orders?status=active'),
       ),
       (
-        'Active Tailors',
-        '$_tailorCount',
+        'Partners Online',
+        '$_onlinePartnerCount',
         Icons.content_cut_rounded,
         const Color(0xFF4CAF50),
-        () => _showTailorsSheet(context),
+        () => context.push('/owner/partner-management'),
       ),
       (
         'Pending Routing',
         '$_pendingOrders',
         Icons.access_time_rounded,
         const Color(0xFFF5A623),
-        () => context.push('/owner/order-routing'),
+        () => context.push('/support/orders?status=pending_routing'),
       ),
     ];
     return Row(
@@ -1002,6 +1411,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 () => context.push('/owner/catalogue'),
               ),
               (
+                'Legacy Tailor Access',
+                Icons.content_cut_rounded,
+                const Color(0xFF4CAF50),
+                () => _showTailorsSheet(context),
+              ),
+              (
                 'Delivery Partners',
                 Icons.delivery_dining_rounded,
                 const Color(0xFF00BCD4),
@@ -1016,7 +1431,7 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             color: AppColors.primary,
             actions: [
               (
-                'Manage Rates',
+                'Stitching Rates Pricing',
                 Icons.payments_rounded,
                 AppColors.primary,
                 () => context.push('/owner/rates'),
@@ -1026,6 +1441,12 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
                 Icons.price_change_outlined,
                 const Color(0xFF8E44AD),
                 () => context.push('/owner/garment-care/pricing'),
+              ),
+              (
+                'Quick Care & Home Services',
+                Icons.home_repair_service_outlined,
+                const Color(0xFF009688),
+                () => context.push('/owner/quick-care/pricing'),
               ),
               (
                 'Payments & payouts',
@@ -1042,16 +1463,28 @@ class _OwnerDashboardScreenState extends State<OwnerDashboardScreen> {
             color: const Color(0xFF4CAF50),
             actions: [
               (
-                'Order Routing by PIN',
+                'Tailor Order Routing',
                 Icons.receipt_long_rounded,
                 const Color(0xFF4CAF50),
                 () => context.push('/owner/order-routing'),
               ),
               (
-                'Garment Care Routing',
+                'Garment Care Order Routing',
                 Icons.local_laundry_service_outlined,
                 const Color(0xFF8E44AD),
                 () => context.push('/owner/garment-care/routing'),
+              ),
+              (
+                'Quick Care Orders & Status',
+                Icons.home_repair_service_outlined,
+                const Color(0xFF009688),
+                () => context.push('/support/orders?type=quick_care'),
+              ),
+              (
+                'Other / Brand Orders & Status',
+                Icons.storefront_outlined,
+                const Color(0xFF795548),
+                () => context.push('/support/orders?type=other'),
               ),
               (
                 'Delivery Settings',

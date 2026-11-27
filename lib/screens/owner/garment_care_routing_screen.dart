@@ -17,6 +17,16 @@ class GarmentCareRoutingScreen extends StatefulWidget {
 class _GarmentCareRoutingScreenState extends State<GarmentCareRoutingScreen> {
   List<Map<String, dynamic>>? _partners;
   bool _loadingPartners = false;
+  String _searchQuery = '';
+  String _statusFilter = 'All';
+
+  static const _filters = [
+    'All',
+    'Waiting',
+    'Customer action',
+    'Awaiting delivery',
+    'Finalized',
+  ];
 
   Future<List<Map<String, dynamic>>> _loadPartners() async {
     if (_partners != null) return _partners!;
@@ -123,7 +133,7 @@ class _GarmentCareRoutingScreenState extends State<GarmentCareRoutingScreen> {
   @override
   Widget build(BuildContext context) => GarmentCareTheme(
     child: Scaffold(
-      appBar: AppBar(title: const Text('Garment Care Routing')),
+      appBar: AppBar(title: const Text('Garment Care Order Routing')),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: GarmentCareService.adminOrders(),
         builder: (context, snapshot) {
@@ -135,20 +145,86 @@ class _GarmentCareRoutingScreenState extends State<GarmentCareRoutingScreen> {
           if (!snapshot.hasData) {
             return const Center(child: CircularProgressIndicator());
           }
-          final orders = snapshot.data!.docs;
+          final orders = snapshot.data!.docs.where((order) {
+            final data = order.data();
+            final status =
+                (data['statusProjection'] ??
+                        data['workflowStatus'] ??
+                        data['status'] ??
+                        '')
+                    .toString()
+                    .toLowerCase()
+                    .replaceAll(RegExp(r'[^a-z]'), '');
+            final matchesStatus = switch (_statusFilter) {
+              'Waiting' => const [
+                'open',
+                'partnerassignment',
+                'awaitingnextservice',
+                'returnpending',
+              ].any(status.contains),
+              'Customer action' =>
+                status.contains('customeractionrequired') ||
+                    status.contains('awaitingpayment'),
+              'Awaiting delivery' => const [
+                'awaitingdelivery',
+                'partiallydelivered',
+              ].any(status.contains),
+              'Finalized' => const [
+                'completed',
+                'delivered',
+                'closed',
+                'cancelled',
+              ].any(status.contains),
+              _ => true,
+            };
+            if (!matchesStatus) return false;
+            final pickup = data['pickupAddressSnapshot'] is Map
+                ? Map<String, dynamic>.from(
+                    data['pickupAddressSnapshot'] as Map,
+                  )
+                : const <String, dynamic>{};
+            final searchable = [
+              data['orderNumber'],
+              data['serviceGroupCode'],
+              data['statusProjection'],
+              data['workflowStatus'],
+              data['status'],
+              pickup['name'],
+              pickup['mobileNumber'],
+              pickup['formattedAddress'],
+              pickup['addressLine1'],
+              pickup['addressLine2'],
+              pickup['locality'],
+              pickup['city'],
+              pickup['pincode'],
+            ].join(' ').toLowerCase();
+            return _searchQuery.isEmpty || searchable.contains(_searchQuery);
+          }).toList();
           if (orders.isEmpty) {
-            return _messageState('No Garment Care orders yet.');
+            return ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                _routingControls(snapshot.data!.docs.length),
+                _messageState(
+                  snapshot.data!.docs.isEmpty
+                      ? 'No Garment Care orders yet.'
+                      : 'No Garment Care orders match these filters.',
+                ),
+              ],
+            );
           }
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
+              _routingControls(snapshot.data!.docs.length),
               Text(
-                'One order view for pickup and service routing.',
+                'Review each order by area and service status, then assign pickups and offer eligible service steps.',
                 style: Theme.of(context).textTheme.titleMedium,
               ),
-              const SizedBox(height: 4),
-              const Text(
-                'Pickup is assigned first. Once the Partner confirms receipt, eligible service steps can be offered. Open, available Partners are routed automatically by priority and capability.',
+              const SizedBox(height: 8),
+              Text(
+                'Pickup is assigned first. Once the Partner confirms receipt, eligible service steps can be offered. Showing ${orders.length} of ${snapshot.data!.docs.length} orders.',
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 12),
               for (final order in orders)
@@ -163,6 +239,53 @@ class _GarmentCareRoutingScreenState extends State<GarmentCareRoutingScreen> {
         },
       ),
     ),
+  );
+
+  Widget _routingControls(int totalOrders) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      TextField(
+        onChanged: (value) =>
+            setState(() => _searchQuery = value.trim().toLowerCase()),
+        decoration: InputDecoration(
+          prefixIcon: const Icon(Icons.location_on_outlined),
+          hintText: 'Search by PIN, area, customer or order',
+          filled: true,
+          fillColor: Colors.white,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+        ),
+      ),
+      const SizedBox(height: 10),
+      SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            for (final filter in _filters)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: ChoiceChip(
+                  label: Text(filter),
+                  selected: _statusFilter == filter,
+                  onSelected: (_) => setState(() => _statusFilter = filter),
+                  selectedColor: GarmentCareColors.primary,
+                  labelStyle: TextStyle(
+                    color: _statusFilter == filter ? Colors.white : null,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 6),
+      Text(
+        '$totalOrders Garment Care orders',
+        style: Theme.of(context).textTheme.bodySmall,
+      ),
+      const SizedBox(height: 10),
+    ],
   );
 
   Widget _messageState(String message) => Center(
@@ -270,7 +393,9 @@ class _GarmentCareRoutingOrderCard extends StatelessWidget {
     final snapshotName = snapshot['name']?.toString().trim() ?? '';
     final snapshotPhone = snapshot['mobileNumber']?.toString().trim() ?? '';
     final snapshotAddress = _pickupAddressLabel(snapshot);
-    if (snapshotName.isNotEmpty || snapshotPhone.isNotEmpty || snapshotAddress.isNotEmpty) {
+    if (snapshotName.isNotEmpty ||
+        snapshotPhone.isNotEmpty ||
+        snapshotAddress.isNotEmpty) {
       return _detailsCard(
         context,
         title: 'Customer / pickup',
@@ -313,34 +438,34 @@ class _GarmentCareRoutingOrderCard extends StatelessWidget {
     BuildContext context, {
     required String title,
     required List<String> lines,
-  }) =>
-      Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: GarmentCareColors.background,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
-            for (final line in lines) Text(line),
-          ],
-        ),
-      );
+  }) => Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(10),
+    decoration: BoxDecoration(
+      color: GarmentCareColors.background,
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: const TextStyle(fontWeight: FontWeight.w600)),
+        for (final line in lines) Text(line),
+      ],
+    ),
+  );
 
   String _pickupAddressLabel(Map<String, dynamic> address) {
     final formatted = address['formattedAddress']?.toString().trim() ?? '';
     if (formatted.isNotEmpty) return formatted;
     return [
-      address['addressLine1'],
-      address['addressLine2'],
-      address['landmark'],
-      address['city'],
-      address['state'],
-      address['pincode'],
-    ].map((value) => value?.toString().trim() ?? '')
+          address['addressLine1'],
+          address['addressLine2'],
+          address['landmark'],
+          address['city'],
+          address['state'],
+          address['pincode'],
+        ]
+        .map((value) => value?.toString().trim() ?? '')
         .where((value) => value.isNotEmpty)
         .join(', ');
   }
@@ -354,14 +479,16 @@ class _GarmentCareRoutingOrderCard extends StatelessWidget {
     final partner = record['assignedPartnerName']?.toString().trim() ?? '';
     final partnerPhone =
         record['assignedPartnerContactPhone']?.toString().trim() ?? '';
-    final partnerAccountId = (record['toPartnerAccountId'] ??
-            record['assignedPartnerAccountId'] ??
-            '')
-        .toString();
-    final partnerProfileId = (record['toPartnerProfileId'] ??
-            record['assignedPartnerProfileId'] ??
-            '')
-        .toString();
+    final partnerAccountId =
+        (record['toPartnerAccountId'] ??
+                record['assignedPartnerAccountId'] ??
+                '')
+            .toString();
+    final partnerProfileId =
+        (record['toPartnerProfileId'] ??
+                record['assignedPartnerProfileId'] ??
+                '')
+            .toString();
     final assigned = partnerAccountId.isNotEmpty && partnerProfileId.isNotEmpty;
     final orderPickup = data['pickupAddressSnapshot'] is Map
         ? Map<String, dynamic>.from(data['pickupAddressSnapshot'] as Map)
@@ -395,7 +522,9 @@ class _GarmentCareRoutingOrderCard extends StatelessWidget {
             '${_dateLabel(record['preferredPickupAt'])} · ${record['pickupSlot'] ?? 'Pickup time not set'}',
           ),
           if (!orderHasCustomerDetails &&
-              (pickupName.isNotEmpty || pickupPhone.isNotEmpty || pickupAddress.isNotEmpty))
+              (pickupName.isNotEmpty ||
+                  pickupPhone.isNotEmpty ||
+                  pickupAddress.isNotEmpty))
             _detailsCard(
               context,
               title: 'Customer / pickup',

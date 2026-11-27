@@ -9,14 +9,27 @@ import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../models/dress.dart';
 import '../../models/payment_models.dart';
+import '../../models/prd_catalog.dart';
 import '../../services/smart_assist_service.dart';
 import '../../services/order_lifecycle_service.dart';
+import '../../widgets/partner/partner_availability_card.dart';
 import '../../widgets/orders/delivery_pin_dialog.dart';
 import '../../widgets/orders/optional_pickup_photo_dialog.dart';
 import '../../widgets/orders/order_tracking_tag.dart';
+import '../../widgets/orders/order_stage_progress.dart';
+import '../partner/garment_care_jobs_screen.dart';
 
 class DeliveryDashboardScreen extends StatefulWidget {
-  const DeliveryDashboardScreen({super.key});
+  const DeliveryDashboardScreen({
+    super.key,
+    this.accountId = '',
+    this.profileId = '',
+    this.initialServiceGroup = 0,
+  });
+
+  final String accountId;
+  final String profileId;
+  final int initialServiceGroup;
 
   @override
   State<DeliveryDashboardScreen> createState() =>
@@ -25,6 +38,7 @@ class DeliveryDashboardScreen extends StatefulWidget {
 
 class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   int _tab = 0; // 0 = Available, 1 = Inbound Pickup, 2 = My Deliveries
+  late int _serviceGroup; // 0 = Tailoring, 1 = Garment Care, 2 = Other
   List<DressOrder> _available = [];
   List<DressOrder> _mine = [];
   List<DressOrder> _inboundPickups = [];
@@ -33,10 +47,17 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   bool _subscriptionActive = true;
   String? _deliveryAccountId;
   String? _deliveryProfileId;
+  bool _availabilityLoaded = false;
+  bool _availabilityReady = false;
+  bool _availableForOrders = false;
+  bool _availabilitySaving = false;
+  String? _availabilityError;
+  List<AvailabilitySlot> _availabilitySlots = const [];
 
   @override
   void initState() {
     super.initState();
+    _serviceGroup = widget.initialServiceGroup.clamp(0, 2).toInt();
     _loadData();
   }
 
@@ -47,30 +68,74 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
     _deliveryProfileId = null;
     final myEmail = AppState.instance.profile?.email ?? '';
     try {
-      final phone = FirebaseAuth.instance.currentUser?.phoneNumber;
-      if (phone != null && phone.trim().isNotEmpty) {
-        final accountId = await AppState.instance.fetchAccountIdForMobile(
-          phone.trim(),
-        );
-        if (accountId != null) {
-          final profiles = await AppState.instance
-              .fetchActiveProfilesForAccount(accountId);
-          final matches = profiles
-              .where(
-                (profile) =>
-                    profile['partnerType'] == 'deliveryPartner' &&
-                    profile['role'] == 'partner' &&
-                    profile['operationalStatus'] == 'active' &&
-                    profile['activationStatus'] == 'active' &&
-                    profile['approvalStatus'] == 'approved' &&
-                    profile['kycStatus'] == 'verified',
-              )
-              .toList();
-          _deliveryAccountId = accountId;
-          _deliveryProfileId = matches.isEmpty
-              ? null
-              : matches.first['profileId']?.toString();
+      var accountId = widget.accountId.trim();
+      if (accountId.isEmpty) {
+        final phone = FirebaseAuth.instance.currentUser?.phoneNumber?.trim();
+        if (phone != null && phone.isNotEmpty) {
+          accountId =
+              await AppState.instance.fetchAccountIdForMobile(phone) ?? '';
         }
+      }
+      if (accountId.isNotEmpty) {
+        final profiles = await AppState.instance.fetchActiveProfilesForAccount(
+          accountId,
+        );
+        final requestedProfile = widget.profileId.trim();
+        final matches = profiles
+            .where((profile) {
+              final id =
+                  (profile['profileId'] ?? profile['docId'] ?? profile['id'])
+                      ?.toString()
+                      .trim();
+              return profile['partnerType'] == 'deliveryPartner' &&
+                  profile['role'] == 'partner' &&
+                  (requestedProfile.isEmpty || id == requestedProfile);
+            })
+            .toList(growable: false);
+        final profile = matches.isEmpty ? null : matches.first;
+        final profileId = profile == null
+            ? ''
+            : (profile['profileId'] ?? profile['docId'] ?? profile['id'])
+                      ?.toString()
+                      .trim() ??
+                  '';
+        _deliveryAccountId = accountId;
+        _deliveryProfileId = profileId.isEmpty ? null : profileId;
+        if (profile != null && mounted) {
+          final approved =
+              profile['status'] == 'active' &&
+              profile['operationalStatus'] == 'active' &&
+              profile['activationStatus'] == 'active' &&
+              profile['approvalStatus'] == 'approved' &&
+              profile['kycStatus'] == 'verified';
+          setState(() {
+            _availabilityReady = approved;
+            _availableForOrders =
+                approved && profile['availabilityStatus'] != 'unavailable';
+            _availabilitySlots = readPartnerAvailabilitySlots(
+              profile,
+              extensionKey: 'deliveryPartner',
+            );
+            _availabilityLoaded = true;
+            _availabilityError = null;
+          });
+        } else if (mounted) {
+          setState(() {
+            _availabilityLoaded = true;
+            _availabilityReady = false;
+            _availableForOrders = false;
+            _availabilityError =
+                'An active Delivery Partner profile could not be found.';
+          });
+        }
+      } else if (mounted) {
+        setState(() {
+          _availabilityLoaded = true;
+          _availabilityReady = false;
+          _availableForOrders = false;
+          _availabilityError =
+              'Sign in with an active Delivery Partner account.';
+        });
       }
       // Load subscription info
       if (myEmail.isNotEmpty) {
@@ -125,8 +190,9 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
               .map((d) => _fromDoc(d))
               .where(
                 (order) =>
-                    !order.usesProductionAssignment ||
-                    (order.paymentStatus == PaymentStatus.fullyPaid &&
+                    (!order.usesProductionAssignment && _availableForOrders) ||
+                    (order.usesProductionAssignment &&
+                        order.paymentStatus == PaymentStatus.fullyPaid &&
                         order.outboundHandoverStatus == 'assigned' &&
                         order.outboundHandoverPartnerType ==
                             'deliveryPartner' &&
@@ -159,9 +225,113 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _availabilityLoaded = true;
+          _availabilityError = 'Could not load delivery availability.';
+          _loading = false;
+        });
+      }
     }
   }
+
+  Future<void> _loadAvailability() async {
+    if (!mounted) return;
+    setState(() {
+      _availabilityLoaded = false;
+      _availabilityError = null;
+    });
+    await _loadData();
+  }
+
+  Future<void> _saveAvailability(
+    bool available,
+    List<AvailabilitySlot> slots,
+  ) async {
+    final accountId = _deliveryAccountId;
+    final profileId = _deliveryProfileId;
+    if (_availabilitySaving ||
+        !_availabilityReady ||
+        accountId == null ||
+        profileId == null) {
+      return;
+    }
+    setState(() => _availabilitySaving = true);
+    try {
+      await FirebaseFunctions.instance
+          .httpsCallable('setTailorAvailability')
+          .call({
+            'accountId': accountId,
+            'profileId': profileId,
+            'partnerType': 'deliveryPartner',
+            'available': available,
+            'availabilitySlots': slots,
+          });
+      if (!mounted) return;
+      setState(() {
+        _availableForOrders = available;
+        _availabilitySlots = slots;
+        _availabilitySaving = false;
+        _availabilityError = null;
+      });
+    } on FirebaseFunctionsException catch (error) {
+      if (!mounted) return;
+      setState(() => _availabilitySaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message ?? 'Could not update availability.'),
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _availabilitySaving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Could not update availability. Please retry.'),
+        ),
+      );
+    }
+  }
+
+  Future<void> _editAvailabilityHours() async {
+    final slots = await showPartnerAvailabilityHoursDialog(
+      context,
+      title: 'Delivery Partner working hours',
+      initialSlots: _availabilitySlots,
+    );
+    if (slots != null) await _saveAvailability(_availableForOrders, slots);
+  }
+
+  Widget _availabilityCard() => PartnerAvailabilityCard(
+    title: 'Delivery availability',
+    available: _availableForOrders,
+    loaded: _availabilityLoaded,
+    saving: _availabilitySaving,
+    enabled: _availabilityReady,
+    slots: _availabilitySlots,
+    error:
+        _availabilityError ??
+        (_availabilityLoaded && !_availabilityReady
+            ? 'An approved, active Delivery Partner profile is required.'
+            : null),
+    onRetry: _loadAvailability,
+    onAvailabilityChanged: (available) =>
+        _saveAvailability(available, _availabilitySlots),
+    onEditHours: _editAvailabilityHours,
+  );
+
+  List<DressOrder> _forSelectedGroup(List<DressOrder> orders) => orders
+      .where((order) {
+        final isTailoring =
+            order.orderModuleType == OrderModuleType.coreTailoring;
+        return _serviceGroup == 0 ? isTailoring : !isTailoring;
+      })
+      .toList(growable: false);
+
+  List<DressOrder> get _groupAvailable => _forSelectedGroup(_available);
+  List<DressOrder> get _groupMine => _forSelectedGroup(_mine);
+  List<DressOrder> get _groupInboundPickups =>
+      _forSelectedGroup(_inboundPickups);
 
   DressOrder _fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> d) {
     return DressOrder.fromFirestore(d.id, d.data());
@@ -222,21 +392,131 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
           children: [
             _buildHeader(context),
             if (!_subscriptionActive) _buildSubscriptionBanner(),
-            _buildStatRow(),
-            _buildTabBar(),
+            _availabilityCard(),
+            _buildServiceGroups(),
             Expanded(
               child: _loading
                   ? const Center(child: CircularProgressIndicator())
-                  : _tab == 0
-                  ? _buildAvailableList()
-                  : _tab == 1
-                  ? _buildInboundPickups()
-                  : _buildMyDeliveries(),
+                  : _serviceGroup == 1
+                  ? _buildGarmentCareDeliveries()
+                  : _serviceGroup == 2
+                  ? _buildOtherDeliveries()
+                  : _buildOrderQueue(),
             ),
           ],
         ),
       ),
     );
+  }
+
+  Widget _buildServiceGroups() => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          _TabBtn(
+            label: 'Tailoring',
+            selected: _serviceGroup == 0,
+            onTap: () => setState(() {
+              _serviceGroup = 0;
+              _tab = 0;
+            }),
+          ),
+          const SizedBox(width: 8),
+          _TabBtn(
+            label: 'Garment Care',
+            selected: _serviceGroup == 1,
+            onTap: () => setState(() => _serviceGroup = 1),
+          ),
+          const SizedBox(width: 8),
+          _TabBtn(
+            label: 'Other SuiSakhi deliveries',
+            selected: _serviceGroup == 2,
+            onTap: () => setState(() {
+              _serviceGroup = 2;
+              _tab = 0;
+            }),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  Widget _buildOrderQueue() => Column(
+    children: [
+      _buildStatRow(),
+      _buildTabBar(),
+      Expanded(
+        child: _tab == 0
+            ? _buildAvailableList()
+            : _tab == 1
+            ? _buildInboundPickups()
+            : _buildMyDeliveries(),
+      ),
+    ],
+  );
+
+  Widget _buildGarmentCareDeliveries() {
+    final accountId = _deliveryAccountId;
+    final profileId = _deliveryProfileId;
+    if (accountId == null || profileId == null) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Text(
+            'An approved Delivery Partner profile is required to view Garment Care deliveries.',
+            textAlign: TextAlign.center,
+          ),
+        ),
+      );
+    }
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+      children: [
+        const Text(
+          'Customer returns assigned to you will appear here. Accept the task, follow the handover steps and confirm delivery with the Customer PIN.',
+        ),
+        const SizedBox(height: 12),
+        GarmentCareDeliveryWorkSection(
+          accountId: accountId,
+          profileId: profileId,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildOtherDeliveries() {
+    if (_groupAvailable.isEmpty &&
+        _groupInboundPickups.isEmpty &&
+        _groupMine.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(24),
+        children: [
+          const SizedBox(height: 30),
+          const Icon(
+            Icons.widgets_outlined,
+            size: 54,
+            color: AppColors.textHint,
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'Other SuiSakhi deliveries',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.headlineMedium,
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Quick Care, brand, rental, event and marketplace delivery tasks assigned to you will appear here.',
+            textAlign: TextAlign.center,
+            style: AppTextStyles.bodyMedium,
+          ),
+        ],
+      );
+    }
+    return _buildOrderQueue();
   }
 
   Widget _buildHeader(BuildContext context) {
@@ -372,14 +652,14 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         children: [
           _StatCard(
             label: 'Available',
-            value: '${_available.length}',
+            value: '${_groupAvailable.length}',
             color: const Color(0xFF9C27B0),
             icon: Icons.inventory_2_rounded,
           ),
           const SizedBox(width: 10),
           _StatCard(
             label: 'Inbound pickup',
-            value: '${_inboundPickups.length}',
+            value: '${_groupInboundPickups.length}',
             color: const Color(0xFF00BCD4),
             icon: Icons.inventory_2_outlined,
           ),
@@ -403,13 +683,13 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
         child: Row(
           children: [
             _TabBtn(
-              label: 'Available (${_available.length})',
+              label: 'Available (${_groupAvailable.length})',
               selected: _tab == 0,
               onTap: () => setState(() => _tab = 0),
             ),
             const SizedBox(width: 8),
             _TabBtn(
-              label: 'Inbound pickup (${_inboundPickups.length})',
+              label: 'Inbound pickup (${_groupInboundPickups.length})',
               selected: _tab == 1,
               onTap: () => setState(() => _tab = 1),
             ),
@@ -426,7 +706,8 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   }
 
   Widget _buildAvailableList() {
-    if (_available.isEmpty) {
+    final orders = _groupAvailable;
+    if (orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -450,22 +731,23 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
     }
     return ListView.builder(
       padding: const EdgeInsets.all(20),
-      itemCount: _available.length,
+      itemCount: orders.length,
       itemBuilder: (_, i) => _DeliveryCard(
-        order: _available[i],
+        order: orders[i],
         actionLabel: 'Accept Delivery',
         actionColor: const Color(0xFF00BCD4),
-        onAction: () => _acceptDelivery(_available[i]),
-        onDecline: _available[i].usesProductionAssignment
-            ? () => _declineAssignedTask(_available[i], 'declineOutbound')
+        onAction: () => _acceptDelivery(orders[i]),
+        onDecline: orders[i].usesProductionAssignment
+            ? () => _declineAssignedTask(orders[i], 'declineOutbound')
             : null,
-        onAiBrief: () => _showDeliveryAiBrief(context, _available[i]),
+        onAiBrief: () => _showDeliveryAiBrief(context, orders[i]),
       ),
     );
   }
 
   Widget _buildMyDeliveries() {
-    if (_mine.isEmpty) {
+    final orders = _groupMine;
+    if (orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -483,9 +765,9 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
     }
     return ListView.builder(
       padding: const EdgeInsets.all(20),
-      itemCount: _mine.length,
+      itemCount: orders.length,
       itemBuilder: (_, i) {
-        final o = _mine[i];
+        final o = orders[i];
         return _DeliveryCard(
           order: o,
           actionLabel: o.status == OrderStatus.outForDelivery
@@ -504,7 +786,8 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
   }
 
   Widget _buildInboundPickups() {
-    if (_inboundPickups.isEmpty) {
+    final orders = _groupInboundPickups;
+    if (orders.isEmpty) {
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -531,15 +814,14 @@ class _DeliveryDashboardScreenState extends State<DeliveryDashboardScreen> {
     }
     return ListView.builder(
       padding: const EdgeInsets.all(20),
-      itemCount: _inboundPickups.length,
+      itemCount: orders.length,
       itemBuilder: (_, i) => _DeliveryCard(
-        order: _inboundPickups[i],
+        order: orders[i],
         actionLabel: 'Confirm pickup from customer',
         actionColor: const Color(0xFF00BCD4),
-        onAction: () => _confirmInboundPickup(_inboundPickups[i]),
-        onDecline: () =>
-            _declineAssignedTask(_inboundPickups[i], 'declineInbound'),
-        onAiBrief: () => _showDeliveryAiBrief(context, _inboundPickups[i]),
+        onAction: () => _confirmInboundPickup(orders[i]),
+        onDecline: () => _declineAssignedTask(orders[i], 'declineInbound'),
+        onAiBrief: () => _showDeliveryAiBrief(context, orders[i]),
       ),
     );
   }
@@ -986,6 +1268,16 @@ class _DeliveryCard extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+          OrderStageProgress(
+            stages: const ['Ready', 'Accepted', 'On route', 'Delivered'],
+            currentStep: order.status == OrderStatus.delivered
+                ? 3
+                : order.status == OrderStatus.outForDelivery
+                ? 2
+                : order.outboundHandoverAcceptedAt != null
+                ? 1
+                : 0,
           ),
           if (order.deliveryAddress != null &&
               order.deliveryAddress!.isNotEmpty) ...[

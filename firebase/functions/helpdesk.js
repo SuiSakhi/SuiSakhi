@@ -205,14 +205,126 @@ function classifyOrder(data) {
 }
 
 function orderServicePincode(data) {
+  const deliveryAddress = data.deliveryAddress && typeof data.deliveryAddress === "object"
+    ? data.deliveryAddress : {};
+  const serviceAddress = data.serviceAddress && typeof data.serviceAddress === "object"
+    ? data.serviceAddress : {};
   const direct = String(data.deliveryPincode || data.pincode ||
+    deliveryAddress.pincode || serviceAddress.pincode ||
     (data.deliveryLocation && data.deliveryLocation.pincode) ||
     (data.serviceLocation && data.serviceLocation.pincode) || "").replace(/\D/g, "");
   if (/^\d{6}$/.test(direct)) return direct;
-  const addressText = [data.deliveryAddress, data.serviceAddress,
-    data.pickupAddress, data.address].filter(Boolean).join(" ");
+  const addressText = [
+    serviceAddressText(data.deliveryAddress),
+    serviceAddressText(data.serviceAddress),
+    serviceAddressText(data.pickupAddress),
+    serviceAddressText(data.address),
+  ].filter(Boolean).join(" ");
   const match = String(addressText).match(/(?:^|\D)(\d{6})(?:\D|$)/);
   return match ? match[1] : "";
+}
+
+function serviceAddressText(value) {
+  if (typeof value === "string") return value;
+  if (!value || typeof value !== "object") return "";
+  return [
+    value.formattedAddress,
+    value.addressLine1,
+    value.addressLine2,
+    value.locality,
+    value.city,
+    value.state,
+    value.pincode,
+  ].filter(Boolean).join(", ");
+}
+
+function partnerLocation(profile) {
+  const type = String(profile.partnerType || "other");
+  const partnerData = profile.partnerData && typeof profile.partnerData === "object"
+    ? profile.partnerData : {};
+  const extensions = partnerData.extensions && typeof partnerData.extensions === "object"
+    ? partnerData.extensions : {};
+  const category = extensions[type] && typeof extensions[type] === "object"
+    ? extensions[type] : {};
+  const workshop = category.workshopDetails && typeof category.workshopDetails === "object"
+    ? category.workshopDetails : partnerData.workshopDetails || {};
+  const serviceLocation = category.serviceLocation && typeof category.serviceLocation === "object"
+    ? category.serviceLocation : {};
+  const address = serviceLocation.address && typeof serviceLocation.address === "object"
+    ? serviceLocation.address : {};
+  const businessAddress = profile.businessAddress || profile.address ||
+    partnerData.businessAddress || {};
+  const first = (...values) => values.find((value) =>
+    value != null && String(value).trim().length > 0);
+  const pincode = String(first(
+      workshop.pincode, serviceLocation.pincode, address.pincode,
+      businessAddress.pincode, partnerData.pincode, "") || "").trim();
+  const rawAreas = first(workshop.serviceAreaPincodes,
+      category.serviceAreaPincodes, serviceLocation.serviceAreaPincodes,
+      profile.serviceAreaPincodes, partnerData.serviceAreaPincodes,
+      category.serviceArea, []);
+  const servicePincodes = Array.isArray(rawAreas)
+    ? rawAreas.map((value) => String(value).trim()).filter(Boolean)
+    : String(rawAreas || "").split(/[\s,;]+/).filter(Boolean);
+  if (pincode && !servicePincodes.includes(pincode)) servicePincodes.unshift(pincode);
+  const locality = String(first(
+      workshop.locality, serviceLocation.locality, address.locality,
+      businessAddress.locality, "") || "").trim();
+  const city = String(first(
+      workshop.city, workshop.cityName, serviceLocation.city,
+      address.city, address.cityName, businessAddress.city,
+      businessAddress.cityName, "") || "").trim();
+  const serviceArea = String(first(
+      serviceLocation.serviceArea, workshop.serviceArea,
+      category.serviceArea, profile.serviceArea, "") || "").trim();
+  const serviceAddress = [
+    workshop.addressLine1 || address.addressLine1 || address.line1 || businessAddress.addressLine1,
+    workshop.addressLine2 || address.addressLine2 || address.line2 || businessAddress.addressLine2,
+    locality,
+    city,
+    pincode,
+  ].map((value) => String(value || "").trim()).filter(Boolean).join(", ");
+  const areaLabel = [...new Set([serviceArea, locality, city, ...servicePincodes])]
+      .filter(Boolean).join(" · ");
+  return {pincode, servicePincodes, locality, city, serviceArea, serviceAddress, areaLabel};
+}
+
+function partnerWorkCustomerFields(order) {
+  const snapshot = order.pickupAddressSnapshot && typeof order.pickupAddressSnapshot === "object"
+    ? order.pickupAddressSnapshot : order.customerAddressSnapshot || {};
+  const address = serviceAddressText(order.deliveryAddress) ||
+    serviceAddressText(order.serviceAddress) ||
+    snapshot.formattedAddress || [snapshot.addressLine1, snapshot.addressLine2,
+      snapshot.locality, snapshot.city, snapshot.state, snapshot.pincode]
+        .filter(Boolean).join(", ");
+  return {
+    customerName: String(order.customerName || order.customerDisplayName ||
+      order.customerNameSnapshot || snapshot.name || ""),
+    customerPhone: String(order.customerPhone || order.customerMobileE164 ||
+      order.mobileE164 || order.phone || snapshot.mobileNumber || ""),
+    servicePincode: orderServicePincode(order) || String(snapshot.pincode || ""),
+    customerAddress: String(address || ""),
+    expectedCompletionAt: clean(order.expectedReadyAt || order.expectedDeliveryAt ||
+      order.expectedCompletionAt || order.deliveryDate || order.quickCareScheduledAt ||
+      order.measurementAppointmentAt || order.appointmentAt || order.preferredPickupAt || null),
+  };
+}
+
+function orderNeedsRouting(order) {
+  const normalize = (value) => String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  const assignment = normalize(order.quickCareAssignmentStatus || order.assignmentStatus);
+  if ([
+    "searching", "queuedfordispatch", "offered", "needsadminfollowup", "reassigning",
+  ].includes(assignment)) return true;
+  const stage = [
+    order.status, order.workflowStatus, order.orderStatus, order.statusProjection,
+    order.quickCareWorkflowStatus,
+  ].map(normalize).join(" ");
+  return [
+    "awaitingpartner", "needsadminfollowup", "queued", "searching", "unassigned",
+    "partnerassignment", "awaitingnextservice", "awaitingdelivery", "returnpending",
+    "open", "new",
+  ].some((value) => stage.includes(value));
 }
 
 function quickCareCancellation(order) {
@@ -531,6 +643,9 @@ function orderSummary(snapshot, orderType) {
       .replace(/([a-z])([A-Z])/g, "$1 $2")
       .replace(/[_-]+/g, " ")
       .replace(/\b\w/g, (letter) => letter.toUpperCase());
+  const workflowStatus = isQuickCare
+    ? data.quickCareWorkflowStatus || data.status || displayStatus
+    : data.workflowStatus || data.statusProjection || data.orderStatus || displayStatus;
   return {
     orderId: snapshot.id,
     orderType,
@@ -539,11 +654,24 @@ function orderSummary(snapshot, orderType) {
     customerPhone: data.customerPhone || data.customerMobileE164 || data.mobileE164 || data.phone || "",
     customerUid: data.customerUid || data.customerId || "",
     status: displayStatus,
-    workflowStatus: isQuickCare ? data.quickCareWorkflowStatus || "requestSubmitted" : displayStatus,
-    assignmentStatus: isQuickCare ? data.quickCareAssignmentStatus || "searching" : null,
+    needsRouting: orderNeedsRouting(data),
+    workflowStatus,
+    assignmentStatus: data.quickCareAssignmentStatus || data.assignmentStatus || "",
+    orderStatus: data.status || data.orderStatus || data.statusProjection || "",
+    measurementStatus: data.measurementStatus || "",
+    measurementSubmissionStatus: data.measurementSubmissionStatus || "",
     paymentStatus: data.paymentStatus || "",
     servicePincode: orderServicePincode(data),
-    deliveryAddress: data.deliveryAddress || data.serviceAddress || data.pickupAddress || data.address || "",
+    deliveryAddress: serviceAddressText(data.deliveryAddress) ||
+      serviceAddressText(data.serviceAddress) ||
+      serviceAddressText(data.pickupAddress) || serviceAddressText(data.address) || "",
+    expectedCompletionAt: clean(data.expectedReadyAt || data.expectedDeliveryAt ||
+      data.expectedCompletionAt || data.deliveryDate || data.quickCareScheduledAt ||
+      data.measurementAppointmentAt || data.appointmentAt || data.preferredPickupAt || null),
+    assignedPartnerName: data.assignedTailorName || data.measurementPartnerName ||
+      data.quickCareAssignedPartnerName ||
+      data.assignedQuickCarePartnerName || data.assignedPartnerName || "",
+    orderStage: data.orderStatus || data.statusProjection || data.workflowStatus || data.status || "",
     total: Number(data.totalAmount || data.price || data.grandTotal || 0),
     createdAt: clean(timestamp),
     summary: data.orderModuleType === "quickFix"
@@ -601,15 +729,22 @@ function partnerSchedule(profile) {
         }))
         .filter((slot) => DAY_CODES.includes(slot.day) && validTime(slot.start) &&
           validTime(slot.end) && slot.start < slot.end);
+  const categoryAvailabilityTracked =
+    typeof operational.availableForOrders === "boolean";
   const available = partnerType === "tailor"
     ? profile.availabilityStatus === "available"
-    : partnerType === "doorstepServices"
+    : partnerType === "doorstepServices" || partnerType === "garmentCare"
       ? operational.availableForOrders !== false
-      : profile.availabilityStatus === "available" || profile.availableForOrders === true;
+      : categoryAvailabilityTracked
+        ? operational.availableForOrders
+        : profile.availabilityStatus === "available" ||
+          profile.availableForOrders === true;
   return {
     slots: schedule,
     available,
-    availabilityTracked: partnerType === "tailor" || partnerType === "doorstepServices" ||
+    availabilityTracked: partnerType === "tailor" ||
+      partnerType === "doorstepServices" || partnerType === "garmentCare" ||
+      categoryAvailabilityTracked ||
       typeof profile.availabilityStatus === "string" ||
       typeof profile.availableForOrders === "boolean",
     display: schedule.length
@@ -697,7 +832,7 @@ async function loadAdminPartnerManagement() {
     const type = classifyOrder(order);
     const orderNumber = String(order.orderNumber || order.orderTrackingId || id);
     const createdAt = clean(order.orderDate || order.createdAt);
-    const base = {orderId: id, orderNumber, createdAt};
+    const base = {orderId: id, orderNumber, createdAt, ...partnerWorkCustomerFields(order)};
     const assignments = [
       ["assignedTailorAccountId", "assignedTailorProfileId", "Tailoring", order.workflowStatus || order.statusProjection || order.status || order.assignmentStatus],
       ["measurementPartnerAccountId", "measurementPartnerProfileId", "Measurement", order.measurementStatus || order.measurementWorkflowStatus || order.status],
@@ -739,6 +874,7 @@ async function loadAdminPartnerManagement() {
           title: String(job.serviceName || job.title || job.serviceGroupCode || "Garment Care job"),
           stage: String(job.status || "Status unavailable"),
           createdAt: clean(job.createdAt || order.createdAt),
+          ...partnerWorkCustomerFields(order),
         });
   }
 
@@ -767,6 +903,7 @@ async function loadAdminPartnerManagement() {
         title: String(shipment.serviceName || order.serviceGroupCode || "Garment Care shipment"),
         stage: String(shipment.status || shipment.deliveryStatus || "Status unavailable"),
         createdAt: clean(shipment.createdAt || order.createdAt),
+        ...partnerWorkCustomerFields({...order, ...shipment}),
       });
     }
   }
@@ -787,6 +924,7 @@ async function loadAdminPartnerManagement() {
     const application = applications.get(appId) || {};
     const lastSeenAt = millis(data.lastSeenAt);
     const openMillis = openTimeSince(schedule.slots, lastSeenAt, now);
+    const location = partnerLocation(data);
     const scheduleHoursByDay = new Map();
     for (const slot of schedule.slots) {
       const duration = timeMinutes(slot.end) * 60000 - timeMinutes(slot.start) * 60000;
@@ -813,6 +951,13 @@ async function loadAdminPartnerManagement() {
       isAvailable: schedule.available,
       availabilityTracked: schedule.availabilityTracked,
       availabilityStatus: String(data.availabilityStatus || ""),
+      servicePincode: location.pincode,
+      serviceAreaPincodes: location.servicePincodes,
+      serviceArea: location.serviceArea,
+      locality: location.locality,
+      city: location.city,
+      serviceAddress: location.serviceAddress,
+      serviceAreaLabel: location.areaLabel,
       joinedAt: clean(data.approvedAt || data.createdAt || data.registeredAt),
       applicationSubmittedAt: clean(application.submittedAt || application.createdAt),
       sourceApplicationId: appId,

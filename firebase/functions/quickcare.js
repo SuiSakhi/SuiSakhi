@@ -698,7 +698,72 @@ exports.updateQuickCareJob = functions.https.onCall(async (data, context) => {
       }
       const amount = Number(data && data.amount);
       if (!Number.isFinite(amount) || amount <= 0 || amount > 50000) fail("invalid-argument", "Enter a service quote between ₹1 and ₹50,000.");
-      tx.update(orderRef, {...common, quickCareExtraChargeStatus: "pendingCustomerApproval", quickCareExtraChargeType: "serviceQuote", quickCareExtraChargeAmount: Math.round(amount), quickCareExtraChargeReason: reason, quickCareWorkflowBeforeExtraCharge: workflow, quickCareWorkflowStatus: "awaitingCustomerApproval", quickCareExtraChargeProposedAt: FieldValue.serverTimestamp()});
+      const pricingVersionId = text(order.quickCarePricingVersionId, 128);
+      const pricingRef = pricingVersionId
+        ? db.doc(`config/quickCarePricing/versions/${pricingVersionId}`)
+        : db.doc("config/quickCarePricing");
+      const pricingSnap = await tx.get(pricingRef);
+      const pricing = pricingSnap.data() || {};
+      const platformPercent = Number(pricing.platformPercent ?? 15);
+      const taxPercent = Number(pricing.taxPercent ?? 6);
+      if (!Number.isFinite(platformPercent) || platformPercent < 0 || platformPercent > 100 ||
+          !Number.isFinite(taxPercent) || taxPercent < 0 || taxPercent > 100) {
+        fail("failed-precondition", "Quick Care platform and tax fees are not configured correctly.");
+      }
+      const serviceRates = pricing.serviceRates && typeof pricing.serviceRates === "object"
+        ? pricing.serviceRates : {};
+      const serviceIds = Array.isArray(order.quickFixServiceIds) ? order.quickFixServiceIds : [];
+      let existingCustomerServices = 0;
+      let existingPartnerServices = 0;
+      for (const serviceId of serviceIds) {
+        if (serviceId === "other_quote") continue;
+        const rate = serviceRates[serviceId] || {};
+        const partnerAmount = Number(rate.partnerAmount);
+        const customerAmount = Number(rate.customerAmount);
+        if (!Number.isFinite(partnerAmount) || partnerAmount < 0 ||
+            !Number.isFinite(customerAmount) || customerAmount < partnerAmount) {
+          fail("failed-precondition", "A selected Quick Care service has no valid published rate.");
+        }
+        existingPartnerServices += partnerAmount;
+        existingCustomerServices += customerAmount;
+      }
+      const homePartner = Number(pricing.homeVisitPartnerAmount ?? 49);
+      const homeCustomer = Number(pricing.homeVisitCustomerAmount ?? 49);
+      const expressPartner = order.expressQuickFix === true
+        ? Number(pricing.expressPartnerAmount ?? 99) : 0;
+      const expressCustomer = order.expressQuickFix === true
+        ? Number(pricing.expressCustomerAmount ?? 99) : 0;
+      const feeBase = amount;
+      const platformFee = Math.round(feeBase * platformPercent) / 100;
+      const taxFee = Math.round(feeBase * taxPercent) / 100;
+      const serviceCustomerQuote = Math.round((feeBase + platformFee + taxFee) * 100) / 100;
+      const fallbackCustomerServices = Math.max(0,
+        Number(order.estimatedPrice || order.price || 0) - homeCustomer - expressCustomer);
+      const fallbackPartnerServices = Math.max(0,
+        Number(order.quickCarePartnerPayoutEstimate || 0) - homePartner - expressPartner);
+      const existingCustomerTotal = existingCustomerServices || fallbackCustomerServices;
+      const existingPartnerTotal = existingPartnerServices || fallbackPartnerServices;
+      const customerQuote = Math.round((existingCustomerTotal + homeCustomer + expressCustomer + serviceCustomerQuote) * 100) / 100;
+      const partnerPayoutEstimate = Math.round((existingPartnerTotal + homePartner + expressPartner + feeBase) * 100) / 100;
+      tx.update(orderRef, {
+        ...common,
+        quickCareExtraChargeStatus: "pendingCustomerApproval",
+        quickCareExtraChargeType: "serviceQuote",
+        quickCareExtraChargeAmount: customerQuote,
+        quickCarePartnerQuoteBaseAmount: feeBase,
+        quickCarePartnerPayoutEstimate: partnerPayoutEstimate,
+        quickCareCustomerQuoteBreakdown: {
+          partnerServiceAmount: feeBase,
+          platformFeeAmount: platformFee,
+          taxAmount: taxFee,
+          customerTotal: customerQuote,
+          pricingVersionId: pricingVersionId || null,
+        },
+        quickCareExtraChargeReason: reason,
+        quickCareWorkflowBeforeExtraCharge: workflow,
+        quickCareWorkflowStatus: "awaitingCustomerApproval",
+        quickCareExtraChargeProposedAt: FieldValue.serverTimestamp(),
+      });
     } else if (action === "complete") {
       if (workflow !== "inProgress") fail("failed-precondition", "Resume the job before marking it complete.");
       const evidence = Array.isArray(order.quickCareEvidence) ? order.quickCareEvidence : [];

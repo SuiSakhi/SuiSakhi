@@ -385,7 +385,7 @@ class _OwnerOrderRoutingScreenState extends State<OwnerOrderRoutingScreen> {
       backgroundColor: AppColors.background,
       appBar: AppBar(
         backgroundColor: AppColors.background,
-        title: const Text('Order Routing by PIN'),
+        title: const Text('Tailor Order Routing'),
         actions: [
           IconButton(
             onPressed: _editOrderPolicy,
@@ -1344,8 +1344,7 @@ class _RoutingCandidatesSheetState extends State<_RoutingCandidatesSheet> {
                               tooltip: 'Move down',
                             ),
                             IconButton(
-                              onPressed:
-                                  online && _busyProfileId == null
+                              onPressed: online && _busyProfileId == null
                                   ? () => _send(candidate, override: false)
                                   : null,
                               icon: busy
@@ -1419,8 +1418,7 @@ class _RoutingCandidatesSheetState extends State<_RoutingCandidatesSheet> {
                         style: AppTextStyles.bodySmall,
                       ),
                       trailing: TextButton(
-                        onPressed:
-                            _busyProfileId != null
+                        onPressed: _busyProfileId != null
                             ? null
                             : () => _send(candidate, override: true),
                         child: busy

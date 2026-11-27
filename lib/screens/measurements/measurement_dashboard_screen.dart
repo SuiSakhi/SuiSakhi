@@ -6,11 +6,11 @@ import 'package:go_router/go_router.dart';
 import '../../core/app_state.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
+import '../../core/garment_measurement_catalog.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/measurement.dart';
 import '../../services/customer_measurement_history_service.dart';
 import '../../widgets/common/custom_button.dart';
-import '../../widgets/common/measurement_card.dart';
 import '../../widgets/common/measurement_unit_toggle.dart';
 
 class MeasurementDashboardScreen extends StatefulWidget {
@@ -36,6 +36,8 @@ class _MeasurementDashboardScreenState
   Map<String, dynamic>? _latestDraft;
   BodyMeasurements? _selectedPersonMeasurements;
   List<CustomerMeasurementRecord> _measurementHistory = const [];
+  CustomerMeasurementRecord? _currentCustomerReference;
+  bool _savingCustomerReference = false;
 
   @override
   void initState() {
@@ -284,6 +286,7 @@ class _MeasurementDashboardScreenState
       _loadingPersonMeasurements = true;
       _selectedPersonMeasurements = null;
       _measurementHistory = const [];
+      _currentCustomerReference = null;
     });
 
     try {
@@ -383,10 +386,18 @@ class _MeasurementDashboardScreenState
       }
 
       if (!mounted) return;
+      CustomerMeasurementRecord? currentCustomerReference;
+      for (final record in history) {
+        if (record.isCustomerReference) {
+          currentCustomerReference = record;
+          break;
+        }
+      }
 
       setState(() {
         _selectedPersonMeasurements = loadedMeasurements;
         _measurementHistory = history;
+        _currentCustomerReference = currentCustomerReference;
         _loadingPersonMeasurements = false;
       });
     } catch (_) {
@@ -421,8 +432,10 @@ class _MeasurementDashboardScreenState
               ),
               IconButton(
                 icon: const Icon(Icons.edit_outlined),
-                onPressed: () {},
-                tooltip: 'Edit',
+                onPressed: _savingCustomerReference
+                    ? null
+                    : _editCustomerMeasurements,
+                tooltip: 'Edit customer measurements',
               ),
             ],
           ),
@@ -439,25 +452,58 @@ class _MeasurementDashboardScreenState
                   const LinearProgressIndicator(),
                   const SizedBox(height: 20),
                 ],
-                if (measurements == null && _measurementHistory.isEmpty) ...[
+                if (measurements == null &&
+                    _currentCustomerReference == null &&
+                    _measurementHistory.isEmpty) ...[
                   _buildNoMeasurementState(context),
-                  const SizedBox(height: 28),
-                ] else if (measurements != null) ...[
+                  const SizedBox(height: 20),
+                ],
+                if (measurements != null) ...[
                   _buildMeasurementSummaryCard(measurements, unit),
                   const SizedBox(height: 28),
-                  Text(
-                    'Body Measurements',
-                    style: AppTextStyles.headlineMedium,
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    'Last updated: Today · values shown in ${unit.abbrev} (with alternate)',
-                    style: AppTextStyles.bodySmall,
-                  ),
-                  const SizedBox(height: 16),
-                  _buildGrid(measurements, unit),
-                  const SizedBox(height: 28),
                 ],
+                Text('Body Measurements', style: AppTextStyles.headlineMedium),
+                const SizedBox(height: 4),
+                Text(
+                  _currentCustomerReference == null
+                      ? 'No customer reference saved yet · shown in ${unit.abbrev} (with alternate)'
+                      : 'Customer reference · updated ${_formatMeasurementDate(_currentCustomerReference!.capturedAt)} · shown in ${unit.abbrev} (with alternate)',
+                  style: AppTextStyles.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Existing saved values are shown where available. Edit or replace them to create your customer reference; Tailor-confirmed measurements remain separate.',
+                  style: AppTextStyles.bodySmall.copyWith(
+                    color: AppColors.textHint,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildMeasurementChartGuide(),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: _savingCustomerReference
+                          ? null
+                          : _editCustomerMeasurements,
+                      icon: const Icon(Icons.edit_outlined),
+                      label: const Text('Edit all 22'),
+                    ),
+                    OutlinedButton.icon(
+                      onPressed: _savingCustomerReference
+                          ? null
+                          : _replaceFromMeasurementHistory,
+                      icon: const Icon(Icons.history_rounded),
+                      label: const Text('Replace from history'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _buildGrid(measurements, unit),
+                const SizedBox(height: 28),
                 if (_measurementHistory.isNotEmpty) ...[
                   _buildMeasurementHistory(),
                   const SizedBox(height: 24),
@@ -958,7 +1004,7 @@ class _MeasurementDashboardScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Body Profile',
+                  'Latest saved body summary',
                   style: AppTextStyles.bodySmall.copyWith(
                     color: Colors.white.withValues(alpha: 0.8),
                   ),
@@ -1014,52 +1060,707 @@ class _MeasurementDashboardScreenState
     );
   }
 
-  Widget _buildGrid(BodyMeasurements m, MeasurementUnit unit) {
-    final items = [
-      ('Chest', m.chest, Icons.straighten_rounded, AppColors.primary),
-      ('Waist', m.waist, Icons.radio_button_unchecked, const Color(0xFFE84F8B)),
-      ('Hips', m.hips, Icons.accessibility_rounded, const Color(0xFFF5A623)),
-      (
-        'Shoulder',
-        m.shoulder,
-        Icons.width_wide_rounded,
-        const Color(0xFF4CAF50),
-      ),
-      (
-        'Arm Length',
-        m.armLength,
-        Icons.back_hand_outlined,
-        AppColors.primaryDark,
-      ),
-      ('Height', m.height, Icons.height_rounded, const Color(0xFF9C27B0)),
-      ('Neck', m.neck, Icons.circle_outlined, const Color(0xFF00BCD4)),
-      (
-        'Thigh',
-        m.thigh,
-        Icons.airline_seat_legroom_normal,
-        const Color(0xFFFF5722),
-      ),
-    ];
+  double? _measurementValueCm(
+    GarmentMeasurementSpec spec,
+    BodyMeasurements? fallback,
+  ) {
+    final record = _currentCustomerReference;
+    if (record != null) {
+      for (final entry in record.values.entries) {
+        if (GarmentMeasurementCatalog.forAnyKey(entry.key)?.number !=
+            spec.number) {
+          continue;
+        }
+        final value = double.tryParse(entry.value);
+        if (value == null || value <= 0 || !value.isFinite) return null;
+        final unit =
+            measurementUnitFromStorage(record.unit) ?? MeasurementUnit.cm;
+        return unit.toCm(value);
+      }
+      return null;
+    }
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.1,
-      ),
-      itemCount: items.length,
-      itemBuilder: (ctx, i) => MeasurementTile(
-        label: items[i].$1,
-        valueCm: items[i].$2,
+    if (fallback == null) return null;
+    return switch (spec.number) {
+      1 => fallback.neck,
+      3 => fallback.chest,
+      5 => fallback.waist,
+      6 => fallback.hips,
+      7 => fallback.height,
+      9 => fallback.inseam,
+      10 => fallback.armLength,
+      19 => fallback.shoulder,
+      _ => null,
+    };
+  }
+
+  Future<void> _editCustomerMeasurements() async {
+    final unit = AppState.instance.measurementUnit;
+    final initialValues = <String, double>{};
+    for (final spec in GarmentMeasurementCatalog.all) {
+      final valueCm = _measurementValueCm(spec, _selectedPersonMeasurements);
+      if (valueCm != null) initialValues[spec.key] = unit.fromCm(valueCm);
+    }
+
+    final editedValues = await showModalBottomSheet<Map<String, double>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.background,
+      builder: (_) => _CustomerMeasurementsEditorSheet(
         unit: unit,
-        icon: items[i].$3,
-        color: items[i].$4,
+        initialValues: initialValues,
+      ),
+    );
+
+    if (editedValues == null || !mounted) return;
+    await _saveCustomerReference(
+      values: editedValues,
+      unit: unit,
+      source: 'manual_customer_reference',
+      title: 'My measurements',
+      note: 'Customer-edited measurement reference.',
+      referenceOfId: _currentCustomerReference?.id,
+    );
+  }
+
+  Future<void> _replaceFromMeasurementHistory() async {
+    final person = _selectedPerson;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (person == null || uid == null) return;
+
+    final options = <_MeasurementReferenceOption>[
+      for (final record in _measurementHistory)
+        if (record.values.isNotEmpty)
+          _MeasurementReferenceOption(
+            title: record.title,
+            subtitle:
+                '${_measurementStatusLabel(record)} · ${_formatMeasurementDate(record.capturedAt)} · ${record.values.length} fields',
+            values: record.values,
+            unit: record.unit,
+            source: 'previous_measurement_reference',
+            referenceId: record.id,
+            sourceOrderId: record.sourceOrderId,
+            imageUrl: record.referenceImageUrl,
+          ),
+    ];
+    try {
+      final oldDressReferences =
+          await CustomerMeasurementHistoryService.loadDressReferences(
+            customerUid: uid,
+            personId: person.id,
+            personName: person.name,
+          );
+      options.addAll(
+        oldDressReferences
+            .where((reference) => reference.values.isNotEmpty)
+            .map(
+              (reference) => _MeasurementReferenceOption(
+                title: reference.title,
+                subtitle: 'Previous order · ${reference.values.length} fields',
+                values: reference.values,
+                unit: reference.unit,
+                source: 'old_dress_reference',
+                referenceId: null,
+                sourceOrderId: reference.orderId,
+                imageUrl: reference.imageUrl,
+              ),
+            ),
+      );
+    } catch (_) {
+      // Measurement history choices can still be used if old orders are unavailable.
+    }
+
+    if (!mounted) return;
+    if (options.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No saved measurement references found.')),
+      );
+      return;
+    }
+
+    final selected = await showModalBottomSheet<_MeasurementReferenceOption>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.background,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(sheetContext).height * .78,
+        child: ListView(
+          padding: const EdgeInsets.all(18),
+          children: [
+            Text(
+              'Replace from saved measurements',
+              style: AppTextStyles.headlineMedium,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Choosing a record saves a new customer reference. The original history and tailor-confirmed record stay unchanged.',
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textHint,
+                height: 1.35,
+              ),
+            ),
+            const SizedBox(height: 12),
+            for (final option in options)
+              Card(
+                color: AppColors.surface,
+                child: ListTile(
+                  title: Text(option.title),
+                  subtitle: Text(option.subtitle),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.of(sheetContext).pop(option),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (selected == null || !mounted) return;
+
+    final values = <String, double>{};
+    for (final entry in selected.values.entries) {
+      final spec = GarmentMeasurementCatalog.forAnyKey(entry.key);
+      final value = double.tryParse(entry.value);
+      if (spec != null && value != null && value > 0 && value.isFinite) {
+        values[spec.key] = value;
+      }
+    }
+    if (values.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('This record has no values that can be copied.'),
+        ),
+      );
+      return;
+    }
+    await _saveCustomerReference(
+      values: values,
+      unit: measurementUnitFromStorage(selected.unit) ?? MeasurementUnit.cm,
+      source: selected.source,
+      title: 'My measurements · ${selected.title}',
+      note: 'Customer reference copied from ${selected.title}.',
+      referenceOfId: selected.referenceId,
+      sourceOrderId: selected.sourceOrderId,
+      referenceImageUrl: selected.imageUrl,
+    );
+  }
+
+  Future<void> _saveCustomerReference({
+    required Map<String, double> values,
+    required MeasurementUnit unit,
+    required String source,
+    required String title,
+    required String note,
+    String? referenceOfId,
+    String? sourceOrderId,
+    String? referenceImageUrl,
+  }) async {
+    final person = _selectedPerson;
+    if (person == null) return;
+    setState(() => _savingCustomerReference = true);
+    try {
+      final accountId = await _currentAccountId();
+      final profileId = _customerProfileId?.trim() ?? '';
+      if (accountId == null || accountId.isEmpty || profileId.isEmpty) {
+        throw StateError('Customer profile is unavailable.');
+      }
+      final ref = _db.collection('measurements').doc();
+      await ref.set({
+        'schemaVersion': 1,
+        'draftId': ref.id,
+        'accountId': accountId,
+        'customerProfileId': profileId,
+        'personId': person.id,
+        'personName': person.name,
+        'relationship': person.relationship,
+        'source': source,
+        'measurementType': 'customer_reference',
+        'measurementSchema': 'suisakhi_womens_22_v2',
+        'status': 'customer_reference',
+        'referenceOnly': true,
+        'measurementValues': values,
+        'measurementUnit': unit.abbrev,
+        'customerNote': note,
+        'referenceTitle': title,
+        if (referenceImageUrl?.trim().isNotEmpty == true)
+          'referenceImageUrl': referenceImageUrl!.trim(),
+        if (sourceOrderId?.trim().isNotEmpty == true)
+          'sourceOrderId': sourceOrderId!.trim(),
+        if (referenceOfId?.trim().isNotEmpty == true)
+          'referenceOfId': referenceOfId!.trim(),
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Customer measurement reference saved.')),
+      );
+      await _loadLatestPersonMeasurements();
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Unable to save customer measurements. Please try again.',
+            ),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _savingCustomerReference = false);
+    }
+  }
+
+  Widget _buildGrid(BodyMeasurements? m, MeasurementUnit unit) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        children: [
+          for (
+            var index = 0;
+            index < GarmentMeasurementCatalog.all.length;
+            index++
+          ) ...[
+            if (index > 0)
+              Divider(
+                height: 1,
+                color: AppColors.divider.withValues(alpha: .7),
+              ),
+            _buildMeasurementRow(GarmentMeasurementCatalog.all[index], m, unit),
+          ],
+        ],
       ),
     );
   }
+
+  Widget _buildMeasurementRow(
+    GarmentMeasurementSpec spec,
+    BodyMeasurements? fallback,
+    MeasurementUnit unit,
+  ) {
+    final valueCm = _measurementValueCm(spec, fallback);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          Container(
+            width: 25,
+            height: 25,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: spec.color.withValues(alpha: .1),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              spec.number.toString().padLeft(2, '0'),
+              style: TextStyle(
+                color: spec.color,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            flex: 5,
+            child: Text(
+              spec.label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textPrimary,
+                fontSize: 12.5,
+                height: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 4,
+            child: Text(
+              valueCm == null
+                  ? 'Not added'
+                  : MeasurementFormat.formatDual(
+                      valueCm,
+                      unit,
+                      fractionDigits: 1,
+                    ),
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                color: valueCm == null ? AppColors.textHint : spec.color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMeasurementChartGuide() {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: AppColors.divider),
+      ),
+      child: ExpansionTile(
+        leading: const Icon(Icons.accessibility_new_rounded),
+        title: Text(
+          'Universal measurement chart',
+          style: AppTextStyles.titleMedium.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Text(
+          'Visual guide for all 22 measurement points',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+        children: [
+          Text(
+            'Match the number beside a measurement to the diagram. Use this as a guide; your tailor will confirm the measurements for an order.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 10),
+          InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: _showMeasurementChart,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.asset(
+                'assets/images/universal_measurement_chart.png',
+                width: double.infinity,
+                fit: BoxFit.contain,
+                semanticLabel: 'Universal women and girls measurement chart',
+              ),
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Tap the chart to zoom in.',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMeasurementChart() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Close chart',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+              Expanded(
+                child: InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Image.asset(
+                    'assets/images/universal_measurement_chart.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _CustomerMeasurementsEditorSheet extends StatefulWidget {
+  const _CustomerMeasurementsEditorSheet({
+    required this.unit,
+    required this.initialValues,
+  });
+
+  final MeasurementUnit unit;
+  final Map<String, double> initialValues;
+
+  @override
+  State<_CustomerMeasurementsEditorSheet> createState() =>
+      _CustomerMeasurementsEditorSheetState();
+}
+
+class _CustomerMeasurementsEditorSheetState
+    extends State<_CustomerMeasurementsEditorSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final Map<String, TextEditingController> _controllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = {
+      for (final spec in GarmentMeasurementCatalog.all)
+        spec.key: TextEditingController(
+          text: widget.initialValues[spec.key]
+              ?.toStringAsFixed(1)
+              .replaceFirst(RegExp(r'\.0$'), ''),
+        ),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _save() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final values = <String, double>{};
+    for (final spec in GarmentMeasurementCatalog.all) {
+      final raw = _controllers[spec.key]!.text.trim();
+      final value = double.tryParse(raw);
+      if (value != null) values[spec.key] = value;
+    }
+    if (values.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter at least one measurement.')),
+      );
+      return;
+    }
+    Navigator.of(context).pop(values);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final unit = widget.unit;
+    final maximum = unit == MeasurementUnit.cm ? 500 : 200;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .9,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Edit customer measurements',
+                      style: AppTextStyles.headlineMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Enter what you know in ${unit.abbrev}; leave other fields blank. Saving creates a new customer reference and keeps measurement history unchanged.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: Form(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  children: [
+                    _buildUniversalChartReference(),
+                    const SizedBox(height: 12),
+                    ...GarmentMeasurementCatalog.all.map((spec) {
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 7),
+                        child: TextFormField(
+                          controller: _controllers[spec.key],
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 12,
+                            ),
+                            labelText:
+                                '${spec.number.toString().padLeft(2, '0')} · ${spec.label}',
+                            labelStyle: AppTextStyles.bodySmall.copyWith(
+                              fontSize: 12.5,
+                            ),
+                            suffixText: unit.abbrev,
+                          ),
+                          validator: (raw) {
+                            final value = raw?.trim() ?? '';
+                            if (value.isEmpty) return null;
+                            final parsed = double.tryParse(value);
+                            if (parsed == null ||
+                                !parsed.isFinite ||
+                                parsed <= 0 ||
+                                parsed > maximum) {
+                              return 'Enter a value from 0 to $maximum ${unit.abbrev}.';
+                            }
+                            return null;
+                          },
+                        ),
+                      );
+                    }),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _save,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save customer measurements'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildUniversalChartReference() {
+    return Card(
+      margin: EdgeInsets.zero,
+      color: AppColors.surface,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: AppColors.divider),
+      ),
+      child: ExpansionTile(
+        leading: const Icon(Icons.accessibility_new_rounded),
+        title: Text(
+          'Universal measurement chart',
+          style: AppTextStyles.titleMedium.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        subtitle: Text(
+          'Visual reference for all 22 points',
+          style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+        ),
+        childrenPadding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+        children: [
+          Text(
+            'Use the numbered chart to identify each measurement. Tap the image to zoom in.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.textHint,
+              height: 1.35,
+            ),
+          ),
+          const SizedBox(height: 8),
+          InkWell(
+            borderRadius: BorderRadius.circular(10),
+            onTap: _showUniversalChart,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.asset(
+                'assets/images/universal_measurement_chart.png',
+                width: double.infinity,
+                height: 200,
+                fit: BoxFit.contain,
+                semanticLabel: 'Universal women and girls measurement chart',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showUniversalChart() {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: SafeArea(
+          child: Column(
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  tooltip: 'Close chart',
+                  onPressed: () => Navigator.of(dialogContext).pop(),
+                  icon: const Icon(Icons.close_rounded),
+                ),
+              ),
+              Expanded(
+                child: InteractiveViewer(
+                  minScale: 1,
+                  maxScale: 4,
+                  child: Image.asset(
+                    'assets/images/universal_measurement_chart.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MeasurementReferenceOption {
+  const _MeasurementReferenceOption({
+    required this.title,
+    required this.subtitle,
+    required this.values,
+    required this.unit,
+    required this.source,
+    required this.referenceId,
+    required this.sourceOrderId,
+    required this.imageUrl,
+  });
+
+  final String title;
+  final String subtitle;
+  final Map<String, String> values;
+  final String unit;
+  final String source;
+  final String? referenceId;
+  final String? sourceOrderId;
+  final String? imageUrl;
 }
 
 class _MeasurementDashboardPerson {

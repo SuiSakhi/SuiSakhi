@@ -300,7 +300,9 @@ function measurementPartnerCanFulfill(profile, direction, order) {
 }
 
 function deliveryPartnerCanFulfill(profile, direction, order) {
-  if (!profileIsApprovedDeliveryPartner(profile) || !profileServesOrderPin(profile, "deliveryPartner", order)) {
+  if (!profileIsApprovedDeliveryPartner(profile) ||
+      profile.availabilityStatus === "unavailable" ||
+      !profileServesOrderPin(profile, "deliveryPartner", order)) {
     return false;
   }
   const partnerData = asMap(profile.partnerData);
@@ -3286,7 +3288,41 @@ async function getMeasurementPartnerAssignments(data, context) {
     const rightTime = right.measurementAppointmentAt ? Date.parse(right.measurementAppointmentAt) : Number.MAX_SAFE_INTEGER;
     return leftTime - rightTime;
   });
-  return {assignments};
+
+  // Only surface Measurement Issue tickets attached to orders assigned to this
+  // profile. Partners cannot browse the wider customer Helpdesk queue.
+  const partnerOrderIds = [...new Set(assignedOrders.map((snapshot) => snapshot.id))];
+  const ticketIdBatches = [];
+  for (let index = 0; index < partnerOrderIds.length; index += 10) {
+    ticketIdBatches.push(partnerOrderIds.slice(index, index + 10));
+  }
+  const ticketSnapshots = await Promise.all(ticketIdBatches.map((orderIds) =>
+    db.collection("support_tickets")
+        .where("linkedOrderId", "in", orderIds)
+        .limit(100)
+        .get()));
+  const supportRequestsById = new Map();
+  for (const tickets of ticketSnapshots) {
+    for (const ticket of tickets.docs) {
+      const data = ticket.data() || {};
+      if (data.assignedTeam !== "measurements" || data.category !== "Measurement Issue" ||
+          ["Resolved", "Closed"].includes(text(data.status))) continue;
+      const createdAt = data.createdAt;
+      supportRequestsById.set(ticket.id, {
+        ticketId: ticket.id,
+        linkedOrderId: text(data.linkedOrderId),
+        subject: text(data.subject || "Measurement help request"),
+        message: text(data.message),
+        status: text(data.status || "Open"),
+        customerName: text(data.customerName || "Customer"),
+        createdAt: createdAt && typeof createdAt.toDate === "function" ?
+          createdAt.toDate().toISOString() : null,
+      });
+    }
+  }
+  const supportRequests = [...supportRequestsById.values()]
+      .sort((left, right) => (right.createdAt || "").localeCompare(left.createdAt || ""));
+  return {assignments, supportRequests};
 }
 
 async function setMeasurementPartnerAppointment(data, context) {

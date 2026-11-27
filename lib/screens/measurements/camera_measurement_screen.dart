@@ -9,6 +9,7 @@ import 'package:permission_handler/permission_handler.dart';
 import '../../core/constants/app_colors.dart';
 import '../../core/constants/app_text_styles.dart';
 import '../../core/app_state.dart';
+import '../../core/garment_measurement_catalog.dart';
 import '../../core/measurement_unit.dart';
 import '../../models/measurement.dart';
 import '../../services/body_measurement_calculator.dart';
@@ -359,6 +360,24 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
+      appBar: _step == _ScanStep.done
+          ? AppBar(
+              backgroundColor: AppColors.background,
+              foregroundColor: AppColors.textPrimary,
+              title: const Text('Measurement Result'),
+              leading: IconButton(
+                tooltip: 'Back to measurement options',
+                icon: const Icon(Icons.arrow_back_rounded),
+                onPressed: () {
+                  if (context.canPop()) {
+                    context.pop();
+                  } else {
+                    context.go('/measurements');
+                  }
+                },
+              ),
+            )
+          : null,
       body: SafeArea(
         child: switch (_step) {
           _ScanStep.frontScanning => _buildCameraView(),
@@ -1092,8 +1111,20 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
                   'AI-calculated body measurements',
                   style: AppTextStyles.bodyMedium,
                 ),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: _editEstimatedMeasurements,
+                    icon: const Icon(Icons.edit_outlined, size: 18),
+                    label: const Text('Adjust estimates'),
+                  ),
+                ),
                 const SizedBox(height: 24),
-                _buildResultsGrid(m, unit),
+                _buildUniversalMeasurementRows(m, unit),
+                if (m.thigh != null || m.inseam != null) ...[
+                  const SizedBox(height: 16),
+                  _buildSupplementaryEstimates(m, unit),
+                ],
                 const SizedBox(height: 16),
                 // Disclaimer
                 Container(
@@ -1218,53 +1249,201 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
     );
   }
 
-  Widget _buildResultsGrid(BodyMeasurements m, MeasurementUnit unit) {
-    final items = [
-      ('Height', m.height, AppColors.primary, Icons.height_rounded),
-      ('Chest', m.chest, const Color(0xFFE84F8B), Icons.straighten_rounded),
-      ('Waist', m.waist, const Color(0xFFF5A623), Icons.radio_button_unchecked),
-      ('Hips', m.hips, const Color(0xFF9C27B0), Icons.accessibility_rounded),
-      (
-        'Shoulder',
-        m.shoulder,
-        const Color(0xFF4CAF50),
-        Icons.width_wide_rounded,
+  Widget _buildUniversalMeasurementRows(
+    BodyMeasurements m,
+    MeasurementUnit unit,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.divider),
       ),
-      (
-        'Arm Length',
-        m.armLength,
-        AppColors.primaryDark,
-        Icons.back_hand_outlined,
+      child: Column(
+        children: [
+          for (
+            var index = 0;
+            index < GarmentMeasurementCatalog.all.length;
+            index++
+          ) ...[
+            if (index > 0)
+              Divider(
+                height: 1,
+                color: AppColors.divider.withValues(alpha: .7),
+              ),
+            _buildUniversalMeasurementRow(
+              GarmentMeasurementCatalog.all[index],
+              m,
+              unit,
+            ),
+          ],
+        ],
       ),
-      ('Neck', m.neck, const Color(0xFF00BCD4), Icons.circle_outlined),
-      (
-        'Thigh',
-        m.thigh,
-        const Color(0xFFFF5722),
-        Icons.airline_seat_legroom_normal,
+    );
+  }
+
+  Widget _buildUniversalMeasurementRow(
+    GarmentMeasurementSpec spec,
+    BodyMeasurements measurements,
+    MeasurementUnit unit,
+  ) {
+    final valueCm = measurements.universalChartValueCm(spec.number);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 9),
+      child: Row(
+        children: [
+          Container(
+            width: 25,
+            height: 25,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: spec.color.withValues(alpha: .1),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              spec.number.toString().padLeft(2, '0'),
+              style: TextStyle(
+                color: spec.color,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            flex: 5,
+            child: Text(
+              spec.label,
+              style: AppTextStyles.bodySmall.copyWith(
+                color: AppColors.textPrimary,
+                fontSize: 12.5,
+                height: 1.2,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            flex: 4,
+            child: Text(
+              valueCm == null
+                  ? 'Needs tape measurement'
+                  : MeasurementFormat.formatDual(
+                      valueCm,
+                      unit,
+                      fractionDigits: 1,
+                    ),
+              textAlign: TextAlign.end,
+              style: TextStyle(
+                color: valueCm == null ? AppColors.textHint : spec.color,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+              ),
+            ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Future<void> _editEstimatedMeasurements() async {
+    final current = _measurements;
+    if (current == null) return;
+
+    final unit = AppState.instance.measurementUnit;
+    final specs = GarmentMeasurementCatalog.all
+        .where((spec) => current.universalChartValueCm(spec.number) != null)
+        .toList(growable: false);
+    final initialValues = {
+      for (final spec in specs)
+        spec.number: unit.fromCm(current.universalChartValueCm(spec.number)!),
+    };
+    final editedValues = await showModalBottomSheet<Map<int, double>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: AppColors.background,
+      builder: (_) => _CameraEstimateEditorSheet(
+        unit: unit,
+        specs: specs,
+        initialValues: initialValues,
+      ),
+    );
+    if (editedValues == null || !mounted) return;
+
+    double? valueInCm(int number) {
+      final value = editedValues[number];
+      return value == null ? null : unit.toCm(value);
+    }
+
+    final updated = BodyMeasurements(
+      neck: valueInCm(1) ?? current.neck,
+      chest: valueInCm(3) ?? current.chest,
+      waist: valueInCm(5) ?? current.waist,
+      hips: valueInCm(6) ?? current.hips,
+      height: valueInCm(7) ?? current.height,
+      armLength: valueInCm(10) ?? current.armLength,
+      shoulder: valueInCm(19) ?? current.shoulder,
+      thigh: current.thigh,
+      inseam: current.inseam,
+      capturedAt: current.capturedAt,
+    );
+    AppState.instance.setMeasurements(updated);
+    setState(() => _measurements = updated);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'Updated estimates will appear in your measurement profile.',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSupplementaryEstimates(
+    BodyMeasurements m,
+    MeasurementUnit unit,
+  ) {
+    final estimates = [
+      if (m.thigh != null) ('Thigh', m.thigh!),
+      if (m.inseam != null) ('Inseam', m.inseam!),
     ];
 
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 10,
-        mainAxisSpacing: 10,
-        childAspectRatio: 1.7,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.divider),
       ),
-      itemCount: items.length,
-      itemBuilder: (ctx, i) {
-        final it = items[i];
-        return _ResultTile(
-          label: it.$1,
-          valueCm: it.$2,
-          unit: unit,
-          color: it.$3,
-          icon: it.$4,
-        );
-      },
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Additional camera estimates', style: AppTextStyles.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            'These are shown separately because they do not match a point in the universal 22-point chart.',
+            style: AppTextStyles.bodySmall.copyWith(color: AppColors.textHint),
+          ),
+          const SizedBox(height: 8),
+          for (final estimate in estimates)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(estimate.$1, style: AppTextStyles.bodyMedium),
+                  Text(
+                    MeasurementFormat.formatWithUnit(estimate.$2, unit),
+                    style: AppTextStyles.labelLarge,
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -1302,6 +1481,149 @@ class _CameraMeasurementScreenState extends State<CameraMeasurementScreen>
           const SizedBox(height: 12),
           SecondaryButton(label: 'Go Back', onTap: () => context.pop()),
         ],
+      ),
+    );
+  }
+}
+
+class _CameraEstimateEditorSheet extends StatefulWidget {
+  const _CameraEstimateEditorSheet({
+    required this.unit,
+    required this.specs,
+    required this.initialValues,
+  });
+
+  final MeasurementUnit unit;
+  final List<GarmentMeasurementSpec> specs;
+  final Map<int, double> initialValues;
+
+  @override
+  State<_CameraEstimateEditorSheet> createState() =>
+      _CameraEstimateEditorSheetState();
+}
+
+class _CameraEstimateEditorSheetState
+    extends State<_CameraEstimateEditorSheet> {
+  final _formKey = GlobalKey<FormState>();
+  late final Map<int, TextEditingController> _controllers;
+
+  @override
+  void initState() {
+    super.initState();
+    _controllers = {
+      for (final spec in widget.specs)
+        spec.number: TextEditingController(
+          text: widget.initialValues[spec.number]!.toStringAsFixed(1),
+        ),
+    };
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers.values) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  void _save() {
+    if (!(_formKey.currentState?.validate() ?? false)) return;
+    Navigator.of(context).pop({
+      for (final spec in widget.specs)
+        spec.number: double.parse(_controllers[spec.number]!.text.trim()),
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maximum = widget.unit == MeasurementUnit.cm ? 500 : 200;
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom),
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * .78,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 12, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Adjust camera estimates',
+                      style: AppTextStyles.headlineMedium,
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                'Review and correct the values detected by the camera. Other chart points can be entered with the manual measurement method.',
+                style: AppTextStyles.bodySmall.copyWith(
+                  color: AppColors.textHint,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: Form(
+                key: _formKey,
+                child: ListView(
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+                  children: [
+                    for (final spec in widget.specs)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: TextFormField(
+                          controller: _controllers[spec.number],
+                          keyboardType: const TextInputType.numberWithOptions(
+                            decimal: true,
+                          ),
+                          style: AppTextStyles.bodyMedium.copyWith(
+                            fontSize: 14,
+                          ),
+                          decoration: InputDecoration(
+                            isDense: true,
+                            labelText:
+                                '${spec.number.toString().padLeft(2, '0')} · ${spec.label}',
+                            suffixText: widget.unit.abbrev,
+                          ),
+                          validator: (raw) {
+                            final value = double.tryParse(raw?.trim() ?? '');
+                            if (value == null ||
+                                !value.isFinite ||
+                                value <= 0 ||
+                                value > maximum) {
+                              return 'Enter a valid value in ${widget.unit.abbrev}.';
+                            }
+                            return null;
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _save,
+                  icon: const Icon(Icons.save_outlined),
+                  label: const Text('Save adjusted estimates'),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1385,93 +1707,6 @@ class _PoseOverlayPainter extends CustomPainter {
   @override
   bool shouldRepaint(_PoseOverlayPainter old) =>
       old.poses != poses || old.imageSize != imageSize;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Helper widgets
-// ─────────────────────────────────────────────────────────────────────────────
-class _ResultTile extends StatelessWidget {
-  final String label;
-  final double? valueCm;
-  final MeasurementUnit unit;
-  final Color color;
-  final IconData icon;
-
-  const _ResultTile({
-    required this.label,
-    required this.valueCm,
-    required this.unit,
-    required this.color,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.cardShadow,
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(label, style: AppTextStyles.bodySmall),
-                valueCm != null
-                    ? Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            MeasurementFormat.formatWithUnit(valueCm, unit),
-                            style: AppTextStyles.headlineSmall.copyWith(
-                              color: color,
-                              fontSize: 13,
-                            ),
-                          ),
-                          Text(
-                            unit == MeasurementUnit.cm
-                                ? '${MeasurementFormat.formatValue(valueCm, MeasurementUnit.inch)} in'
-                                : '${MeasurementFormat.formatValue(valueCm, MeasurementUnit.cm)} cm',
-                            style: AppTextStyles.bodySmall.copyWith(
-                              color: AppColors.textHint,
-                              fontSize: 10,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text(
-                        '—',
-                        style: AppTextStyles.headlineSmall.copyWith(
-                          color: AppColors.textHint,
-                        ),
-                      ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _FadeInStep extends StatefulWidget {

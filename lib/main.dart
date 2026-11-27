@@ -50,10 +50,14 @@ void main() async {
           debugPrint('App Check web provider is not configured.');
         }
       } else if (defaultTargetPlatform == TargetPlatform.android) {
-        const useDebugProvider = bool.fromEnvironment(
-          'SUI_SAKHI_APP_CHECK_DEBUG_PROVIDER',
-          defaultValue: kDebugMode,
-        );
+        // Keep debug attestation available for local runs, but never allow a
+        // release build to opt into it through a build flag.
+        const useDebugProvider =
+            !kReleaseMode &&
+            bool.fromEnvironment(
+              'SUI_SAKHI_APP_CHECK_DEBUG_PROVIDER',
+              defaultValue: kDebugMode,
+            );
         debugPrint(
           '[AppCheck] Android provider=${useDebugProvider ? 'debug' : 'Play Integrity'}; '
           'Firebase project=${Firebase.app().options.projectId}; '
@@ -66,10 +70,14 @@ void main() async {
         );
       } else if (defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.macOS) {
-        const useDebugProvider = bool.fromEnvironment(
-          'SUI_SAKHI_APP_CHECK_DEBUG_PROVIDER',
-          defaultValue: kDebugMode,
-        );
+        // Keep debug attestation available for local runs, but never allow a
+        // release build to opt into it through a build flag.
+        const useDebugProvider =
+            !kReleaseMode &&
+            bool.fromEnvironment(
+              'SUI_SAKHI_APP_CHECK_DEBUG_PROVIDER',
+              defaultValue: kDebugMode,
+            );
         await FirebaseAppCheck.instance.activate(
           appleProvider: useDebugProvider
               ? AppleProvider.debug

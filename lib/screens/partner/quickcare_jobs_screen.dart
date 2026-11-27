@@ -10,6 +10,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../widgets/orders/order_stage_progress.dart';
 
 class QuickCareJobsScreen extends StatefulWidget {
   const QuickCareJobsScreen({
@@ -880,6 +881,25 @@ class _QuickCareJobsScreenState extends State<QuickCareJobsScreen> {
                 _statusChip(_statusLabel(workflow, assignment)),
               ],
             ),
+            OrderStageProgress(
+              stages: const [
+                'Requested',
+                'Accepted',
+                'In service',
+                'Payment',
+                'Closed',
+              ],
+              currentStep: workflow == 'completed'
+                  ? 4
+                  : workflow == 'paymentPending' ||
+                        workflow == 'awaitingCustomerApproval'
+                  ? 3
+                  : workflow == 'inProgress' || workflow == 'paused'
+                  ? 2
+                  : workflow == 'accepted' || workflow == 'partnerAssigned'
+                  ? 1
+                  : 0,
+            ),
             const SizedBox(height: 14),
             if (order['quickCareAssignmentOverride'] == true)
               _callout(
@@ -1274,7 +1294,7 @@ class _QuickCareQuoteDialogState extends State<_QuickCareQuoteDialog> {
           keyboardType: TextInputType.number,
           decoration: InputDecoration(
             labelText: widget.serviceQuote
-                ? 'Service quote (₹)'
+                ? 'Partner service fee before platform / tax (₹)'
                 : 'Additional amount (₹)',
           ),
         ),
@@ -1284,8 +1304,10 @@ class _QuickCareQuoteDialogState extends State<_QuickCareQuoteDialog> {
           decoration: const InputDecoration(labelText: 'Work and reason'),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'The customer must approve this amount before you continue or close the job.',
+        Text(
+          widget.serviceQuote
+              ? 'Platform fee and taxes are added to your Partner fee. The customer must approve the final total before you continue.'
+              : 'The customer must approve this amount before you continue or close the job.',
         ),
       ],
     ),

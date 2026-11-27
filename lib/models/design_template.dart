@@ -70,8 +70,13 @@ class DesignTemplate {
   bool get isCustomerUpload => catalogType == DesignCatalogType.customerUpload;
 
   bool matchesDressType(String? selectedDressType) {
-    final selected = selectedDressType?.trim().toLowerCase() ?? '';
-    final designDressType = dressType?.trim().toLowerCase() ?? '';
+    String normalize(String? value) {
+      final normalized = value?.trim().toLowerCase() ?? '';
+      return normalized == 'saree blouse' ? 'blouse' : normalized;
+    }
+
+    final selected = normalize(selectedDressType);
+    final designDressType = normalize(dressType);
 
     if (selected.isEmpty) {
       return true;

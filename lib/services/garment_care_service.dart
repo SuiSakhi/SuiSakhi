@@ -270,6 +270,9 @@ class GarmentCareService {
       'serviceSteps': serviceSteps,
       'conditionNotes': (item['conditionNotes'] ?? '').toString().trim(),
       'careNotes': (item['careNotes'] ?? '').toString().trim(),
+      'careAudioStoragePath': (item['careAudioStoragePath'] ?? '')
+          .toString()
+          .trim(),
       'conditionPhotoPaths': photos,
       'sourceOrderId': (item['sourceOrderId'] ?? '').toString(),
     });
@@ -1159,7 +1162,7 @@ class GarmentCareService {
     Map<String, dynamic> itemTypeRates = const {},
     required double platformCommissionPercent,
     required double taxPercent,
-    required double deliveryPercent,
+    required double otherFee,
     required double logisticsAmount,
   }) async {
     final result = await _functions
@@ -1169,7 +1172,7 @@ class GarmentCareService {
           'itemTypeRates': itemTypeRates,
           'platformCommissionPercent': platformCommissionPercent,
           'taxPercent': taxPercent,
-          'deliveryPercent': deliveryPercent,
+          'otherFee': otherFee,
           'logisticsAmount': logisticsAmount,
         });
     final data = Map<String, dynamic>.from(result.data as Map);

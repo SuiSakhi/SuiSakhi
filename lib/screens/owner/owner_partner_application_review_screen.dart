@@ -74,6 +74,9 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
         _buildApplicantDetails(application),
         const SizedBox(height: 18),
 
+        _buildLegalAcceptance(application),
+        const SizedBox(height: 18),
+
         // ================================================================
         // CATEGORY-AWARE PARTNER OPERATIONS REVIEW
         // ================================================================
@@ -213,6 +216,109 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
           label: 'Customer profile ID',
           value: application.customerProfileId,
         ),
+      ],
+    );
+  }
+
+  Widget _buildLegalAcceptance(PartnerApplication application) {
+    final acceptance = application.legalAcceptance;
+    final rawDocuments = acceptance['documents'];
+    final rawJoiningDeposit = acceptance['joiningSecurityDeposit'];
+    final joiningDeposit = rawJoiningDeposit is Map
+        ? Map<String, dynamic>.from(rawJoiningDeposit)
+        : const <String, dynamic>{};
+    final documents = rawDocuments is Iterable
+        ? rawDocuments.whereType<Map>().map(Map<String, dynamic>.from).toList()
+        : <Map<String, dynamic>>[];
+    final acceptedAt = acceptance['acceptedAt'];
+    final acceptedDate = switch (acceptedAt) {
+      Timestamp value => value.toDate(),
+      DateTime value => value,
+      _ => null,
+    };
+
+    if (acceptance.isEmpty || documents.isEmpty) {
+      return _ReviewSection(
+        title: 'Partner Agreements',
+        icon: Icons.gavel_outlined,
+        children: [
+          Text(
+            'No recorded agreement acceptance is attached to this application.',
+            style: AppTextStyles.bodySmall.copyWith(
+              color: AppColors.error,
+              height: 1.4,
+            ),
+          ),
+        ],
+      );
+    }
+
+    return _ReviewSection(
+      title: 'Partner Agreements',
+      icon: Icons.gavel_outlined,
+      children: [
+        _ReviewDetail(
+          label: 'Acceptance status',
+          value: 'Accepted at application submission',
+        ),
+        if (acceptedDate != null)
+          _ReviewDetail(
+            label: 'Accepted on',
+            value: _formatDateTime(acceptedDate),
+          ),
+        _ReviewDetail(
+          label: 'Partner / legal entity',
+          value: acceptance['partnerLegalName']?.toString() ?? 'Not recorded',
+        ),
+        _ReviewDetail(
+          label: 'Signatory',
+          value: acceptance['signatoryName']?.toString() ?? 'Not recorded',
+        ),
+        _ReviewDetail(
+          label: 'Signatory capacity',
+          value: acceptance['signatoryCapacity']?.toString() ?? 'Not recorded',
+        ),
+        _ReviewDetail(
+          label: 'Verified login phone',
+          value: acceptance['verifiedLoginPhone']?.toString() ?? 'Not recorded',
+        ),
+        if (joiningDeposit.isNotEmpty) ...[
+          _ReviewDetail(
+            label: 'Joining security deposit',
+            value:
+                '₹${((joiningDeposit['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)} · ${joiningDeposit['collectionStatus'] == 'notRequired' ? 'Not required' : 'Not collected'}',
+          ),
+          _ReviewDetail(
+            label: 'Deposit terms accepted',
+            value: joiningDeposit['accepted'] == true ? 'Yes' : 'No',
+          ),
+          if (joiningDeposit['termsText']?.toString().trim().isNotEmpty == true)
+            _ReviewDetail(
+              label: 'Deposit terms',
+              value: joiningDeposit['termsText'].toString(),
+            ),
+        ],
+        const SizedBox(height: 8),
+        for (final document in documents)
+          Card(
+            margin: const EdgeInsets.only(bottom: 8),
+            child: ExpansionTile(
+              leading: const Icon(Icons.description_outlined),
+              title: Text(document['title']?.toString() ?? 'Partner agreement'),
+              subtitle: Text(
+                'Version: ${document['version'] ?? 'Not recorded'} · '
+                'Source: ${document['sourcePackId'] ?? 'Unknown'}',
+              ),
+              childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              children: [
+                SelectableText(
+                  document['bodySnapshot']?.toString() ??
+                      'Accepted document text was not retained.',
+                  style: AppTextStyles.bodySmall.copyWith(height: 1.45),
+                ),
+              ],
+            ),
+          ),
       ],
     );
   }
@@ -2029,11 +2135,11 @@ class OwnerPartnerApplicationReviewScreen extends StatelessWidget {
       case PartnerApplicationStatus.draft:
         return 'Draft';
       case PartnerApplicationStatus.submitted:
-        return 'Submitted';
+        return 'Pending to Review';
       case PartnerApplicationStatus.underReview:
-        return 'Under Review';
+        return 'In Progress';
       case PartnerApplicationStatus.changesRequested:
-        return 'Changes Requested';
+        return 'Send Back to Customer';
       case PartnerApplicationStatus.approved:
         return 'Approved';
       case PartnerApplicationStatus.rejected:

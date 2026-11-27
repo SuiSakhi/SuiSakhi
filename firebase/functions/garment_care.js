@@ -707,7 +707,11 @@ function careRateBreakdown(policy, rate, additionalServiceFee = 0) {
   const customerAmount = Number(rate && rate.customerAmount);
   const partnerAmount = Number(rate && rate.partnerAmount);
   const taxPercent = Number(policy && policy.taxPercent) || 0;
-  const deliveryPercent = Number(policy && policy.deliveryPercent) || 0;
+  const pricingModelVersion = Number(policy && policy.pricingModelVersion) || 1;
+  // Older immutable versions still include a percentage delivery component.
+  const deliveryPercent = pricingModelVersion >= 3
+    ? 0
+    : Number(policy && policy.deliveryPercent) || 0;
   const fixedFee = Number(additionalServiceFee) || 0;
   if (!Number.isFinite(customerAmount) || customerAmount < 0 ||
       !Number.isFinite(partnerAmount) || partnerAmount < 0) {
@@ -722,7 +726,9 @@ function careRateBreakdown(policy, rate, additionalServiceFee = 0) {
     const partnerPayableAmount = roundCareMoney(partnerAmount + fixedFee);
     const platformCommissionAmount = roundCareMoney(serviceAmount - partnerPayableAmount);
     if (platformCommissionAmount < -0.01) {
-      fail("failed-precondition", "This rate is below the Partner, tax, and delivery cost.");
+      fail("failed-precondition", pricingModelVersion >= 3
+        ? "This rate is below the Partner and tax cost."
+        : "This rate is below the Partner, tax, and delivery cost.");
     }
     return {
       serviceAmount,
@@ -1340,8 +1346,9 @@ exports.getAdminGarmentCarePricing = functions.https.onCall(async (_data, contex
     ? await db.collection("garment_care_pricing_versions").doc(versionId).get()
     : null;
   if (!version || !version.exists) {
-    return { versionId: null, pricingModelVersion: 2, serviceRates: {}, itemTypeRates: {},
-      platformCommissionPercent: 15, taxPercent: 6, deliveryPercent: 6, logisticsAmount: 0 };
+    return { versionId: null, pricingModelVersion: 4, serviceRates: {}, itemTypeRates: {},
+      platformCommissionPercent: 15, taxPercent: 6, otherFee: 0,
+      deliveryPercent: 0, logisticsAmount: 0 };
   }
   const policy = version.data() || {};
   return {
@@ -1351,7 +1358,12 @@ exports.getAdminGarmentCarePricing = functions.https.onCall(async (_data, contex
     itemTypeRates: policy.itemTypeRates || {},
     platformCommissionPercent: Number(policy.platformCommissionPercent) || 0,
     taxPercent: Number(policy.taxPercent) || 0,
-    deliveryPercent: policy.deliveryPercent == null ? 6 : Number(policy.deliveryPercent),
+    legacyMeasurementFee: Number(policy.pricingModelVersion) >= 4
+      ? 0 : Number(policy.measurementFee) || 0,
+    otherFee: Number(policy.otherFee) || 0,
+    deliveryPercent: Number(policy.pricingModelVersion) >= 3
+      ? 0
+      : policy.deliveryPercent == null ? 6 : Number(policy.deliveryPercent),
     logisticsAmount: Number(policy.logisticsAmount) || 0,
   };
 });
@@ -1362,14 +1374,14 @@ exports.publishGarmentCarePricingVersion = functions.https.onCall(async (data, c
   const inputItemTypeRates = data && data.itemTypeRates && typeof data.itemTypeRates === 'object' ? data.itemTypeRates : {};
   const commissionPercent = Number(data && data.platformCommissionPercent);
   const taxPercent = Number(data && data.taxPercent);
-  const deliveryPercent = Number(data && data.deliveryPercent);
+  const otherFee = Number(data && data.otherFee);
   const logisticsAmount = Number(data && data.logisticsAmount);
   if (!inputRates || typeof inputRates !== "object" ||
       !Number.isFinite(commissionPercent) || commissionPercent < 0 || commissionPercent > 100 ||
       !Number.isFinite(taxPercent) || taxPercent < 0 || taxPercent > 100 ||
-      !Number.isFinite(deliveryPercent) || deliveryPercent < 0 || deliveryPercent > 100 ||
+      !Number.isFinite(otherFee) || otherFee < 0 ||
       !Number.isFinite(logisticsAmount) || logisticsAmount < 0) {
-    fail("invalid-argument", "Provide valid service rates, commission, tax, delivery and logistics amounts.");
+    fail("invalid-argument", "Provide valid service rates, percentages, fixed fees and logistics amount.");
   }
   const serviceRates = {};
   for (const serviceId of REQUIRED_SERVICE_IDS) {
@@ -1377,7 +1389,7 @@ exports.publishGarmentCarePricingVersion = functions.https.onCall(async (data, c
     const customerAmount = Number(rate.customerAmount);
     const partnerAmount = Number(rate.partnerAmount);
     const minimumCustomerAmount = roundCareMoney(partnerAmount *
-      (100 + taxPercent + deliveryPercent) / 100);
+      (100 + commissionPercent + taxPercent) / 100 + otherFee);
     if (!Number.isFinite(customerAmount) || customerAmount < 0 ||
         !Number.isFinite(partnerAmount) || partnerAmount < 0 ||
         customerAmount + 0.01 < minimumCustomerAmount) {
@@ -1396,7 +1408,7 @@ exports.publishGarmentCarePricingVersion = functions.https.onCall(async (data, c
       const customerAmount = Number(rawRate && rawRate.customerAmount);
       const partnerAmount = Number(rawRate && rawRate.partnerAmount);
       const minimumCustomerAmount = roundCareMoney(partnerAmount *
-        (100 + taxPercent + deliveryPercent) / 100);
+        (100 + commissionPercent + taxPercent) / 100 + otherFee);
       if (!allowed.includes(itemTypeCode) || !Number.isFinite(customerAmount) ||
           customerAmount < 0 || !Number.isFinite(partnerAmount) ||
           partnerAmount < 0 || customerAmount + 0.01 < minimumCustomerAmount) {
@@ -1416,11 +1428,11 @@ exports.publishGarmentCarePricingVersion = functions.https.onCall(async (data, c
       serviceRates,
       itemTypeRates,
       platformCommissionPercent: commissionPercent,
-      commissionBasis: "customer_rate_less_partner_payable_tax_and_delivery_components",
+      commissionBasis: "customer_rate_less_partner_payable_and_tax_components",
       taxPercent,
-      deliveryPercent,
+      otherFee,
       logisticsAmount,
-      pricingModelVersion: 2,
+      pricingModelVersion: 4,
       publishedAt: SERVER_TIMESTAMP(),
       publishedByUid: auth.uid,
       immutable: true,
@@ -1955,7 +1967,9 @@ exports.getCustomerGarmentCarePricing = functions.https.onCall(async (_data, con
     itemTypeRates,
     itemTypesByGroup: ITEM_TYPES_BY_GROUP,
     taxPercent: Number(policy.taxPercent) || 0,
-    deliveryPercent: policy.deliveryPercent == null ? 6 : Number(policy.deliveryPercent),
+    deliveryPercent: Number(policy.pricingModelVersion) >= 3
+      ? 0
+      : policy.deliveryPercent == null ? 6 : Number(policy.deliveryPercent),
     logisticsAmount: Number(policy.logisticsAmount) || 0,
   };
 });
@@ -2043,6 +2057,12 @@ exports.createGarmentCareOrder = functions.https.onCall(async (data, context) =>
     const itemTypeCode = text(line.itemTypeCode, 80) || "other";
     const displayName = text(line.displayName, 120) ||
       (itemTypeCode === "other" ? "Other garment" : itemTypeCode.replaceAll("_", " "));
+    const careAudioStoragePath = text(line.careAudioStoragePath, 512);
+    if (careAudioStoragePath &&
+        (!careAudioStoragePath.startsWith(`order_instruction_media/${auth.uid}/drafts/care_`) ||
+          !careAudioStoragePath.endsWith(".m4a"))) {
+      fail("permission-denied", "The care voice note is not owned by this Customer.");
+    }
     return {
       garmentId,
       sourceOrderId,
@@ -2057,11 +2077,26 @@ exports.createGarmentCareOrder = functions.https.onCall(async (data, context) =>
         serviceIds.some((serviceId) => HYGIENE_TREATMENT_SERVICE_IDS.has(serviceId)),
       conditionNotes: text(line.conditionNotes, 1000),
       careNotes: text(line.careNotes, 1000),
+      careAudioStoragePath,
       starchLevel: text(line.starchLevel, 40),
       conditionPhotoPaths: Array.isArray(line.conditionPhotoPaths)
         ? line.conditionPhotoPaths.map((path) => text(path, 500)).filter(Boolean).slice(0, 6) : [],
     };
   });
+  for (const audioPath of new Set(normalizedLines.map((line) => line.careAudioStoragePath).filter(Boolean))) {
+    try {
+      const [metadata] = await admin.storage().bucket().file(audioPath).getMetadata();
+      const custom = metadata.metadata || {};
+      if (custom.customerUid !== auth.uid ||
+          !["audio/mp4", "audio/aac", "audio/mpeg", "audio/wav"].includes(metadata.contentType) ||
+          Number(metadata.size) <= 0 || Number(metadata.size) > 15 * 1024 * 1024) {
+        fail("permission-denied", "The care voice note could not be verified.");
+      }
+    } catch (error) {
+      if (error && error.code === "permission-denied") throw error;
+      fail("failed-precondition", "The care voice note is missing or could not be verified. Record it again.");
+    }
+  }
   const garmentCount = normalizedLines.reduce((sum, line) => sum + line.quantity, 0);
   const serviceJobCount = normalizedLines.reduce((sum, line) => sum + line.quantity * line.serviceSteps.length, 0);
   if (garmentCount > 100 || serviceJobCount > 100) {
@@ -2422,6 +2457,7 @@ exports.createGarmentCareOrder = functions.https.onCall(async (data, context) =>
           HYGIENE_TREATMENT_SERVICE_IDS.has(step.serviceId),
         conditionNotes: line.conditionNotes,
         careNotes: line.careNotes,
+        careAudioStoragePath: line.careAudioStoragePath || null,
         starchLevel: line.starchLevel || null,
         conditionPhotoPaths: line.conditionPhotoPaths,
         sourceOrderId: line.sourceOrderId || null,
@@ -2446,6 +2482,7 @@ exports.createGarmentCareOrder = functions.https.onCall(async (data, context) =>
         material: line.material || null,
         conditionNotes: line.conditionNotes,
         careNotes: line.careNotes,
+        careAudioStoragePath: line.careAudioStoragePath || null,
         starchLevel: line.starchLevel || null,
         conditionPhotoPaths: line.conditionPhotoPaths,
         knowledgeCardVersionId: "curated_baseline_2026_10_v1",
@@ -2588,12 +2625,33 @@ exports.updateGarmentCareDeliveryPartnerAvailability = functions.https.onCall(as
   if (available && garmentCareDeliveryPincodes(profile).length === 0) {
     fail("failed-precondition", "Add at least one service-area PIN code to your Delivery Partner profile before going online for Garment Care deliveries.");
   }
-  await profileRef.update({
+  const updates = {
     garmentCareDeliveryAvailable: available,
     garmentCareDeliveryAvailabilityUpdatedAt: SERVER_TIMESTAMP(),
     garmentCareDeliveryAvailabilityUpdatedByUid: auth.uid,
+    "partnerData.extensions.deliveryPartner.operational.availableForOrders": available,
     updatedAt: SERVER_TIMESTAMP(),
-  });
+  };
+  if (Array.isArray(data.availabilitySlots)) {
+    const days = new Set([
+      "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    ]);
+    const slots = data.availabilitySlots
+      .filter((slot) => slot && typeof slot === "object")
+      .map((slot) => ({
+        day: text(slot.day, 20).toLowerCase(),
+        start: text(slot.start, 5),
+        end: text(slot.end, 5),
+      }))
+      .filter((slot) => days.has(slot.day) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.start) &&
+        /^([01]\d|2[0-3]):[0-5]\d$/.test(slot.end) && slot.start < slot.end);
+    if (slots.length !== data.availabilitySlots.length) {
+      fail("invalid-argument", "Choose valid working days and hours.");
+    }
+    updates["partnerData.extensions.deliveryPartner.operational.availabilitySlots"] = slots;
+  }
+  await profileRef.update(updates);
   return { available };
 });
 
@@ -3054,6 +3112,21 @@ exports.getGarmentCarePartnerServiceJobDetails = functions.https.onCall(async (d
   ].map((value) => text(value, 180)).filter(Boolean).join(", ");
   const preferredPickupAt = (group && group.exists && group.get("preferredPickupAt")) ||
     order.get("preferredPickupAt");
+  const customerUid = text(order.get("customerUid"), 128);
+  const careAudioStoragePath = text(job.get("careAudioStoragePath"), 512);
+  let instructionAudioUrl = null;
+  if (careAudioStoragePath &&
+      careAudioStoragePath.startsWith(`order_instruction_media/${customerUid}/drafts/care_`)) {
+    try {
+      const [url] = await admin.storage().bucket().file(careAudioStoragePath).getSignedUrl({
+        action: "read",
+        expires: Date.now() + 15 * 60 * 1000,
+      });
+      instructionAudioUrl = url;
+    } catch (_) {
+      instructionAudioUrl = null;
+    }
+  }
   return {
     orderId: text(job.get("orderId"), 128),
     orderNumber: text(job.get("orderNumber") || order.get("orderNumber"), 32),
@@ -3070,6 +3143,7 @@ exports.getGarmentCarePartnerServiceJobDetails = functions.https.onCall(async (d
     material: text(job.get("material"), 120),
     conditionNotes: text(job.get("conditionNotes"), 1000),
     careNotes: text(job.get("careNotes"), 1000),
+    instructionAudioUrl,
     status: text(job.get("status"), 40),
   };
 });
@@ -4452,7 +4526,9 @@ exports.submitGarmentCareInspectionQuote = functions.runWith({ timeoutSeconds: 1
       taxPercent,
       taxAmount,
       logisticsAmount: deliveryAmount,
-    deliveryPercent: policy.deliveryPercent == null ? 6 : Number(policy.deliveryPercent),
+      deliveryPercent: Number(policy.pricingModelVersion) >= 3
+        ? 0
+        : policy.deliveryPercent == null ? 6 : Number(policy.deliveryPercent),
       deliveryAmount,
       customerTotal,
       currency: "INR",
@@ -7018,4 +7094,464 @@ exports.allocateGarmentCareCapturedPayment = functions.https.onCall(async (data,
     });
   });
   return { paymentId, allocationIds, allocationStatus: "allocated" };
+});
+
+// Records an Admin-confirmed external Partner payout. This records settlement
+// evidence only; it does not initiate a bank, UPI, or payment-gateway transfer.
+exports.recordAdminPartnerPayout = functions.https.onCall(async (data, context) => {
+  const auth = await requireAdmin(context);
+  const category = text(data && data.category, 40);
+  const recordId = text(data && data.recordId, 160);
+  const reference = text(data && data.reference, 120);
+  const requestedGrossAmount = Number(data && data.grossAmount);
+  const rawDeductions = !data || data.deductions == null ? [] : data.deductions;
+  if (!recordId || !Number.isFinite(requestedGrossAmount) ||
+      requestedGrossAmount <= 0 || requestedGrossAmount > 100000 ||
+      !Array.isArray(rawDeductions) || rawDeductions.length > 10 ||
+      !["tailoring", "quickCare", "garmentCare"].includes(category)) {
+    fail("invalid-argument", "Choose a Partner payout and confirm its gross payable.");
+  }
+  const deductions = rawDeductions.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail("invalid-argument", "Each payout deduction needs an amount and reason.");
+    }
+    const amount = Math.round(Number(entry.amount) * 100) / 100;
+    const remark = text(entry.remark, 300);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000 || !remark) {
+      fail("invalid-argument", "Each payout deduction needs a positive amount and a reason.");
+    }
+    return {amount, remark};
+  });
+  const deductionTotal = Math.round(
+      deductions.reduce((sum, entry) => sum + entry.amount, 0) * 100) / 100;
+  if (deductionTotal > requestedGrossAmount + 0.001) {
+    fail("invalid-argument", "Payout deductions cannot exceed the Partner payable.");
+  }
+  const netAmount = Math.max(0, Math.round(
+      (requestedGrossAmount - deductionTotal + Number.EPSILON) * 100) / 100);
+  if (netAmount > 0 && !reference) {
+    fail("invalid-argument", "Add the bank or UPI reference for the Partner transfer.");
+  }
+  const now = SERVER_TIMESTAMP();
+  if (category === "garmentCare") {
+    const payableRef = db.collection("garment_care_partner_payables").doc(recordId);
+    await db.runTransaction(async (tx) => {
+      const payableSnap = await tx.get(payableRef);
+      if (!payableSnap.exists) fail("not-found", "Garment Care Partner payable was not found.");
+      const payable = payableSnap.data() || {};
+      if (payable.settlementStatus === "paid") return;
+      const orderRef = db.collection("garment_care_orders").doc(text(payable.orderId, 128));
+      const orderSnap = await tx.get(orderRef);
+      if (!orderSnap.exists || orderSnap.get("paymentStatus") !== "paid") {
+        fail("failed-precondition", "The Garment Care customer payment must be fully captured before recording this payout.");
+      }
+      const amount = Number(payable.grossPartnerPayable);
+      if (!Number.isFinite(amount) || amount <= 0) {
+        fail("failed-precondition", "This payable has no valid Partner amount.");
+      }
+      if (Math.abs(requestedGrossAmount - amount) > 0.01) {
+        fail("invalid-argument", "The Partner payable changed. Refresh the payout list and try again.");
+      }
+      const transferRef = db.collection("garment_care_settlement_transfers").doc(`admin_${recordId}`);
+      tx.set(transferRef, {
+        transferId: transferRef.id,
+        category,
+        payableEntryId: recordId,
+        orderId: payable.orderId,
+        orderNumber: payable.orderNumber || null,
+        partnerAccountId: payable.partnerAccountId || null,
+        partnerProfileId: payable.partnerProfileId || null,
+        amount: netAmount,
+        grossAmount: amount,
+        netAmount,
+        deductions,
+        currency: payable.currency || "INR",
+        status: "paid",
+        transferReference: reference,
+        transferMethod: "external_manual",
+        paidAt: now,
+        recordedByUid: auth.uid,
+      }, {merge: true});
+      tx.update(payableRef, {
+        settlementStatus: "paid",
+        settlementReference: reference,
+        settlementGrossAmount: amount,
+        settlementNetAmount: netAmount,
+        settlementDeductions: deductions,
+        settledAt: now,
+        settledByUid: auth.uid,
+        holdReason: null,
+        updatedAt: now,
+      });
+    });
+    return {status: "paid", category, recordId};
+  }
+
+  const orderRef = db.collection("orders").doc(recordId);
+  await db.runTransaction(async (tx) => {
+    const orderSnap = await tx.get(orderRef);
+    if (!orderSnap.exists) fail("not-found", "Order payout record was not found.");
+    const order = orderSnap.data() || {};
+    const expectedModule = category === "tailoring" ? "coreTailoring" : "quickFix";
+    if (order.orderModuleType !== expectedModule) {
+      fail("failed-precondition", "This order does not belong to the selected payout category.");
+    }
+    if (order.partnerPayoutStatus === "paid") return;
+    if (order.paymentStatus !== "fullyPaid") {
+      fail("failed-precondition", "The customer payment must be complete before recording this Partner payout.");
+    }
+    let partnerAccountId;
+    let partnerProfileId;
+    let partnerName;
+    let suggestedAmount;
+    if (category === "tailoring") {
+      if (! ["delivered", "closed"].includes(text(order.status, 40))) {
+        fail("failed-precondition", "The tailoring order must be delivered before recording its Partner payout.");
+      }
+      partnerAccountId = text(order.assignedTailorAccountId, 128);
+      partnerProfileId = text(order.assignedTailorProfileId, 128);
+      partnerName = text(order.assignedTailorName, 120) || text(order.tailorName, 120);
+      suggestedAmount = Number(order.stitchingBaseCharge || order.partnerPayoutGrossAmount || order.partnerPayoutAmount || 0);
+    } else {
+      if (order.quickCareWorkflowStatus !== "completed") {
+        fail("failed-precondition", "The Quick Care service must be completed before recording its Partner payout.");
+      }
+      partnerAccountId = text(order.quickCarePartnerAccountId || order.quickCareAssignedPartnerAccountId, 128);
+      partnerProfileId = text(order.quickCarePartnerProfileId || order.quickCareAssignedPartnerProfileId, 128);
+      partnerName = text(order.quickCareAssignedPartnerName, 120) || "Quick Care Partner";
+      suggestedAmount = Number(order.quickCarePartnerPayoutAmount || order.quickCarePartnerPayoutEstimate || order.partnerPayoutGrossAmount || order.partnerPayoutAmount || 0);
+    }
+    if (!partnerAccountId || !Number.isFinite(suggestedAmount) || suggestedAmount <= 0) {
+      fail("failed-precondition", "A Partner assignment and positive Partner payable are required.");
+    }
+    if (Math.abs(requestedGrossAmount - suggestedAmount) > 0.01) {
+      fail("invalid-argument", "The Partner payable changed. Refresh the payout list and try again.");
+    }
+    tx.update(orderRef, {
+      partnerPayoutStatus: "paid",
+      partnerPayoutGrossAmount: suggestedAmount,
+      partnerPayoutNetAmount: netAmount,
+      partnerPayoutAmount: netAmount,
+      partnerPayoutDeductions: deductions,
+      partnerPayoutReference: reference,
+      partnerPayoutPaidAt: now,
+      partnerPayoutRecordedByUid: auth.uid,
+      partnerPayoutPartnerAccountId: partnerAccountId,
+      partnerPayoutPartnerProfileId: partnerProfileId || null,
+      partnerPayoutPartnerName: partnerName || null,
+      updatedAt: now,
+    });
+    const transferId = `admin_${category}_${recordId}`;
+    tx.set(db.collection("partner_payout_transfers").doc(transferId), {
+      transferId,
+      category,
+      orderId: recordId,
+      partnerAccountId,
+      partnerProfileId: partnerProfileId || null,
+      partnerName: partnerName || null,
+      amount: netAmount,
+      grossAmount: suggestedAmount,
+      netAmount,
+      deductions,
+      currency: "INR",
+      status: "paid",
+      transferReference: reference,
+      transferMethod: "external_manual",
+      paidAt: now,
+      recordedByUid: auth.uid,
+    }, {merge: true});
+  });
+  return {status: "paid", category, recordId};
+});
+
+// Records one weekly Partner statement across completed service categories.
+// The callable verifies and settles every source row atomically; bank/UPI
+// movement remains external and is identified by the Admin-entered reference.
+exports.recordAdminPartnerPayoutBatch = functions.https.onCall(async (data, context) => {
+  const auth = await requireAdmin(context);
+  const partnerAccountId = text(data && data.partnerAccountId, 128);
+  const reference = text(data && data.reference, 120);
+  const periodLabel = text(data && data.periodLabel, 100) || "All pending weeks";
+  const rawEntries = data && data.entries;
+  const rawDeductions = !data || data.deductions == null ? [] : data.deductions;
+  const rawStart = data && data.periodStartMillis;
+  const rawEnd = data && data.periodEndMillis;
+  const periodStartMillis = rawStart == null ? null : Number(rawStart);
+  const periodEndMillis = rawEnd == null ? null : Number(rawEnd);
+  if (!partnerAccountId || !Array.isArray(rawEntries) ||
+      rawEntries.length < 1 || rawEntries.length > 200 ||
+      !Array.isArray(rawDeductions) || rawDeductions.length > 10 ||
+      ((periodStartMillis == null) !== (periodEndMillis == null)) ||
+      (periodStartMillis != null && (!Number.isFinite(periodStartMillis) ||
+        !Number.isFinite(periodEndMillis) || periodEndMillis <= periodStartMillis ||
+        periodEndMillis - periodStartMillis > 8 * 24 * 60 * 60 * 1000))) {
+    fail("invalid-argument", "Choose a valid Partner and weekly payout statement.");
+  }
+
+  const entries = rawEntries.map((entry) => {
+    const category = text(entry && entry.category, 40);
+    const recordId = text(entry && entry.recordId, 160);
+    if (!recordId || !["tailoring", "quickCare", "garmentCare"].includes(category)) {
+      fail("invalid-argument", "Every payout order needs a valid service category and record.");
+    }
+    return {category, recordId};
+  });
+  const uniqueEntries = new Set(entries.map((entry) => `${entry.category}:${entry.recordId}`));
+  if (uniqueEntries.size !== entries.length) {
+    fail("invalid-argument", "The payout statement contains a duplicate order.");
+  }
+
+  const deductions = rawDeductions.map((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+      fail("invalid-argument", "Each payout deduction needs an amount and reason.");
+    }
+    const amount = Math.round(Number(entry.amount) * 100) / 100;
+    const remark = text(entry.remark, 300);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > 100000 || !remark) {
+      fail("invalid-argument", "Each payout deduction needs a positive amount and reason.");
+    }
+    return {amount, remark};
+  });
+
+  const timestampMillis = (value) => {
+    if (value && typeof value.toMillis === "function") return value.toMillis();
+    if (value instanceof Date) return value.getTime();
+    return null;
+  };
+  const statementRef = db.collection("partner_payout_transfers").doc();
+  const careTransferRefs = entries.map(() =>
+    db.collection("garment_care_settlement_transfers").doc());
+  const now = SERVER_TIMESTAMP();
+  let result;
+
+  await db.runTransaction(async (tx) => {
+    const validated = [];
+    for (let index = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      let sourceRef;
+      let source;
+      let careOrder = null;
+      let amount;
+      let recordPartnerId;
+      let partnerProfileId = null;
+      let partnerName = "";
+      let orderNumber = null;
+      let orderId = entry.recordId;
+      let completedAtMillis = null;
+
+      if (entry.category === "garmentCare") {
+        sourceRef = db.collection("garment_care_partner_payables").doc(entry.recordId);
+        const payableSnap = await tx.get(sourceRef);
+        if (!payableSnap.exists) fail("not-found", "A Garment Care payable was not found.");
+        source = payableSnap.data() || {};
+        if (source.settlementStatus === "paid") {
+          fail("failed-precondition", "A selected Garment Care payable has already been settled. Refresh the statement.");
+        }
+        orderId = text(source.orderId, 128);
+        const careOrderRef = db.collection("garment_care_orders").doc(orderId);
+        const careOrderSnap = await tx.get(careOrderRef);
+        if (!careOrderSnap.exists || careOrderSnap.get("paymentStatus") !== "paid") {
+          fail("failed-precondition", "Garment Care customer payment must be complete before payout.");
+        }
+        careOrder = careOrderSnap.data() || {};
+        amount = Number(source.grossPartnerPayable);
+        recordPartnerId = text(source.partnerAccountId, 128);
+        partnerProfileId = text(source.partnerProfileId, 128) || null;
+        partnerName = text(source.partnerName, 120) || "Garment Care Partner";
+        orderNumber = source.orderNumber || careOrder.orderNumber || null;
+        completedAtMillis = timestampMillis(source.completedAt || source.createdAt || source.updatedAt);
+      } else {
+        sourceRef = db.collection("orders").doc(entry.recordId);
+        const orderSnap = await tx.get(sourceRef);
+        if (!orderSnap.exists) fail("not-found", "A selected order payout was not found.");
+        source = orderSnap.data() || {};
+        const expectedModule = entry.category === "tailoring" ? "coreTailoring" : "quickFix";
+        if (source.orderModuleType !== expectedModule) {
+          fail("failed-precondition", "A selected order does not match its payout category.");
+        }
+        if (source.partnerPayoutStatus === "paid") {
+          fail("failed-precondition", "A selected order has already been settled. Refresh the statement.");
+        }
+        if (source.paymentStatus !== "fullyPaid") {
+          fail("failed-precondition", "Every selected customer payment must be complete before payout.");
+        }
+        orderNumber = source.orderNumber || null;
+        if (entry.category === "tailoring") {
+          if (!["delivered", "closed"].includes(text(source.status, 40))) {
+            fail("failed-precondition", "Every Stitching order must be delivered before payout.");
+          }
+          recordPartnerId = text(source.assignedTailorAccountId || source.partnerPayoutPartnerAccountId, 128);
+          partnerProfileId = text(source.assignedTailorProfileId || source.partnerPayoutPartnerProfileId, 128) || null;
+          partnerName = text(source.assignedTailorName || source.tailorName || source.partnerPayoutPartnerName, 120) || "Tailor";
+          amount = Number(source.stitchingBaseCharge || source.partnerPayoutGrossAmount || source.partnerPayoutAmount || 0);
+          completedAtMillis = timestampMillis(source.deliveredAt || source.closedAt || source.updatedAt || source.orderDate);
+        } else {
+          if (source.quickCareWorkflowStatus !== "completed") {
+            fail("failed-precondition", "Every Quick Care job must be completed before payout.");
+          }
+          recordPartnerId = text(source.quickCareAssignedPartnerAccountId || source.quickCarePartnerAccountId || source.partnerPayoutPartnerAccountId, 128);
+          partnerProfileId = text(source.quickCareAssignedPartnerProfileId || source.quickCarePartnerProfileId || source.partnerPayoutPartnerProfileId, 128) || null;
+          partnerName = text(source.quickCareAssignedPartnerName || source.partnerPayoutPartnerName, 120) || "Quick Care Partner";
+          amount = Number(source.quickCarePartnerPayoutAmount || source.quickCarePartnerPayoutEstimate || source.partnerPayoutGrossAmount || source.partnerPayoutAmount || 0);
+          completedAtMillis = timestampMillis(source.quickCareCompletedAt || source.quickCareServiceCompletedAt || source.completedAt || source.updatedAt || source.orderDate);
+        }
+      }
+
+      if (!recordPartnerId || recordPartnerId !== partnerAccountId) {
+        fail("failed-precondition", "Every order in a payout statement must belong to the selected Partner.");
+      }
+      if (!Number.isFinite(amount) || amount <= 0 || amount > 100000) {
+        fail("failed-precondition", "A selected order has no valid Partner payable.");
+      }
+      if (periodStartMillis != null && (completedAtMillis == null ||
+          completedAtMillis < periodStartMillis || completedAtMillis >= periodEndMillis)) {
+        fail("failed-precondition", "An order does not belong to the selected payout week. Refresh the statement.");
+      }
+      validated.push({
+        ...entry,
+        sourceRef,
+        source,
+        careOrder,
+        orderId,
+        orderNumber,
+        partnerProfileId,
+        partnerName,
+        grossAmount: Math.round(amount * 100) / 100,
+        grossCents: Math.round(amount * 100),
+        careTransferRef: careTransferRefs[index],
+      });
+    }
+
+    const grossCents = validated.reduce((sum, entry) => sum + entry.grossCents, 0);
+    const deductionCents = deductions.reduce((sum, entry) => sum + Math.round(entry.amount * 100), 0);
+    if (deductionCents > grossCents) {
+      fail("invalid-argument", "Payout deductions cannot exceed the Partner payable.");
+    }
+    const netCents = grossCents - deductionCents;
+    if (netCents > 0 && !reference) {
+      fail("invalid-argument", "Add the bank or UPI reference for the Partner transfer.");
+    }
+
+    // Allocate statement deductions to order lines in a stable order so each
+    // order retains a reconciled gross, deductions, and net payout amount.
+    const remainingDeductions = deductions.map((entry) => ({
+      amountCents: Math.round(entry.amount * 100),
+      remark: entry.remark,
+    }));
+    for (const entry of validated) {
+      let lineDeducted = 0;
+      const lineDeductions = [];
+      for (const deduction of remainingDeductions) {
+        if (lineDeducted >= entry.grossCents) break;
+        if (deduction.amountCents <= 0) continue;
+        const applied = Math.min(entry.grossCents - lineDeducted, deduction.amountCents);
+        deduction.amountCents -= applied;
+        lineDeducted += applied;
+        lineDeductions.push({amount: applied / 100, remark: deduction.remark});
+      }
+      entry.deductions = lineDeductions;
+      entry.netCents = entry.grossCents - lineDeducted;
+    }
+
+    const lineItems = validated.map((entry) => ({
+      category: entry.category,
+      recordId: entry.recordId,
+      orderId: entry.orderId,
+      orderNumber: entry.orderNumber,
+      grossAmount: entry.grossAmount,
+      deductions: entry.deductions,
+      netAmount: entry.netCents / 100,
+    }));
+    const first = validated[0];
+    tx.create(statementRef, {
+      transferId: statementRef.id,
+      statementType: periodStartMillis == null ? "partner_payout_statement" : "partner_weekly_payout",
+      partnerAccountId,
+      partnerProfileId: first.partnerProfileId,
+      partnerName: first.partnerName,
+      periodLabel,
+      periodStart: periodStartMillis == null ? null : admin.firestore.Timestamp.fromMillis(periodStartMillis),
+      periodEnd: periodEndMillis == null ? null : admin.firestore.Timestamp.fromMillis(periodEndMillis),
+      entries: lineItems,
+      orderCount: lineItems.length,
+      categories: [...new Set(lineItems.map((entry) => entry.category))],
+      grossAmount: grossCents / 100,
+      deductions,
+      deductionAmount: deductionCents / 100,
+      amount: netCents / 100,
+      netAmount: netCents / 100,
+      currency: "INR",
+      status: "paid",
+      transferReference: reference,
+      transferMethod: "external_manual",
+      paidAt: now,
+      recordedByUid: auth.uid,
+      createdAt: now,
+    });
+
+    for (const entry of validated) {
+      if (entry.category === "garmentCare") {
+        tx.update(entry.sourceRef, {
+          settlementStatus: "paid",
+          settlementReference: reference,
+          settlementGrossAmount: entry.grossAmount,
+          settlementNetAmount: entry.netCents / 100,
+          settlementDeductions: entry.deductions,
+          settlementStatementId: statementRef.id,
+          settledAt: now,
+          settledByUid: auth.uid,
+          holdReason: null,
+          updatedAt: now,
+        });
+        tx.set(entry.careTransferRef, {
+          transferId: entry.careTransferRef.id,
+          category: "garmentCare",
+          statementId: statementRef.id,
+          payableEntryId: entry.recordId,
+          orderId: entry.orderId,
+          orderNumber: entry.orderNumber,
+          partnerAccountId,
+          partnerProfileId: entry.partnerProfileId,
+          amount: entry.netCents / 100,
+          grossAmount: entry.grossAmount,
+          netAmount: entry.netCents / 100,
+          deductions: entry.deductions,
+          currency: "INR",
+          status: "paid",
+          transferReference: reference,
+          transferMethod: "external_manual",
+          paidAt: now,
+          recordedByUid: auth.uid,
+        });
+      } else {
+        tx.update(entry.sourceRef, {
+          partnerPayoutStatus: "paid",
+          partnerPayoutGrossAmount: entry.grossAmount,
+          partnerPayoutNetAmount: entry.netCents / 100,
+          partnerPayoutAmount: entry.netCents / 100,
+          partnerPayoutDeductions: entry.deductions,
+          partnerPayoutReference: reference,
+          partnerPayoutStatementId: statementRef.id,
+          partnerPayoutPeriodLabel: periodLabel,
+          partnerPayoutPaidAt: now,
+          partnerPayoutRecordedByUid: auth.uid,
+          partnerPayoutPartnerAccountId: partnerAccountId,
+          partnerPayoutPartnerProfileId: entry.partnerProfileId,
+          partnerPayoutPartnerName: entry.partnerName,
+          updatedAt: now,
+        });
+      }
+    }
+
+    result = {
+      status: "paid",
+      statementId: statementRef.id,
+      partnerAccountId,
+      orderCount: validated.length,
+      grossAmount: grossCents / 100,
+      deductionAmount: deductionCents / 100,
+      netAmount: netCents / 100,
+    };
+  });
+  return result;
 });

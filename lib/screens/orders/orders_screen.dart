@@ -17,6 +17,7 @@ import '../../widgets/orders/order_tracking_tag.dart';
 import '../../widgets/orders/garment_record_qr_dialog.dart';
 import '../../widgets/orders/pickup_photo_attachment_button.dart';
 import '../../widgets/orders/order_design_references.dart';
+import '../../widgets/orders/order_instruction_media_links.dart';
 
 String _normalizeQuickCareWorkflow(String? value) => (value ?? '')
     .replaceAllMapped(
@@ -1567,6 +1568,11 @@ Future<void> _showSampleOrderInvoice(
                 row('Design', order.designTemplateTitle!.trim()),
               if ((order.fabricChoice ?? '').trim().isNotEmpty)
                 row('Selected material', order.fabricChoice!.trim()),
+              if (order.fabricPurchasedMeters != null)
+                row(
+                  'Fabric purchased',
+                  '${order.fabricPurchasedMeters!.toStringAsFixed(2)} m',
+                ),
               const Divider(height: 24),
               row(
                 'Stitching service · 1 garment',
@@ -1977,6 +1983,7 @@ class _OrderCard extends StatelessWidget {
                 ),
               ),
             ],
+            OrderInstructionMediaLinks(media: order.instructionMedia),
             if (order.customerFabricPreviewAssets.isNotEmpty ||
                 (order.designImageUrl ?? '').isNotEmpty)
               Padding(

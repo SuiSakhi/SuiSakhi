@@ -59,6 +59,90 @@ service cloud.firestore {
         && request.auth.token.phone_number.size() > 0;
     }
 
+    function acceptedPartnerTemplateMatches(acceptance, packId, partnerType) {
+      return acceptance is map
+        && acceptance.templateId is string
+        && acceptance.sourcePackId == packId
+        && acceptance.accepted == true
+        && acceptance.bodySnapshot is string
+        && acceptance.bodySnapshot.size() > 0
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.sourcePackId == packId
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.isPublished == true
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.legalReviewComplete == true
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.body == acceptance.bodySnapshot
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.audiences is list
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.audiences.hasAny(['partner'])
+        && get(
+          /databases/$(database)/documents/template_security/$(acceptance.templateId)
+        ).data.partnerCategories is list
+        && (
+          get(
+            /databases/$(database)/documents/template_security/$(acceptance.templateId)
+          ).data.partnerCategories.size() == 0
+          || get(
+            /databases/$(database)/documents/template_security/$(acceptance.templateId)
+          ).data.partnerCategories.hasAny([partnerType])
+        );
+    }
+
+    function validPartnerLegalAcceptance(acceptance, applicationId, partnerType) {
+      return acceptance is map
+        && acceptance.applicationId == applicationId
+        && acceptance.partnerType == partnerType
+        && acceptance.acceptedByUid == request.auth.uid
+        && acceptance.acceptedAt == request.time
+        && acceptance.partnerLegalName is string
+        && acceptance.partnerLegalName.size() > 0
+        && acceptance.signatoryName is string
+        && acceptance.signatoryName.size() > 0
+        && acceptance.signatoryCapacity is string
+        && acceptance.signatoryCapacity.size() > 0
+        && acceptance.consentText == 'I have reviewed and affirmatively accept each Partner agreement listed for my application. I confirm that I am the Partner or have authority to accept on behalf of the named legal entity.'
+        && acceptance.acceptedDocumentIds is list
+        && acceptance.documents is list
+        && acceptance.acceptedDocumentIds.size() == acceptance.documents.size()
+        && acceptance.documents.size() == (
+          partnerType in [
+            'measurementPartner',
+            'doorstepServices',
+            'deliveryPartner'
+          ] ? 3 : 1
+        )
+        && acceptance.acceptedDocumentIds[0] == 'partner_master'
+        && acceptedPartnerTemplateMatches(
+          acceptance.documents[0], 'partner_master', partnerType
+        )
+        && (
+          !(partnerType in [
+            'measurementPartner',
+            'doorstepServices',
+            'deliveryPartner'
+          ])
+          || (
+            acceptance.acceptedDocumentIds[1] == 'partner_safety'
+            && acceptance.acceptedDocumentIds[2] == 'individual_undertaking'
+            && acceptedPartnerTemplateMatches(
+              acceptance.documents[1], 'partner_safety', partnerType
+            )
+            && acceptedPartnerTemplateMatches(
+              acceptance.documents[2], 'individual_undertaking', partnerType
+            )
+          )
+        );
+    }
+
     // =====================================================
     // RULE-ID: FN-ACCOUNT-OWNERSHIP
     // ACTOR: Rules engine
@@ -1561,6 +1645,11 @@ service cloud.firestore {
             && request.resource.data.reviewedByUid == null
             && request.resource.data.reviewNotes == null
             && request.resource.data.rejectionReason == null
+            && validPartnerLegalAcceptance(
+              request.resource.data.legalAcceptance,
+              applicationId,
+              resource.data.partnerType
+            )
             && request.resource.data.diff(resource.data)
               .affectedKeys()
               .hasOnly([
@@ -1570,7 +1659,8 @@ service cloud.firestore {
                 'reviewedAt',
                 'reviewedByUid',
                 'reviewNotes',
-                'rejectionReason'
+                'rejectionReason',
+                'legalAcceptance'
               ])
           )
           ||
@@ -1590,6 +1680,11 @@ service cloud.firestore {
             && request.resource.data.reviewedByUid == null
             && request.resource.data.reviewNotes == null
             && request.resource.data.rejectionReason == null
+            && validPartnerLegalAcceptance(
+              request.resource.data.legalAcceptance,
+              applicationId,
+              resource.data.partnerType
+            )
             && request.resource.data.diff(resource.data)
               .affectedKeys()
               .hasOnly([
@@ -1599,7 +1694,8 @@ service cloud.firestore {
                 'reviewedAt',
                 'reviewedByUid',
                 'reviewNotes',
-                'rejectionReason'
+                'rejectionReason',
+                'legalAcceptance'
               ])
           )
         );
@@ -1653,14 +1749,14 @@ service cloud.firestore {
 
       allow create, update: if isConfiguredAdmin()
           && request.resource.data.keys().hasAll([
-            'title', 'category', 'summary', 'body', 'links', 'audiences',
-            'displayOrder', 'isPublished', 'legalReviewComplete',
-            'legalReviewedAt', 'legalReviewedByUid', 'updatedAt', 'updatedByUid'
+            'title', 'category', 'section', 'summary', 'body', 'links',
+            'audiences', 'partnerCategories', 'displayOrder', 'isPublished', 'legalReviewComplete',
+            'sourcePackId', 'legalReviewedAt', 'legalReviewedByUid', 'updatedAt', 'updatedByUid'
           ])
           && request.resource.data.keys().hasOnly([
-            'title', 'category', 'summary', 'body', 'links', 'audiences',
-            'displayOrder', 'isPublished', 'legalReviewComplete',
-            'legalReviewedAt', 'legalReviewedByUid', 'updatedAt', 'updatedByUid'
+            'title', 'category', 'section', 'summary', 'body', 'links',
+            'audiences', 'partnerCategories', 'displayOrder', 'isPublished', 'legalReviewComplete',
+            'sourcePackId', 'legalReviewedAt', 'legalReviewedByUid', 'updatedAt', 'updatedByUid'
           ])
           && request.resource.data.title is string
           && request.resource.data.title.size() > 0
@@ -1668,6 +1764,16 @@ service cloud.firestore {
           && request.resource.data.category is string
           && request.resource.data.category.size() > 0
           && request.resource.data.category.size() <= 80
+          && request.resource.data.section is string
+          && request.resource.data.section.size() > 0
+          && request.resource.data.section.size() <= 80
+          && (
+            request.resource.data.sourcePackId == null
+            || (
+              request.resource.data.sourcePackId is string
+              && request.resource.data.sourcePackId.size() <= 80
+            )
+          )
           && request.resource.data.summary is string
           && request.resource.data.summary.size() <= 300
           && request.resource.data.body is string
@@ -1677,6 +1783,13 @@ service cloud.firestore {
           && request.resource.data.audiences is list
           && request.resource.data.audiences.size() > 0
           && request.resource.data.audiences.hasOnly(['customer', 'partner'])
+          && request.resource.data.partnerCategories is list
+          && request.resource.data.partnerCategories.size() <= 15
+          && request.resource.data.partnerCategories.hasOnly([
+            'tailor', 'garmentCare', 'measurementPartner', 'doorstepServices',
+            'bulkWedding', 'deliveryPartner', 'brand', 'accessories', 'rental',
+            'boutique', 'designer', 'fabricSupplier', 'printing', 'embroidery', 'other'
+          ])
           && request.resource.data.displayOrder is int
           && request.resource.data.displayOrder >= 0
           && request.resource.data.displayOrder <= 100000
@@ -1726,6 +1839,16 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if signedIn()
           && request.resource.data.customerId == request.auth.uid
+          && !request.resource.data.keys().hasAny([
+            'partnerPayoutStatus',
+            'partnerPayoutAmount',
+            'partnerPayoutReference',
+            'partnerPayoutPaidAt',
+            'partnerPayoutRecordedByUid',
+            'partnerPayoutPartnerAccountId',
+            'partnerPayoutPartnerProfileId',
+            'partnerPayoutPartnerName'
+          ])
           && (request.resource.data.orderModuleType != 'coreTailoring'
             || (request.resource.data.assignmentVersion == 'v1'
               && request.resource.data.assignmentStatus == 'searching'
@@ -2054,6 +2177,10 @@ service cloud.firestore {
               resource.data.partnerAccountId,
               resource.data.partnerProfileId
             ));
+      allow create, update, delete: if false;
+    }
+    match /partner_payout_transfers/{transferId} {
+      allow read: if isConfiguredAdmin();
       allow create, update, delete: if false;
     }
     match /garment_care_reconciliation_batches/{batchId} {

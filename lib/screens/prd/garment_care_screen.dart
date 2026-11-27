@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:record/record.dart';
 
 import '../../core/constants/garment_care_colors.dart';
 import '../../core/garment_care_guidance.dart';
@@ -13,7 +17,9 @@ import '../../core/constants/app_text_styles.dart';
 import '../../models/garment_care_domain.dart';
 import '../../models/payment_models.dart';
 import '../../services/garment_care_service.dart';
+import '../../services/order_instruction_media_service.dart';
 import '../../services/payout_config_service.dart';
+import '../../widgets/audio_note_player.dart';
 import '../../widgets/orders/order_tracking_tag.dart';
 
 class GarmentCareScreen extends StatefulWidget {
@@ -385,6 +391,8 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
   }
 
   Future<void> _openGroupSelection(GarmentCareServiceGroup group) async {
+    if (_pricingLoading) await _loadPricing();
+    if (!mounted) return;
     if (_cartDraftLoading || _cartDraftLoadFailed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -402,6 +410,8 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
         builder: (_) => _GarmentCareGroupSelectionScreen(
           group: group,
           cartCount: _items.length,
+          customerRates: _customerRates,
+          customerItemRates: _customerItemRates,
           onCartTap: () {
             Navigator.of(context).pop();
             setState(() => _cartOpen = true);
@@ -422,7 +432,7 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
     _careNotes.text = selection.careNotes;
     _quantity = selection.quantity;
     _starchLevel = selection.starchLevel;
-    _addToCart();
+    _addToCart(careAudioStoragePath: selection.careAudioStoragePath);
   }
 
   @override
@@ -570,7 +580,7 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
     }
   }
 
-  void _addToCart() {
+  void _addToCart({String? careAudioStoragePath}) {
     if (_cartDraftLoading || _cartDraftLoadFailed) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -626,6 +636,8 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
             .toList(growable: false),
         'conditionNotes': _condition.text.trim(),
         'careNotes': _careNotes.text.trim(),
+        if (careAudioStoragePath?.isNotEmpty == true)
+          'careAudioStoragePath': careAudioStoragePath,
         'hygieneWashRequested':
             _includeHygieneWash &&
             _hygieneCompatibleServices.contains(serviceId),
@@ -773,6 +785,14 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
           ),
           actions: [
             IconButton(
+              tooltip: 'View service price list',
+              onPressed: () => context.push('/customer-rates'),
+              icon: const Icon(Icons.price_check_rounded),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints.tightFor(width: 40, height: 44),
+            ),
+            IconButton(
               tooltip: 'Shopping cart ($_cartCount items)',
               onPressed: () => setState(() => _cartOpen = true),
               icon: Badge(
@@ -811,6 +831,14 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
               'Choose a service to add your garments.',
               style: AppTextStyles.bodyMedium.copyWith(
                 color: GarmentCareColors.textHint,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: () => context.push('/customer-rates'),
+                icon: const Icon(Icons.price_check_outlined),
+                label: const Text('View price list'),
               ),
             ),
             const SizedBox(height: 18),
@@ -1436,7 +1464,17 @@ class _GarmentCareScreenState extends State<GarmentCareScreen> {
                         trailing: IconButton(
                           tooltip: 'Remove from cart',
                           onPressed: () {
+                            final removed = _items[index];
                             setState(() => _items.removeAt(index));
+                            final audioPath = removed['careAudioStoragePath']
+                                ?.toString();
+                            if (audioPath?.isNotEmpty == true) {
+                              unawaited(
+                                OrderInstructionMediaService.deletePaths([
+                                  audioPath!,
+                                ]),
+                              );
+                            }
                             _queueCartDraftSave();
                           },
                           icon: const Icon(Icons.delete_outline_rounded),
@@ -2027,6 +2065,7 @@ class _CareGroupSelection {
     required this.material,
     required this.conditionNotes,
     required this.careNotes,
+    this.careAudioStoragePath,
     required this.starchLevel,
     this.previousDnaCopied = false,
     this.garmentId,
@@ -2040,6 +2079,7 @@ class _CareGroupSelection {
   final String material;
   final String conditionNotes;
   final String careNotes;
+  final String? careAudioStoragePath;
   final String? starchLevel;
   final bool previousDnaCopied;
   final String? garmentId;
@@ -2132,11 +2172,15 @@ class _GarmentCareGroupSelectionScreen extends StatefulWidget {
   const _GarmentCareGroupSelectionScreen({
     required this.group,
     required this.cartCount,
+    required this.customerRates,
+    required this.customerItemRates,
     required this.onCartTap,
   });
 
   final GarmentCareServiceGroup group;
   final int cartCount;
+  final Map<String, double> customerRates;
+  final Map<String, Map<String, double>> customerItemRates;
   final VoidCallback onCartTap;
 
   @override
@@ -2157,21 +2201,145 @@ class _GarmentCareGroupSelectionScreenState
   final _material = TextEditingController();
   final _condition = TextEditingController();
   final _careNotes = TextEditingController();
+  final _careAudioRecorder = AudioRecorder();
+  Timer? _careAudioTimer;
   String? _serviceId;
   String? _starchLevel;
+  String? _careAudioStoragePath;
   String? _garmentId;
   bool _previousDnaCopied = false;
+  bool _careAudioHandedOff = false;
+  bool _recordingCareAudio = false;
+  bool _uploadingCareAudio = false;
+  int _careAudioSeconds = 0;
   String _itemTypeCode = '';
   int _quantity = 1;
   bool _includeHygieneWash = false;
 
   @override
   void dispose() {
+    _careAudioTimer?.cancel();
+    unawaited(_careAudioRecorder.dispose());
+    final audioPath = _careAudioStoragePath;
+    if (!_careAudioHandedOff && audioPath != null) {
+      unawaited(OrderInstructionMediaService.deletePaths([audioPath]));
+    }
     _displayName.dispose();
     _material.dispose();
     _condition.dispose();
     _careNotes.dispose();
     super.dispose();
+  }
+
+  double? _rateFor(String serviceId) {
+    final itemTypeCode = _itemTypeCode;
+    return (itemTypeCode.isEmpty
+            ? null
+            : widget.customerItemRates[serviceId]?[itemTypeCode]) ??
+        widget.customerRates[serviceId];
+  }
+
+  double? _startingRateFor(String serviceId) {
+    final directRate = widget.customerRates[serviceId];
+    if (directRate != null) return directRate;
+    final itemRates = widget.customerItemRates[serviceId]?.values;
+    if (itemRates == null || itemRates.isEmpty) return null;
+    return itemRates.reduce((first, second) => first < second ? first : second);
+  }
+
+  String _money(double amount) => '₹${amount.toStringAsFixed(0)}';
+
+  Future<void> _startCareAudioRecording() async {
+    if (_uploadingCareAudio) return;
+    try {
+      if (!await _careAudioRecorder.hasPermission()) {
+        _showCareAudioMessage(
+          'Allow microphone access to record a voice note.',
+        );
+        return;
+      }
+      final path =
+          '${Directory.systemTemp.path}/suisakhi_care_note_${DateTime.now().microsecondsSinceEpoch}.m4a';
+      await _careAudioRecorder.start(
+        const RecordConfig(
+          encoder: AudioEncoder.aacLc,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
+        path: path,
+      );
+      if (!mounted) return;
+      setState(() {
+        _recordingCareAudio = true;
+        _careAudioSeconds = 0;
+      });
+      _careAudioTimer?.cancel();
+      _careAudioTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted || !_recordingCareAudio) return;
+        setState(() => _careAudioSeconds++);
+        if (_careAudioSeconds >= 60) unawaited(_stopCareAudioRecording());
+      });
+    } catch (_) {
+      _showCareAudioMessage('Could not start the voice recording.');
+    }
+  }
+
+  Future<void> _stopCareAudioRecording() async {
+    if (!_recordingCareAudio || _uploadingCareAudio) return;
+    _careAudioTimer?.cancel();
+    _careAudioTimer = null;
+    setState(() {
+      _recordingCareAudio = false;
+      _uploadingCareAudio = true;
+    });
+    try {
+      final path = await _careAudioRecorder.stop();
+      if (path == null || path.isEmpty) {
+        throw StateError('The voice note could not be saved.');
+      }
+      final customerUid = FirebaseAuth.instance.currentUser?.uid;
+      if (customerUid == null) {
+        throw StateError('Sign in to save a care voice note.');
+      }
+      final uploaded = await OrderInstructionMediaService.uploadDraftMedia(
+        customerUid: customerUid,
+        draftId: 'care_${DateTime.now().microsecondsSinceEpoch}',
+        existingMedia: const [],
+        audioFile: XFile(path),
+      );
+      final storagePath = uploaded
+          .map((item) => item['storagePath']?.toString() ?? '')
+          .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+      if (storagePath.isEmpty) {
+        throw StateError('The voice note could not be uploaded.');
+      }
+      final previousPath = _careAudioStoragePath;
+      if (previousPath != null) {
+        await OrderInstructionMediaService.deletePaths([previousPath]);
+      }
+      if (!mounted) return;
+      setState(() {
+        _careAudioStoragePath = storagePath;
+        _careAudioSeconds = 0;
+      });
+    } catch (error) {
+      _showCareAudioMessage(error.toString().replaceFirst('Bad state: ', ''));
+    } finally {
+      if (mounted) setState(() => _uploadingCareAudio = false);
+    }
+  }
+
+  Future<void> _removeCareAudio() async {
+    final path = _careAudioStoragePath;
+    setState(() => _careAudioStoragePath = null);
+    if (path != null) await OrderInstructionMediaService.deletePaths([path]);
+  }
+
+  void _showCareAudioMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   List<String> get _serviceIds => switch (widget.group) {
@@ -2328,7 +2496,14 @@ class _GarmentCareGroupSelectionScreenState
 
   void _submitSelection() {
     final serviceId = _serviceId;
+    if (_recordingCareAudio || _uploadingCareAudio) {
+      _showCareAudioMessage(
+        'Finish saving the voice note before adding the item.',
+      );
+      return;
+    }
     if (serviceId == null || !_itemTypes.containsKey(_itemTypeCode)) return;
+    _careAudioHandedOff = true;
     Navigator.of(context).pop(
       _CareGroupSelection(
         serviceId: serviceId,
@@ -2343,6 +2518,7 @@ class _GarmentCareGroupSelectionScreenState
         material: _material.text.trim(),
         conditionNotes: _condition.text.trim(),
         careNotes: _careNotes.text.trim(),
+        careAudioStoragePath: _careAudioStoragePath,
         starchLevel: _starchLevel,
         previousDnaCopied: _previousDnaCopied,
         garmentId: _garmentId,
@@ -2391,6 +2567,11 @@ class _GarmentCareGroupSelectionScreenState
           ),
           actions: [
             IconButton(
+              tooltip: 'View service price list',
+              onPressed: () => context.push('/customer-rates'),
+              icon: const Icon(Icons.price_check_rounded),
+            ),
+            IconButton(
               tooltip: 'Shopping bag (${widget.cartCount} items)',
               onPressed: widget.onCartTap,
               icon: Badge(
@@ -2415,7 +2596,7 @@ class _GarmentCareGroupSelectionScreenState
               crossAxisCount: 2,
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              childAspectRatio: 1.2,
+              childAspectRatio: 1.08,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
               children: [
@@ -2424,6 +2605,9 @@ class _GarmentCareGroupSelectionScreenState
                     serviceId: id,
                     title: _serviceTitle(id),
                     description: _serviceDescription(id),
+                    rateLabel: _startingRateFor(id) == null
+                        ? 'Price after review'
+                        : '${widget.customerRates[id] == null ? 'From ' : ''}${_money(_startingRateFor(id)!)} / item',
                     selected: _serviceId == id,
                     onTap: () => setState(() {
                       _serviceId = id;
@@ -2455,15 +2639,19 @@ class _GarmentCareGroupSelectionScreenState
                   labelText: 'Garment type',
                   hintText: 'Choose garment type',
                   filled: true,
-                  fillColor: GarmentCareColors.surface,
+                  fillColor: GarmentCareColors.background,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 14,
+                  ),
                   border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(
                       color: GarmentCareColors.divider,
                     ),
                   ),
                   enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(28),
+                    borderRadius: BorderRadius.circular(16),
                     borderSide: const BorderSide(
                       color: GarmentCareColors.divider,
                     ),
@@ -2539,20 +2727,26 @@ class _GarmentCareGroupSelectionScreenState
                     dividerColor: Colors.transparent,
                     inputDecorationTheme: Theme.of(context).inputDecorationTheme
                         .copyWith(
+                          filled: true,
+                          fillColor: GarmentCareColors.background,
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 14,
+                          ),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(28),
+                            borderRadius: BorderRadius.circular(16),
                             borderSide: const BorderSide(
                               color: GarmentCareColors.divider,
                             ),
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(28),
+                            borderRadius: BorderRadius.circular(16),
                             borderSide: const BorderSide(
                               color: GarmentCareColors.divider,
                             ),
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(28),
+                            borderRadius: BorderRadius.circular(16),
                             borderSide: const BorderSide(
                               color: GarmentCareColors.primary,
                               width: 1.5,
@@ -2640,6 +2834,7 @@ class _GarmentCareGroupSelectionScreenState
                           _material.text = value == 'Other' ? '' : value ?? '';
                         }),
                       ),
+                      const SizedBox(height: 8),
                       if (_material.text.isEmpty ||
                           !GarmentCareCatalogMetadata.materialTypes.contains(
                             _material.text,
@@ -2650,6 +2845,7 @@ class _GarmentCareGroupSelectionScreenState
                             labelText: 'Other material (optional)',
                           ),
                         ),
+                      const SizedBox(height: 8),
                       TextField(
                         controller: _condition,
                         maxLines: 2,
@@ -2658,6 +2854,7 @@ class _GarmentCareGroupSelectionScreenState
                           hintText: 'Only if there is something to report',
                         ),
                       ),
+                      const SizedBox(height: 8),
                       TextField(
                         controller: _careNotes,
                         maxLines: 2,
@@ -2666,6 +2863,63 @@ class _GarmentCareGroupSelectionScreenState
                           hintText: 'Anything you want the Partner to know',
                         ),
                       ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            minimumSize: const Size(0, 38),
+                          ),
+                          onPressed: _uploadingCareAudio
+                              ? null
+                              : _recordingCareAudio
+                              ? _stopCareAudioRecording
+                              : _startCareAudioRecording,
+                          icon: Icon(
+                            _recordingCareAudio
+                                ? Icons.stop_circle_outlined
+                                : Icons.mic_none_rounded,
+                            size: 18,
+                          ),
+                          label: Text(
+                            _recordingCareAudio
+                                ? 'Stop voice note · ${_careAudioSeconds}s'
+                                : _careAudioStoragePath == null
+                                ? 'Record care voice note'
+                                : 'Replace care voice note',
+                          ),
+                        ),
+                      ),
+                      if (_uploadingCareAudio) ...[
+                        const SizedBox(height: 6),
+                        const LinearProgressIndicator(),
+                      ],
+                      if (_careAudioStoragePath case final audioPath?) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: AudioNotePlayer(
+                                compact: true,
+                                resolveUrl: () => FirebaseStorage.instance
+                                    .ref(audioPath)
+                                    .getDownloadURL(),
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Remove voice note',
+                              onPressed: _removeCareAudio,
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 8),
                       if (serviceId == 'fabric_starching') ...[
                         DropdownButtonFormField<String>(
                           initialValue: _starchLevel,
@@ -2728,6 +2982,16 @@ class _GarmentCareGroupSelectionScreenState
                     Text(
                       '$_quantity × ${_itemTypes[_itemTypeCode] ?? 'Garment'} · $_selectedServiceTitle',
                     ),
+                    if (_rateFor(serviceId) case final rate?) ...[
+                      const SizedBox(height: 5),
+                      Text(
+                        'Estimated service amount: ${_money(rate)} each · ${_money(rate * _quantity)} for $_quantity',
+                        style: const TextStyle(
+                          color: GarmentCareColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     if (_includeHygieneWash && canAddHygiene)
                       const Text('Hygiene wash requested, if suitable.'),
                     if (widget.group ==
@@ -2911,6 +3175,7 @@ class _CareServiceOptionCard extends StatelessWidget {
     required this.serviceId,
     required this.title,
     required this.description,
+    required this.rateLabel,
     required this.selected,
     required this.onTap,
   });
@@ -2918,6 +3183,7 @@ class _CareServiceOptionCard extends StatelessWidget {
   final String serviceId;
   final String title;
   final String description;
+  final String rateLabel;
   final bool selected;
   final VoidCallback onTap;
 
@@ -2973,6 +3239,17 @@ class _CareServiceOptionCard extends StatelessWidget {
                 fontSize: 13,
                 height: 1.2,
                 color: GarmentCareColors.textHint,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              rateLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: GarmentCareColors.primary,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/app_state.dart';
+import '../../widgets/partner/partner_availability_card.dart';
 import '../profile/profile_selection_screen.dart';
 
 /// Service selector for delivery partners. Keep each service's availability
@@ -30,6 +31,7 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
   bool _eligible = false;
   bool _garmentCareAvailable = false;
   bool _saving = false;
+  List<AvailabilitySlot> _garmentCareAvailabilitySlots = const [];
 
   @override
   void initState() {
@@ -87,6 +89,10 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
             profile['approvalStatus'] == 'approved' &&
             profile['kycStatus'] == 'verified';
         _garmentCareAvailable = profile['garmentCareDeliveryAvailable'] == true;
+        _garmentCareAvailabilitySlots = readPartnerAvailabilitySlots(
+          profile,
+          extensionKey: 'deliveryPartner',
+        );
         _loading = false;
       });
     } catch (error) {
@@ -99,6 +105,26 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
   }
 
   Future<void> _setGarmentCareAvailability(bool available) async {
+    await _saveGarmentCareAvailability(
+      available,
+      _garmentCareAvailabilitySlots,
+    );
+  }
+
+  Future<void> _editGarmentCareHours() async {
+    final slots = await showPartnerAvailabilityHoursDialog(
+      context,
+      title: 'Garment Care delivery hours',
+      initialSlots: _garmentCareAvailabilitySlots,
+    );
+    if (slots == null) return;
+    await _saveGarmentCareAvailability(_garmentCareAvailable, slots);
+  }
+
+  Future<void> _saveGarmentCareAvailability(
+    bool available,
+    List<AvailabilitySlot> slots,
+  ) async {
     final accountId = _accountId;
     final profileId = _profileId;
     if (_saving || !_eligible || accountId == null || profileId == null) {
@@ -112,10 +138,12 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
             'partnerAccountId': accountId,
             'partnerProfileId': profileId,
             'available': available,
+            'availabilitySlots': slots,
           });
       if (!mounted) return;
       setState(() {
         _garmentCareAvailable = available;
+        _garmentCareAvailabilitySlots = slots;
         _saving = false;
       });
     } on FirebaseFunctionsException catch (error) {
@@ -179,22 +207,21 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
         return;
       }
 
-      final selectedProfile = await Navigator.of(
-        context,
-        rootNavigator: true,
-      ).push<Map<String, dynamic>>(
-        MaterialPageRoute<Map<String, dynamic>>(
-          builder: (_) => ProfileSelectionScreen(profiles: profiles),
-        ),
-      );
+      final selectedProfile = await Navigator.of(context, rootNavigator: true)
+          .push<Map<String, dynamic>>(
+            MaterialPageRoute<Map<String, dynamic>>(
+              builder: (_) => ProfileSelectionScreen(profiles: profiles),
+            ),
+          );
       if (selectedProfile == null || !mounted) return;
 
-      final profileId = (selectedProfile['profileId'] ??
-              selectedProfile['docId'] ??
-              selectedProfile['id'] ??
-              '')
-          .toString()
-          .trim();
+      final profileId =
+          (selectedProfile['profileId'] ??
+                  selectedProfile['docId'] ??
+                  selectedProfile['id'] ??
+                  '')
+              .toString()
+              .trim();
       if (profileId.isEmpty) return;
 
       await AppState.instance.setActiveProfileForAccount(
@@ -219,9 +246,10 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
         .toString()
         .trim()
         .toLowerCase();
-    final profileId = (profile['profileId'] ?? profile['docId'] ?? profile['id'] ?? '')
-        .toString()
-        .trim();
+    final profileId =
+        (profile['profileId'] ?? profile['docId'] ?? profile['id'] ?? '')
+            .toString()
+            .trim();
     final encodedAccountId = Uri.encodeQueryComponent(accountId);
     final encodedProfileId = Uri.encodeQueryComponent(profileId);
     final partnerType = (profile['partnerType'] ?? '').toString().trim();
@@ -234,7 +262,8 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
     }
     if (role != 'partner') return '/home';
 
-    final profileQuery = '?accountId=$encodedAccountId&profileId=$encodedProfileId';
+    final profileQuery =
+        '?accountId=$encodedAccountId&profileId=$encodedProfileId';
     switch (partnerType) {
       case 'tailor':
         return '/tailor$profileQuery';
@@ -311,7 +340,35 @@ class _DeliveryServicesScreenState extends State<DeliveryServicesScreen> {
             label: const Text('Open Garment Care work'),
           ),
           footer: _error == null
-              ? null
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.schedule_rounded, size: 18),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(
+                          partnerAvailabilityHoursLabel(
+                            context,
+                            _garmentCareAvailabilitySlots,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      TextButton.icon(
+                        onPressed: _eligible && !_saving && !_loading
+                            ? _editGarmentCareHours
+                            : null,
+                        icon: const Icon(
+                          Icons.edit_calendar_outlined,
+                          size: 17,
+                        ),
+                        label: const Text('Hours'),
+                      ),
+                    ],
+                  ),
+                )
               : Text(_error!, style: const TextStyle(color: Colors.redAccent)),
         ),
         const SizedBox(height: 12),

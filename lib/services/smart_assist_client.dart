@@ -237,9 +237,7 @@ class SmartAssistClient {
         'Smart Assist timed out. Your order details were not changed.',
       );
     } catch (error) {
-      debugPrint(
-        '[SmartAssist] $feature failed with ${error.runtimeType}.',
-      );
+      debugPrint('[SmartAssist] $feature failed with ${error.runtimeType}.');
       return const SmartAssistantResult.error(
         'Smart Assist is temporarily unavailable. Your order details were not changed.',
       );
@@ -259,9 +257,10 @@ class SmartAssistClient {
   }
 
   static String _safeMessage(String code) => switch (code) {
-    'unauthenticated' => 'Sign in to use Smart Assist.',
+    'unauthenticated' =>
+      'SuiSakhi could not verify this request. Please try again.',
     'failed-precondition' =>
-      'Smart Assist needs app verification. Please update or reopen the app.',
+      'Smart Assist app verification is unavailable. Please try again later.',
     'permission-denied' => 'You do not have permission to use Smart Assist.',
     'invalid-argument' => 'Please review the details and try again.',
     'resource-exhausted' =>
